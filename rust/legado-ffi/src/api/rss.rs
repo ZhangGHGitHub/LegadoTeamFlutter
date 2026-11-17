@@ -118,16 +118,33 @@ pub fn delete_default_rss_sources() -> LegadoResult<i32> {
 }
 
 /// 删除 RSS 源
+///
+/// P2-6（批10 审查）：B6 之后五族运行时缓存（`v_*` / `loginHeader_*` /
+/// `userInfo_*` / `sourceVariable_*` / `infoMap_*`）是**真实持久数据**，删源
+/// 必须同步清掉，否则成为孤儿并随备份传播、同 URL 重导入继承旧登录态。
+/// 对齐 server 侧 `/deleteRssSources`（`source_write_api.rs`）：
+///
+/// 1. 同一事务内删 `rssSources` 行 + `CacheRepository::delete_source_variables`；
+/// 2. 事务提交成功后才清内存五族（`clear_source_variables`），保证「DB 先删、
+///    内存后清」，懒加载回查不会把已删行读回内存。
 pub fn delete_rss_source(source_url: &str) -> LegadoResult<()> {
     with_database(|db| {
         let conn = db.connection();
-        conn.execute(
-            "DELETE FROM rssSources WHERE sourceUrl = ?1",
-            rusqlite::params![source_url],
-        )
-        .map_err(|e| LegadoError::Database(format!("删除 RSS 源失败: {e}")))?;
-        Ok(())
-    })
+        legado_db::connection::in_transaction(conn, "删除 RSS 源", |conn| {
+            conn.execute(
+                "DELETE FROM rssSources WHERE sourceUrl = ?1",
+                rusqlite::params![source_url],
+            )
+            .map_err(|e| LegadoError::Database(format!("删除 RSS 源失败: {e}")))?;
+            // 对齐 CacheDao.deleteSourceVariables 的 5 族（含 loginHeader_）
+            legado_db::CacheRepository::new(conn).delete_source_variables(source_url)?;
+            Ok(())
+        })
+    })?;
+    if let Err(e) = legado_js::host_api::variable_store::clear_source_variables() {
+        log::warn!("删除 RSS 源后清理内存运行时变量失败（重启后生效）: {e}");
+    }
+    Ok(())
 }
 
 /// 设置 RSS 源启用/禁用状态（按 `sourceUrl` 单条 UPDATE `rssSources.enabled`）

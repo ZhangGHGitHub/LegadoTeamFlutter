@@ -2844,9 +2844,17 @@ pub mod ffi {
     /// 契约 §2.11（批17a）：`password` 仅对原版 zip 备份生效，`None`/空串
     /// 等价空密码；我方单文件 JSON 备份忽略该参数。密码缺失/错误时返回带
     /// `BACKUP_PASSWORD_REQUIRED:` / `BACKUP_PASSWORD_INVALID:` 前缀的错误文本。
+    ///
+    /// [P1-3 批10 审查] 恢复成功后显式重载运行时变量/登录缓存内存：恢复体
+    /// 写完 `caches` 行后会 `clear_source_variables()`（对齐上游
+    /// `Restore.kt:415`），此前内存清空后要等进程重启才由
+    /// `backfill_from_sink` 补回——期间 `source.get()` / `getLoginHeader()`
+    /// 全部读空（且登录头继续用旧值）。此处「先清登录缓存层、再回填五族」
+    /// 使恢复值**立即**对引擎与请求路径可见。
     pub fn backup_restore(path: String, password: Option<String>) -> Result<String, BridgeError> {
         let result =
             crate::api::backup_api::backup_restore_with_password(&path, password.as_deref())?;
+        crate::api::variable_sink::reload_runtime_variables_after_restore();
         Ok(result)
     }
 

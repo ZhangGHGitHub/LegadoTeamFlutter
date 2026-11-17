@@ -63,6 +63,18 @@ impl VariableSink for JsVariableDbSink {
             }
         }
     }
+
+    fn get(&self, key: &str) -> Option<String> {
+        let result =
+            crate::db_state::with_database(|db| CacheRepository::new(db.connection()).get(key));
+        match result {
+            Ok(value) => value,
+            Err(e) => {
+                log::warn!("JS 变量持久行读取失败 '{key}': {e}");
+                None
+            }
+        }
+    }
 }
 
 /// 注册变量持久化下沉并执行启动回填
@@ -75,6 +87,28 @@ pub fn register_js_variable_sink() {
     if !registered {
         log::debug!("JS 变量持久化下沉已注册，忽略重复注册");
         return;
+    }
+    variable_store::backfill_from_sink();
+}
+
+/// 备份恢复后重载运行时变量内存（P1-3，批10 审查）
+///
+/// 恢复链路（`backup_api::restore_from_zip` / `restore_backup_data`）在写完
+/// `caches` 行后调用 `clear_source_variables()`（对齐上游
+/// `Restore.kt:393-397/415`），此后到进程重启前内存变量为空——`source.get()` /
+/// `getLoginHeader()` 读空，登录头还会继续用旧的独立内存层值。
+///
+/// 本函数在**恢复入口**（`ffi::backup_restore`）成功后执行：
+/// 1. `source_login_cache::reload_from_db()`：丢弃登录缓存内存（其真源已统一到
+///    `variable_store`，此步保证语义显式）；
+/// 2. `variable_store::backfill_from_sink()`：按 DB 权威值回填五族内存。
+///
+/// 与 P1-3 方案 2（持久键内存 miss 懒加载）互为双保险：即使本函数因故未跑到，
+/// 下一次持久键读也会从 DB 重载；本函数只是让「恢复后立即读」连一次 DB 回查
+/// 都不必付。DB 未初始化/下沉未注册时安全 no-op。
+pub fn reload_runtime_variables_after_restore() {
+    if let Err(e) = crate::api::source_login_cache::reload_from_db() {
+        log::warn!("备份恢复后清理登录缓存内存失败（懒加载兜底）: {e}");
     }
     variable_store::backfill_from_sink();
 }

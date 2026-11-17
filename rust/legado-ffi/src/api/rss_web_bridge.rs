@@ -954,26 +954,17 @@ fn store(source_url: &str, args: &Value) -> LegadoResult<String> {
             crate::api::source_login_cache::get_login_header(source_url).unwrap_or_default(),
         ),
         "loginHeaderSet" => {
+            // [P1-3 批10] 登录缓存内存真源已统一到 `variable_store`（见
+            // `source_login_cache` 模块文档）：本调用同时更新引擎变量表内存与
+            // DB，不再需要额外的 `set_variable` 镜像写（旧实现两套内存层）。
             put_login_header(source_url, value);
-            // 批21d P2-3：同步写引擎变量表（与 Remove 对称）。已存在的
-            // 引擎只在创建时跑 setup 种子，若不写变量表，`run` 内
-            // `source.getLoginHeader()` 会读不到 WebView 刚写入的新值。
-            let var_key = format!("loginHeader_{source_url}");
-            if let Err(e) = legado_js::host_api::variable_store::set_variable(&var_key, value) {
-                log::warn!("[rss-web-bridge] 写入登录头变量失败（{var_key}）: {e}");
-            }
             Value::String(value.to_string())
         }
         "loginHeaderRemove" => {
+            // [P1-3 批10] 同上：内存（variable_store）+ DB 行一并清除，
+            // 下次 setup 的 null seed 与懒加载读都不会拿到旧登录头。
             if let Err(e) = crate::api::source_login_cache::remove_login_header(source_url) {
                 log::warn!("[rss-web-bridge] 清除登录头失败（{source_url}）: {e}");
-            }
-            // 批21c P2-8 / 批21d P2-3：同步清除引擎变量表（与 Set 对称；
-            // 否则下次 setup 的 null seed 不会覆盖旧值，`source.getLoginHeader()`
-            // 在 run 内仍读到旧登录头）。variable_store 无 quickjs 门控。
-            let var_key = format!("loginHeader_{source_url}");
-            if let Err(e) = legado_js::host_api::variable_store::remove_variable(&var_key) {
-                log::warn!("[rss-web-bridge] 清除登录头变量失败（{var_key}）: {e}");
             }
             Value::Null
         }
@@ -985,25 +976,16 @@ fn store(source_url: &str, args: &Value) -> LegadoResult<String> {
         // （页面镜像优先：WebView 已更新的值不能因落库失败在 `run` 内读不到）。
         // Set/Remove 顺序一致；无事务面，DB 失败/进程崩溃时可能短暂分叉。
         "loginInfoSet" => {
+            // [P1-3 批10] 登录缓存内存真源已统一到 `variable_store`：写入即同时
+            // 覆盖引擎变量表内存与 DB 行（不再需要额外镜像写）。
             if let Err(e) = crate::api::source_login_cache::put_login_info(source_url, value) {
                 log::warn!("[rss-web-bridge] 写入用户信息失败（{source_url}）: {e}");
-            }
-            // 批21e P2-1：同步写引擎变量表（与 Remove 对称）。已存在的引擎
-            // 只在创建时跑 setup 种子；不写变量表时 `run` 内
-            // `source.getLoginInfo()` 读不到 WebView 刚写入的新值。
-            let var_key = format!("userInfo_{source_url}");
-            if let Err(e) = legado_js::host_api::variable_store::set_variable(&var_key, value) {
-                log::warn!("[rss-web-bridge] 写入用户信息变量失败（{var_key}）: {e}");
             }
             Value::String(value.to_string())
         }
         "loginInfoRemove" => {
             if let Err(e) = crate::api::source_login_cache::remove_login_info(source_url) {
                 log::warn!("[rss-web-bridge] 清除用户信息失败（{source_url}）: {e}");
-            }
-            let var_key = format!("userInfo_{source_url}");
-            if let Err(e) = legado_js::host_api::variable_store::remove_variable(&var_key) {
-                log::warn!("[rss-web-bridge] 清除用户信息变量失败（{var_key}）: {e}");
             }
             Value::Null
         }

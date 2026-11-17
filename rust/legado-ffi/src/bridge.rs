@@ -1374,15 +1374,22 @@ pub unsafe extern "C" fn ffi_backup_create_with_password(
 }
 
 /// 从备份恢复（无密码兼容入口，等价密码为 null）
+///
+/// [P1-3 批10 审查] 与 `ffi::backup_restore` 同口径：恢复成功后重载运行时
+/// 变量内存（恢复体已清内存，此处按 DB 回填，免重启即生效）。
 #[no_mangle]
 pub unsafe extern "C" fn ffi_backup_restore(path: *const c_char) -> *mut c_char {
     to_ffi_response(catch_unwind(|| {
         let p = c_char_to_str(path)?;
-        crate::api::backup_api::backup_restore(p)
+        let result = crate::api::backup_api::backup_restore(p)?;
+        crate::api::variable_sink::reload_runtime_variables_after_restore();
+        Ok(result)
     }))
 }
 
 /// 从备份恢复（批17a：带可选备份密码；password 传 NULL 等价无密码）
+///
+/// [P1-3 批10 审查] 同 [`ffi_backup_restore`]：成功后重载运行时变量内存。
 #[no_mangle]
 pub unsafe extern "C" fn ffi_backup_restore_with_password(
     path: *const c_char,
@@ -1395,7 +1402,9 @@ pub unsafe extern "C" fn ffi_backup_restore_with_password(
         } else {
             Some(c_char_to_str(password)?)
         };
-        crate::api::backup_api::backup_restore_with_password(p, password)
+        let result = crate::api::backup_api::backup_restore_with_password(p, password)?;
+        crate::api::variable_sink::reload_runtime_variables_after_restore();
+        Ok(result)
     }))
 }
 

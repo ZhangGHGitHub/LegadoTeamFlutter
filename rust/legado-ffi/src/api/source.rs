@@ -143,11 +143,33 @@ fn now_millis() -> i64 {
 }
 
 /// 按 URL 删除书源
+///
+/// P2-6（批10 审查）：B6 之后五族运行时缓存（`v_*` / `loginHeader_*` /
+/// `userInfo_*` / `sourceVariable_*` / `infoMap_*`）是**真实持久数据**，删源
+/// 必须同步清掉，否则成为孤儿：随备份继续传播，且同 URL 重导入时**继承旧
+/// 登录态**。逐条对齐 server 侧 `source_write_api`（`deleteBookSources` /
+/// `saveJsSource` 换 URL）与上游 `SourceHelp.deleteBookSource`：
+///
+/// 1. 同一事务内删源行 + `CacheRepository::delete_source_variables`（五族
+///    DB 行）；任一步失败整事务回滚（不留半删态）；
+/// 2. 事务提交成功后才清内存五族（`clear_source_variables`）并回收图片动作
+///    引擎——顺序保证「DB 先删、内存后清」，清后懒加载回查恒 miss，不会把
+///    刚删的行读回内存。
 pub fn delete_source(source_url: &str) -> LegadoResult<()> {
     with_database(|db| {
-        let repo = BookSourceRepository::new(db.connection());
-        repo.delete(source_url)
+        let conn = db.connection();
+        legado_db::connection::in_transaction(conn, "删除书源", |conn| {
+            BookSourceRepository::new(conn).delete(source_url)?;
+            // 对齐 CacheDao.deleteSourceVariables 的 5 族（含 loginHeader_）
+            legado_db::CacheRepository::new(conn).delete_source_variables(source_url)?;
+            Ok(())
+        })
     })?;
+    // 事务成功后才清内存五族：此后持久键读路径回查 DB 恒 miss（P1-3 懒加载），
+    // 不会把已删行重新灌回内存
+    if let Err(e) = legado_js::host_api::variable_store::clear_source_variables() {
+        log::warn!("删除书源后清理内存运行时变量失败（重启后生效）: {e}");
+    }
     // [批21-A] 删除后回收该书的图片动作引擎
     legado_js::replace_rule_js::invalidate_image_action_engine(source_url);
     Ok(())

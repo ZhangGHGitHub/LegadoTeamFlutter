@@ -17,6 +17,15 @@
 //! 的语义就是进程内/流程内，落库会改变语义（且备份格式的运行时缓存段
 //! 只覆盖上述五族，见 `legado-ffi` 备份实现）。
 //!
+//! # 读路径：内存 → DB → 回填内存（P1-3，批10 审查）
+//!
+//! 五族持久键的读（[`get_flow_variable`] / [`get_persisted_variable`]）在内存
+//! miss 时**回查持久层**并回填内存——对齐上游 `CacheManager.get` 的三级读。
+//! 由此「清内存」天然等价于「下次读重载」：备份恢复写完 `caches` 行后调
+//! [`clear_source_variables`]，此后 `source.get()` / `source.getLoginHeader()`
+//! **无需重启**即可读到恢复值；删源链路先删 DB 行再清内存，回查恒 miss
+//! 不会复活。
+//!
 //! `legado-js` 自身不依赖 DB：下沉由宿主（FFI / server）在 DB 初始化点
 //! 注册一次（first-wins），未注册时纯内存，行为与改造前一致。
 
@@ -65,6 +74,13 @@ pub trait VariableSink: Send + Sync {
     fn remove(&self, key: &str);
     /// 加载全部持久化行（键 → 值），供启动回填
     fn load_all(&self) -> Vec<(String, String)>;
+    /// 读取单个键（过期行返回 `None`）
+    ///
+    /// 供持久键**懒加载**（[`get_flow_variable`] 内存 miss 时回查）：对齐上游
+    /// `CacheManager.get` 的「内存 → DB → 回填内存」三级读，使「清内存」天然
+    /// 等价于「下次读从 DB 重载」——备份恢复/删源清内存后无需重启即可读到
+    /// 权威值（P1-3）。失败返回 `None`（读侧宽容，不向 JS 传播）。
+    fn get(&self, key: &str) -> Option<String>;
 }
 
 /// 全局持久化下沉（first-wins：宿主在 DB 初始化点注册一次，重复调用被忽略）
@@ -101,6 +117,59 @@ fn sink_remove(key: &str) {
     if let Some(sink) = VARIABLE_SINK.get() {
         sink.remove(key);
     }
+}
+
+/// 持久层单键读（不持变量表锁）
+fn sink_get(key: &str) -> Option<String> {
+    if !is_persisted_key(key) {
+        return None;
+    }
+    VARIABLE_SINK.get().and_then(|sink| sink.get(key))
+}
+
+/// 持久键读：内存 → 持久层 → 回填内存（对齐上游 `CacheManager.get`）
+///
+/// P1-3 方案 2：持久五族键的读路径在内存 miss 时**回查持久层**并回填内存。
+/// 这使「清内存」天然等价于「下次读从 DB 重载」：
+/// - 备份恢复写入 `caches` 行后 `clear_source_variables()` 清内存 →
+///   下一次 `source.get()` / `getLoginHeader()` **无需重启**即可读到恢复值；
+/// - `clear_variables()`（整表清）同理；
+/// - 删源链路先删 DB 行再清内存 → 回查恒 miss，不会复活。
+///
+/// 锁序：先取变量表锁读内存并释放，再在**不持锁**状态下做 DB I/O，最后
+/// 重新取锁回填（与 [`set_variable`] 的「不持变量表锁跨库」约定一致）。
+pub fn get_persisted_variable(key: &str) -> Option<String> {
+    if let Ok(Some(v)) = get_variable(key) {
+        return Some(v);
+    }
+    let loaded = sink_get(key)?;
+    if let Ok(mut store) = GLOBAL_VARIABLES.lock() {
+        store.insert(key.to_string(), loaded.clone());
+    }
+    Some(loaded)
+}
+
+/// 仅写内存（不写穿持久层）
+///
+/// 供宿主把「已从 DB 读到的值」回填进内存而不触发重复落库（`source_login_cache`
+/// 的 DB 兜底读路径、备份恢复的显式重载等）。调用方须保证传入值即持久层权威值。
+pub fn prime_memory(key: &str, value: &str) -> Result<(), String> {
+    let mut store = GLOBAL_VARIABLES
+        .lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
+    store.insert(key.to_string(), value.to_string());
+    Ok(())
+}
+
+/// 仅删内存（不触碰持久层）
+///
+/// 与 [`remove_variable`] 的区别：本函数不删 DB 行。供宿主在「DB 行已由自身
+/// 删除」的路径上清内存（避免重复 DELETE），或模拟「清内存但保留持久行」。
+pub fn remove_memory_only(key: &str) -> Result<Option<String>, String> {
+    let mut store = GLOBAL_VARIABLES
+        .lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
+    Ok(store.remove(key))
 }
 
 /// 将持久化行回填进内存存储（宿主注册后调用一次，即进程启动点）
@@ -160,6 +229,13 @@ pub fn set_variable(key: &str, value: &str) -> Result<(), String> {
 }
 
 /// 删除变量（五族键同步删持久层）
+///
+/// P2-2（批10 审查）：删除**无条件下沉**，不以「内存是否命中」为门控。
+/// 此前 `if removed.is_some() { sink_remove(key) }`：一旦内存被清（备份恢复
+/// 路径的 `clear_source_variables`、整表 `clear_variables`），
+/// `source.removeLoginHeader()` 只清内存不删 DB 行 → 下次启动
+/// `backfill_from_sink` 把「已登出的登录头」复活。下沉侧 `remove` 本就是
+/// 幂等 `DELETE`，无条件调用零额外语义成本。
 pub fn remove_variable(key: &str) -> Result<Option<String>, String> {
     let removed = {
         let mut store = GLOBAL_VARIABLES
@@ -167,9 +243,7 @@ pub fn remove_variable(key: &str) -> Result<Option<String>, String> {
             .map_err(|e| format!("Lock error: {}", e))?;
         store.remove(key)
     };
-    if removed.is_some() {
-        sink_remove(key);
-    }
+    sink_remove(key);
     Ok(removed)
 }
 
@@ -206,6 +280,10 @@ pub fn clear_variables() -> Result<(), String> {
 /// **只清内存**（与上游一致）：DB 行由调用方的 `delete_source_variables`
 /// 负责；备份恢复链路也调用本函数「让引擎从 DB 重载」，此处删行会把刚恢复
 /// 的运行时缓存抹掉。
+///
+/// P1-3：配合持久键读路径的**内存 miss 回查**，本函数的语义就是「丢弃内存
+/// 快照，下一次读从 DB 重载」——恢复链路无需再等进程重启。删源链路因先删
+/// DB 行，清后回查恒 miss，不会复活已删数据。
 pub fn clear_source_variables() -> Result<(), String> {
     let mut store = GLOBAL_VARIABLES
         .lock()
@@ -350,8 +428,9 @@ pub fn put_flow_variable(key: &str, value: &str) -> Result<(), String> {
 /// 读会话变量（`java.get` / `__lgStoreGet` 桥 / `source.get` / 解析器 `@get` 兜底读者）
 ///
 /// 读取优先级：
-/// 0. **持久前缀键**（五族）→ 直接读裸键持久层（唯一权威来源，不查流程层；
-///    跨书/跨源按 `v_{sourceUrl}_` 等前缀天然隔离）。
+/// 0. **持久前缀键**（五族）→ 读裸键持久层（唯一权威来源，不查流程层；
+///    跨书/跨源按 `v_{sourceUrl}_` 等前缀天然隔离）。**内存 miss 时回查
+///    持久层并回填内存**（P1-3 方案 2：清内存 = 下次读重载）。
 /// 1. scope 已设置 → `lgflow::{scope}{key}`（本流程会话层）；
 /// 2. 未命中 → 裸键 `{key}`（历史裸键：`cache.*` 等，上游 CacheManager
 ///    语义，跨书存活——P1-1 的持久键修复同一机制）；
@@ -375,7 +454,9 @@ pub fn put_flow_variable(key: &str, value: &str) -> Result<(), String> {
 /// 锁失败/未命中一律返回 None（读者闭包不向 FFI 传播错误）。
 pub fn get_flow_variable(key: &str) -> Option<String> {
     if is_persisted_key(key) {
-        return get_variable(key).ok().flatten();
+        // P1-3 方案 2：内存 miss 时回查持久层并回填内存（「清内存」=
+        // 「下次读重载」）。未注册下沉时 `get_persisted_variable` 等价纯内存读。
+        return get_persisted_variable(key);
     }
     match current_flow_scope() {
         Some(scope) => {
@@ -932,13 +1013,7 @@ mod tests {
     fn test_variable_sink_roundtrip_survives_memory_clear() {
         let _lock = lock_variables();
         let _guard = StoreGuard::new();
-        let sink = Arc::new(MemorySink::default());
-        // 本二进制可能已有其他测试注册下沉（first-wins），此处只在未注册时
-        // 注册本测试的 sink；已注册时跳过断言（下沉实现由 FFI 层单测覆盖）。
-        let registered = set_variable_sink(sink.clone());
-        if !registered {
-            return;
-        }
+        let sink = shared_sink();
 
         let key = "v_https://sink.example.com/source_token";
         put_flow_variable(key, "tok").expect("写持久键");
@@ -964,10 +1039,7 @@ mod tests {
     fn test_variable_sink_cross_source_isolation() {
         let _lock = lock_variables();
         let _guard = StoreGuard::new();
-        let sink = Arc::new(MemorySink::default());
-        if !set_variable_sink(sink.clone()) {
-            return;
-        }
+        let sink = shared_sink();
         let a = "v_https://a.example.com_src_k";
         let b = "v_https://b.example.com_src_k";
         put_flow_variable(a, "from-a").expect("写源 A");
@@ -987,10 +1059,7 @@ mod tests {
     fn test_bare_put_uses_flow_scope_and_skips_sink() {
         let _lock = lock_variables();
         let _guard = StoreGuard::new();
-        let sink = Arc::new(MemorySink::default());
-        if !set_variable_sink(sink.clone()) {
-            return;
-        }
+        let sink = shared_sink();
         set_flow_scope("book-a").expect("设 scope");
         put_flow_variable("mode", "audio").expect("写会话变量");
         // 会话层可见
@@ -1022,10 +1091,83 @@ mod tests {
         clear_flow_scope().expect("清 scope");
     }
 
+    /// P1-3 方案 2：持久键内存 miss 时**懒加载**回查下沉并回填内存
+    ///
+    /// 场景等价于备份恢复：DB 行已改成新值 → `clear_source_variables()` 清内存
+    /// → 不调用 `backfill_from_sink()`，下一次读也必须拿到 DB 新值（不重启）。
+    #[test]
+    fn test_persisted_key_lazy_reloads_from_sink_after_memory_clear() {
+        let _lock = lock_variables();
+        let _guard = StoreGuard::new();
+        let sink = shared_sink();
+        let key = "loginHeader_https://lazy-reload.example.com";
+        put_flow_variable(key, "old-header").expect("写旧值");
+        assert_eq!(sink.get(key).as_deref(), Some("old-header"));
+
+        // 恢复：DB 行换新值，内存被清（不跑 backfill）
+        sink.upsert(key, "new-header");
+        clear_source_variables().expect("清内存五族");
+        assert_eq!(get_variable(key).unwrap(), None, "内存应已清空");
+
+        // 懒加载：读路径回查下沉
+        assert_eq!(
+            get_flow_variable(key),
+            Some("new-header".into()),
+            "内存 miss 时应回查持久层（恢复后免重启生效）"
+        );
+        // 回查后已回填内存（下一次读不再打 DB）
+        assert_eq!(
+            get_variable(key).unwrap(),
+            Some("new-header".into()),
+            "懒加载命中后应回填内存"
+        );
+
+        remove_variable(key).expect("清理");
+        assert_eq!(sink.get(key), None);
+        sink.clear();
+    }
+
+    /// P2-2：内存无该键时 `remove_variable` 仍必须删下沉行（否则重启复活）
+    #[test]
+    fn test_remove_variable_deletes_sink_row_when_memory_miss() {
+        let _lock = lock_variables();
+        let _guard = StoreGuard::new();
+        let sink = shared_sink();
+        let key = "loginHeader_https://p22-remove.example.com";
+        // 只有持久行（内存已被 clear_variables 清掉）
+        sink.upsert(key, "stale");
+        clear_variables().expect("清内存");
+        assert_eq!(get_variable(key).unwrap(), None);
+
+        remove_variable(key).expect("删键");
+        assert_eq!(sink.get(key), None, "内存 miss 时也必须删持久行");
+
+        // 重启回填不得复活
+        backfill_from_sink();
+        assert_eq!(get_flow_variable(key), None, "已删键不得被回填复活");
+        sink.clear();
+    }
+
     /// 测试用内存型下沉（模拟 `caches` 表五族行）
     #[derive(Default)]
     struct MemorySink {
         rows: Mutex<HashMap<String, String>>,
+    }
+
+    /// 进程内共享下沉（first-wins 注册一次，全部 sink 类测试共用同一实例）
+    ///
+    /// 直接 `set_variable_sink(Arc::new(...))` 时若本二进制已有他测试先注册，
+    /// 后续注册被忽略 → 测试若「未注册就 return」会**假绿**（断言根本没跑）。
+    /// 统一取共享实例可保证断言始终生效；各测试在末尾 `clear()` 清理，
+    /// 且全部经 [`lock_variables`] 串行。
+    fn shared_sink() -> Arc<MemorySink> {
+        static SINK: OnceLock<Arc<MemorySink>> = OnceLock::new();
+        SINK.get_or_init(|| {
+            let sink = Arc::new(MemorySink::default());
+            let _ = set_variable_sink(sink.clone());
+            sink
+        })
+        .clone()
     }
 
     impl MemorySink {
@@ -1054,6 +1196,10 @@ mod tests {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect()
+        }
+        fn get(&self, key: &str) -> Option<String> {
+            // 显式走固有方法（同名 trait 方法在作用域内，避免解析歧义）
+            MemorySink::get(self, key)
         }
     }
 }
