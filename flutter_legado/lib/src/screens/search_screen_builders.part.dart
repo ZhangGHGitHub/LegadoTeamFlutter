@@ -896,6 +896,12 @@ extension _SearchBuilders on _SearchScreenState {
       context: context,
       showDragHandle: true,
       useSafeArea: true,
+      // [设备验收缺陷 | 2026-11-17 批45b P2-1] 必须开 isScrollControlled：
+      // 默认（false）把弹层高度钳到 9/16 屏，且内层 Expanded 无法获得足够的
+      // 可用高度 → 小屏/大字号下固定块 + 底栏超屏，RenderFlex 溢出、列表被
+      // 压成 0 高、底栏被挤出布局盒（点按落到遮罩层直接关弹层且不提交）。
+      // 开滚动控制后由内容区自行滚动，底栏固定在可视区内。
+      isScrollControlled: true,
       builder: (ctx) => SizedBox(
         height: MediaQuery.of(ctx).size.height * 0.75,
         child: _SearchScopeSheet(
