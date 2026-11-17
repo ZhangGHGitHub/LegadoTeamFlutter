@@ -1,0 +1,222 @@
+Start begin: 11-18 01:40:23.343
+Start end:   11-18 01:40:25.213
+Now:         11-18 01:59:47.088
+Notification Clients:
+   pid    uid  name
+   682   1041  audioserver
+   836   1000  android.uid.system
+  5129  10057  io.legado.flutter_legado
+Global session refs:
+  session  cnt     pid    uid  name
+Hardware status: 0
+Vibrator infos(size=1):
+  - AudioVibratorInfo{id: 0, resonantFrequency: nan, qFactor: nan, maxAmplitude: nan}
+Bluetooth latency modes are enabled
+
+ ## BEGIN thread dump 
+
+Output thread 0x7754053c0760, name AudioOut_D, tid 810, type 0 (MIXER):
+  I/O handle: 13
+  Standby: no
+  Sample rate: 48000 Hz
+  HAL frame count: 512
+  HAL format: 0x1 (AUDIO_FORMAT_PCM_16_BIT)
+  HAL buffer size: 2048 bytes
+  Channel count: 2
+  Channel mask: 0x00000003 (front-left, front-right)
+  Processing format: 0x5 (AUDIO_FORMAT_PCM_FLOAT)
+  Processing frame size: 8 bytes
+  Pending config events: none
+  Output devices: 0x2 (AUDIO_DEVICE_OUT_SPEAKER)
+  Input device: 0 (AUDIO_DEVICE_NONE)
+  Audio source: 0 (AUDIO_SOURCE_DEFAULT)
+  Timestamp stats: n=0 disc=0 cold=0 nRdy=6488 err=2496 jitterMs(unavail) localSR(-nan, -nan) correctedJitterMs(unavail)
+  Timestamp corrected: no
+  Last write occurred (msecs): 32
+  Process time ms stats: ave=0.042965 std=0.0164202 min=0.03381 max=0.40679
+  Hal write jitter ms stats: ave=-0.0173404 std=2.61691 min=-5.47568 max=15.9787
+  Monopipe write pipe depth stats: ave=1410.36 std=510.269 min=512 max=3072
+  Master volume: 1.000000
+  Master mute: off
+  Mixer channel Mask: 0x3 (front-left, front-right)
+  Normal frame count: 1024
+  Total writes: 7595
+  Delayed writes: 0
+  Blocked in write: yes
+  Suspend count: 0
+  Fast track availMask=0xfe
+  Standby delay ns=3000000000
+  AudioStreamOut: 0x7751993ddbd0 flags 0x2 (AUDIO_OUTPUT_FLAG_PRIMARY)
+  Frames written: 7777280
+  Suspended frames: 0
+  PipeSink frames written: 7777280
+  Hal stream dump:
+      Signal power history (resolution: 1000.0 ms):
+       11-18 01:51:05.000: [  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1
+       11-18 01:51:15.005:    -21.1  -21.1  -37.3 ] sum(39.5)
+       11-18 01:51:53.878: [  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1
+       11-18 01:52:03.883:    -21.1  -21.1  -37.3 ] sum(39.5)
+       11-18 01:54:42.027: [  -21.6  -21.5  -21.5  -21.5  -21.5  -21.5  -21.5  -21.5  -21.5  -21.5
+       11-18 01:54:52.033:    -21.5  -21.5  -51.9 ] sum(39.1)
+       11-18 01:55:31.000: [  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1
+       11-18 01:55:41.005:    -21.1  -21.1  -37.3 ] sum(39.5)
+       11-18 01:55:49.612: [  -21.6  -21.5  -21.5  -21.5  -21.5  -21.5  -21.5  -21.5  -21.5  -21.5
+       11-18 01:55:59.617:    -21.5  -21.5  -21.9  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1
+       11-18 01:56:09.622:    -21.1  -21.1  -21.1  -21.1  -27.9 ] sum(42.3)
+       11-18 01:56:36.022: [  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1
+       11-18 01:56:46.028:    -21.1  -21.1  -37.3 ] sum(39.5)
+       11-18 01:57:26.598: [  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1
+       11-18 01:57:36.604:    -21.1  -21.1  -37.3 ] sum(39.5)
+       11-18 01:58:48.386: [  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1
+       11-18 01:58:58.392:    -21.1  -21.1  -37.3 ] sum(39.5)
+       11-18 01:59:32.648: [  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1
+       11-18 01:59:42.654:    -21.1  -21.1  -37.3 ] sum(39.5)
+      Signal power history (resolution: 50.0 ms):
+       11-18 01:59:35.209:    -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1
+       11-18 01:59:35.708:    -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1
+       11-18 01:59:36.207:    -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.0  -21.1  -21.1
+       11-18 01:59:36.706:    -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.0  -21.1
+       11-18 01:59:37.204:    -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1
+       11-18 01:59:37.703:    -21.1  -21.0  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.0  -21.1
+       11-18 01:59:38.202:    -21.1  -21.1  -21.0  -21.0  -21.1  -21.0  -21.2  -21.0  -21.1  -21.1
+       11-18 01:59:38.710:    -21.0  -21.0  -21.1  -21.2  -21.1  -21.1  -21.1  -21.0  -21.0  -21.1
+       11-18 01:59:39.209:    -21.0  -21.1  -21.1  -21.1  -21.0  -21.1  -21.0  -21.1  -21.1  -21.0
+       11-18 01:59:39.708:    -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.2  -21.0  -21.1
+       11-18 01:59:40.207:    -21.1  -21.1  -21.0  -21.1  -21.0  -21.0  -21.0  -21.1  -21.0  -21.1
+       11-18 01:59:40.706:    -21.1  -21.0  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1
+       11-18 01:59:41.204:    -21.0  -21.1  -21.0  -21.1  -21.1  -21.2  -21.1  -21.1  -21.0  -21.0
+       11-18 01:59:41.703:    -21.0  -21.0  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1
+       11-18 01:59:42.202:    -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1
+       11-18 01:59:42.710:    -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.0  -21.1
+       11-18 01:59:43.209:    -21.1  -21.1  -21.1  -21.0  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1
+       11-18 01:59:43.708:    -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1
+       11-18 01:59:44.207:    -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.1  -21.0  -24.3 ] sum(38.5)
+
+    -16.6 -|
+    -17.6 -|
+    -18.6 -|
+    -19.6 -|
+    -20.6 -| ***************************************** *********************** ****** **************** *****  *******************  ****** *************  ************ ** ********************************
+    -21.6 -|*                                         *                       *      *                *     **                   **      *             **            *  *
+    -22.6 -|
+    -23.6 -|
+    -24.6 -|                                                                                                                                                                                             *
+    -25.6 -|
+    -26.6 -|
+    -27.6 -|
+    -28.6 -|
+    -29.6 -|
+           |______________________________________________________________________________________________________________________________________________________________________________________________
+
+
+  Thread throttle time (msecs): 0
+  AudioMixer tracks: 
+  Master mono: off
+  Master balance: 0.000000 (0.000000)
+  FastMixer thread 0x77540534a3c0 tid=809  FastMixer command=MIX_WRITE writeSequence=30575 framesWritten=7826944
+            numTracks=1 writeErrors=0 underruns=3235 overruns=3254
+            sampleRate=48000 frameCount=512 measuredWarmup=0.36 ms, warmupCycles=10
+            mixPeriod=10.67 ms latency=0.00 ms
+  FastMixer Timestamp stats: n=0 disc=0 cold=0 nRdy=0 err=15187 jitterMs(unavail) localSR(-nan, -nan) correctedJitterMs(unavail)
+  Simple moving statistics over last 14.5 seconds:
+    wall clock time in ms per mix cycle:
+      mean=10.68 min=0.03 max=66.08 stddev=12.50
+    raw CPU load in us per mix cycle:
+      mean=60 min=0 max=459 stddev=35
+  Distribution of mix cycle times in ms for the tails (> ~3 stddev outliers):
+    left tail: mean=0.03 min=0.03 max=0.03 stddev=0.00
+    right tail: mean=66.08 min=66.08 max=66.08 stddev=0.00
+  Fast tracks: sMaxFastTracks=8 activeMask=0x1
+  Index Active Full Partial Empty  Recent Ready    Written
+      0    yes  852       0     0    full  1536    7775744
+      1     no    0       0     0    full     0          0
+      2     no    0       0     0    full     0          0
+      3     no    0       0     0    full     0          0
+      4     no    0       0     0    full     0          0
+      5     no    0       0     0    full     0          0
+      6     no    0       0     0    full     0          0
+      7     no    0       0     0    full     0          0
+Bluetooth latency modes are not enabled
+HAL does not support Bluetooth latency modes
+Supported latency modes: { }
+  Stream volumes in dB: 0:-inf, 1:-inf, 2:-inf, 3:0, 4:-inf, 5:-inf, 6:-inf, 7:-inf, 8:-inf, 9:0, 10:-inf, 11:-inf, 12:0, 13:0, 14:0
+  Normal mixer raw underrun counters: partial=0 empty=0
+  0 Tracks
+  0 Effect Chains
+  Local log:
+                                                         Type     Id Active Client(pid/uid) Session Port Id S  Flags   Format Chn mask  SRate ST Usg CT  G db  L dB  R dB  VS dB  PortVol dB  PortMuted   Server FrmCnt  FrmRdy F Underruns  Flushed BitPerfect InternalMute   Latency
+   11-18 01:40:23.746 CFG_EVENT_CREATE_AUDIO_PATCH: old device  (Empty device types) new device 0x2 (AUDIO_DEVICE_OUT_SPEAKER)
+   11-18 01:50:18.069 AT::add       (0x7751a93cd640)          55     no    3635/  10057      33       8 A  0x000 00000001 00000001  44100  3   1  3  -inf     0     0     0          nan      false 00000000  11328    2207 f         0        0      false        false       new
+   11-18 01:50:30.278 AT::remove    (0x7751a93cd640)          55     no    3635/  10057      33       8 S  0x600 00000001 00000001  44100  3   1  3     0     0     0     0          nan      false 00081840  11328       0 f         0        0      false        false   unavail
+   11-18 01:50:30.292 removeTrack_l (0x7751a93cd640)          55     no    3635/  10057      33       8 T  0x600 00000001 00000001  44100  3   1  3     0     0     0     0          nan      false 00081840  11328       0 f         0        0      false        false   unavail
+   11-18 01:50:33.195 threadLoop_standby: framesWritten:721920  suspendedFrames:0  monoPipeWritten:721920  monoPipeLeft:2048
+   11-18 01:50:33.195 threadLoop_standby: BOOTTIME offset 0: ExtendedTimestamp: ([0]  position: 0  time: -1), ([1]  position: 721920  time: 602165843504), ([2]  position: 0  time: -1), ([3]  position: 0  time: -1), ([4]  position: 0  time: -1)
+   11-18 01:51:04.899 AT::add       (0x7751a93cd640)          56     no    3635/  10057      49       9 A  0x000 00000001 00000001  44100  3   1  3  -inf     0     0     0            0      false 00000000  11328    2048 f         0        0      false        false       new
+   11-18 01:51:17.060 AT::remove    (0x7751a93cd640)          56     no    3635/  10057      49       9 S  0x600 00000001 00000001  44100  3   1  3     0     0     0     0            0      false 00081800  11328       0 f         0        0      false        false   unavail
+   11-18 01:51:17.061 removeTrack_l (0x7751a93cd640)          56     no    3635/  10057      49       9 T  0x600 00000001 00000001  44100  3   1  3     0     0     0     0            0      false 00081800  11328       0 f         0        0      false        false   unavail
+   11-18 01:51:19.980 threadLoop_standby: framesWritten:1443840  suspendedFrames:0  monoPipeWritten:1443840  monoPipeLeft:1536
+   11-18 01:51:19.980 threadLoop_standby: BOOTTIME offset 0: ExtendedTimestamp: ([0]  position: 0  time: -1), ([1]  position: 1443840  time: 648945809763), ([2]  position: 0  time: -1), ([3]  position: 0  time: -1), ([4]  position: 0  time: -1)
+   11-18 01:51:53.787 AT::add       (0x7751a93ce320)          57     no    3635/  10057      65      10 A  0x000 00000001 00000001  44100  3   1  3  -inf     0     0     0            0      false 00000000  11328    2048 f         0        0      false        false       new
+   11-18 01:52:05.933 AT::remove    (0x7751a93ce320)          57     no    3635/  10057      65      10 S  0x600 00000001 00000001  44100  3   1  3     0     0     0     0            0      false 00081800  11328       0 f         0        0      false        false   unavail
+   11-18 01:52:05.954 removeTrack_l (0x7751a93ce320)          57     no    3635/  10057      65      10 T  0x600 00000001 00000001  44100  3   1  3     0     0     0     0            0      false 00081800  11328       0 f         0        0      false        false   unavail
+   11-18 01:52:08.862 threadLoop_standby: framesWritten:2165760  suspendedFrames:0  monoPipeWritten:2165760  monoPipeLeft:1024
+   11-18 01:52:08.862 threadLoop_standby: BOOTTIME offset 0: ExtendedTimestamp: ([0]  position: 0  time: -1), ([1]  position: 2165760  time: 697819131449), ([2]  position: 0  time: -1), ([3]  position: 0  time: -1), ([4]  position: 0  time: -1)
+   11-18 01:54:41.937 AT::add       (0x7751a93ce320)          58     no    3635/  10057      89      11 A  0x000 00000001 00000001  44100  3   1  3  -inf     0     0     0            0      false 00000000  11328    2207 f         0        0      false        false       new
+   11-18 01:54:54.076 AT::remove    (0x7751a93ce320)          58     no    3635/  10057      89      11 S  0x600 00000001 00000001  44100  3   1  3     0     0     0     0            0      false 00081840  11328       0 f         0        0      false        false   unavail
+   11-18 01:54:54.100 removeTrack_l (0x7751a93ce320)          58     no    3635/  10057      89      11 T  0x600 00000001 00000001  44100  3   1  3     0     0     0     0            0      false 00081840  11328       0 f         0        0      false        false   unavail
+   11-18 01:54:56.994 threadLoop_standby: framesWritten:2887680  suspendedFrames:0  monoPipeWritten:2887680  monoPipeLeft:1536
+   11-18 01:54:56.994 threadLoop_standby: BOOTTIME offset 0: ExtendedTimestamp: ([0]  position: 0  time: -1), ([1]  position: 2887680  time: 865965187033), ([2]  position: 0  time: -1), ([3]  position: 0  time: -1), ([4]  position: 0  time: -1)
+   11-18 01:55:30.908 AT::add       (0x7751a93ce320)          59     no    3635/  10057     105      12 A  0x000 00000001 00000001  44100  3   1  3  -inf     0     0     0            0      false 00000000  11328    2048 f         0        0      false        false       new
+   11-18 01:55:43.057 AT::remove    (0x7751a93ce320)          59     no    3635/  10057     105      12 S  0x600 00000001 00000001  44100  3   1  3     0     0     0     0            0      false 00081800  11328       0 f         0        0      false        false   unavail
+   11-18 01:55:43.069 removeTrack_l (0x7751a93ce320)          59     no    3635/  10057     105      12 T  0x600 00000001 00000001  44100  3   1  3     0     0     0     0            0      false 00081800  11328       0 f         0        0      false        false   unavail
+   11-18 01:55:45.982 threadLoop_standby: framesWritten:3609600  suspendedFrames:0  monoPipeWritten:3609600  monoPipeLeft:1024
+   11-18 01:55:45.983 threadLoop_standby: BOOTTIME offset 0: ExtendedTimestamp: ([0]  position: 0  time: -1), ([1]  position: 3609600  time: 914942927754), ([2]  position: 0  time: -1), ([3]  position: 0  time: -1), ([4]  position: 0  time: -1)
+   11-18 01:55:49.523 AT::add       (0x7751a93ce320)          60     no    3635/  10057     121      13 A  0x000 00000001 00000001  44100  3   1  3  -inf     0     0     0            0      false 00000000  11328    2207 f         0        0      false        false       new
+   11-18 01:56:01.661 AT::remove    (0x7751a93ce320)          60     no    3635/  10057     121      13 S  0x600 00000001 00000001  44100  3   1  3     0     0     0     0            0      false 00081840  11328       0 f         0        0      false        false   unavail
+   11-18 01:56:01.682 removeTrack_l (0x7751a93ce320)          60     no    3635/  10057     121      13 T  0x600 00000001 00000001  44100  3   1  3     0     0     0     0            0      false 00081840  11328       0 f         0        0      false        false   unavail
+   11-18 01:56:01.716 AT::add       (0x7751a93ce320)          61     no    3635/  10057     129      14 A  0x000 00000001 00000001  44100  3   1  3  -inf     0     0     0            0      false 00000000  11328    2048 f         0        0      false        false       new
+   11-18 01:56:13.841 AT::remove    (0x7751a93ce320)          61     no    3635/  10057     129      14 S  0x600 00000001 00000001  44100  3   1  3     0     0     0     0            0      false 00081800  11328       0 f         0        0      false        false   unavail
+   11-18 01:56:13.854 removeTrack_l (0x7751a93ce320)          61     no    3635/  10057     129      14 T  0x600 00000001 00000001  44100  3   1  3     0     0     0     0            0      false 00081800  11328       0 f         0        0      false        false   unavail
+   11-18 01:56:16.756 threadLoop_standby: framesWritten:4916224  suspendedFrames:0  monoPipeWritten:4916224  monoPipeLeft:2048
+   11-18 01:56:16.756 threadLoop_standby: BOOTTIME offset 0: ExtendedTimestamp: ([0]  position: 0  time: -1), ([1]  position: 4916224  time: 945726813513), ([2]  position: 0  time: -1), ([3]  position: 0  time: -1), ([4]  position: 0  time: -1)
+   11-18 01:56:35.923 AT::add       (0x7751a93ce320)          62     no    3635/  10057     145      15 A  0x000 00000001 00000001  44100  3   1  3  -inf     0     0     0            0      false 00000000  11328    2048 f         0        0      false        false       new
+   11-18 01:56:48.082 AT::remove    (0x7751a93ce320)          62     no    3635/  10057     145      15 S  0x600 00000001 00000001  44100  3   1  3     0     0     0     0            0      false 00081800  11328       0 f         0        0      false        false   unavail
+   11-18 01:56:48.083 removeTrack_l (0x7751a93ce320)          62     no    3635/  10057     145      15 T  0x600 00000001 00000001  44100  3   1  3     0     0     0     0            0      false 00081800  11328       0 f         0        0      false        false   unavail
+   11-18 01:56:51.005 threadLoop_standby: framesWritten:5638144  suspendedFrames:0  monoPipeWritten:5638144  monoPipeLeft:1536
+   11-18 01:56:51.005 threadLoop_standby: BOOTTIME offset 0: ExtendedTimestamp: ([0]  position: 0  time: -1), ([1]  position: 5638144  time: 979970672639), ([2]  position: 0  time: -1), ([3]  position: 0  time: -1), ([4]  position: 0  time: -1)
+   11-18 01:57:26.509 AT::add       (0x7751a93cd640)          63     no    3635/  10057     161      16 A  0x000 00000001 00000001  44100  3   1  3  -inf     0     0     0            0      false 00000000  11328    2048 f         0        0      false        false       new
+   11-18 01:57:38.655 AT::remove    (0x7751a93cd640)          63     no    3635/  10057     161      16 S  0x600 00000001 00000001  44100  3   1  3     0     0     0     0            0      false 00081800  11328       0 f         0        0      false        false   unavail
+   11-18 01:57:38.668 removeTrack_l (0x7751a93cd640)          63     no    3635/  10057     161      16 T  0x600 00000001 00000001  44100  3   1  3     0     0     0     0            0      false 00081800  11328       0 f         0        0      false        false   unavail
+   11-18 01:57:41.581 threadLoop_standby: framesWritten:6360064  suspendedFrames:0  monoPipeWritten:6360064  monoPipeLeft:1024
+   11-18 01:57:41.581 threadLoop_standby: BOOTTIME offset 0: ExtendedTimestamp: ([0]  position: 0  time: -1), ([1]  position: 6360064  time: 1030541138116), ([2]  position: 0  time: -1), ([3]  position: 0  time: -1), ([4]  position: 0  time: -1)
+   11-18 01:58:48.291 AT::add       (0x7751a93cd640)          64     no    5129/  10057     177      17 A  0x000 00000001 00000001  44100  3   1  3  -inf     0     0     0            0      false 00000000  11328    1024 f         0        0      false        false       new
+   11-18 01:59:00.435 AT::remove    (0x7751a93cd640)          64     no    5129/  10057     177      17 S  0x600 00000001 00000001  44100  3   1  3     0     0     0     0            0      false 00081800  11328       0 f         0        0      false        false   unavail
+   11-18 01:59:00.447 removeTrack_l (0x7751a93cd640)          64     no    5129/  10057     177      17 T  0x600 00000001 00000001  44100  3   1  3     0     0     0     0            0      false 00081800  11328       0 f         0        0      false        false   unavail
+   11-18 01:59:03.352 threadLoop_standby: framesWritten:7081984  suspendedFrames:0  monoPipeWritten:7081984  monoPipeLeft:1536
+   11-18 01:59:03.352 threadLoop_standby: BOOTTIME offset 0: ExtendedTimestamp: ([0]  position: 0  time: -1), ([1]  position: 7081984  time: 1112323399400), ([2]  position: 0  time: -1), ([3]  position: 0  time: -1), ([4]  position: 0  time: -1)
+   11-18 01:59:32.559 AT::add       (0x7751a93cd640)          65     no    5129/  10057     193      18 A  0x000 00000001 00000001  44100  3   1  3  -inf     0     0     0            0      false 00000000  11328    4096 f         0        0      false        false       new
+   11-18 01:59:44.704 AT::remove    (0x7751a93cd640)          65     no    5129/  10057     193      18 S  0x600 00000001 00000001  44100  3   1  3     0     0     0     0            0      false 00081800  11328       0 f         0        0      false        false   unavail
+   11-18 01:59:44.713 removeTrack_l (0x7751a93cd640)          65     no    5129/  10057     193      18 T  0x600 00000001 00000001  44100  3   1  3     0     0     0     0            0      false 00081800  11328       0 f         0        0      false        false   unavail
+
+ ## BEGIN setParameters dump 
+
+  Rejected setParameters:
+
+  App setParameters:
+
+  System setParameters:
+    11-18 01:40:25.571 UID  1000, 1 KVP received: BT_SCO=off
+    11-18 01:40:25.571 UID  1000, 1 KVP received: A2dpSuspended=false
+    11-18 01:40:25.571 UID  1000, 1 KVP received: LeAudioSuspended=false
+    11-18 01:40:25.721 UID  1000, 1 KVP received: screen_state=on
+    11-18 01:40:25.721 UID  1000, 1 KVP received: screen_state=on
+
+ ## BEGIN misc af dump 
+
+Patches:
+  Patch 12: No software bridge (thread 0x0 => thread 0x0) thread 0x775405404fe8 num sinks (1) first device type 00000002
+
+Device Effects:
+
+Sound Dose:
+CSD is disabled

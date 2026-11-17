@@ -1,0 +1,14 @@
+{"ts": 1794937917.828, "kind": "start", "port": 8099, "gate": "referer", "public_host": "192.168.100.52", "media_dir": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\evidence\\batch47\\mock_media"}
+{"ts": 1794937921.897, "kind": "request", "path": "/media/hls_gated/seg_000.ts", "range": null, "ua": "curl/8.19.0", "referer": null}
+{"ts": 1794937921.898, "kind": "gated_denied", "path": "/media/hls_gated/seg_000.ts", "referer": null, "ua": "curl/8.19.0"}
+{"ts": 1794937921.915, "kind": "request", "path": "/media/hls_gated/seg_000.ts", "range": null, "ua": "curl/8.19.0", "referer": "http://192.168.100.52:8099/ref-ok"}
+{"ts": 1794937921.932, "kind": "request", "path": "/media/hls_gated/playlist.m3u8", "range": null, "ua": "curl/8.19.0", "referer": null}
+{"ts": 1794937924.987, "kind": "request", "path": "/media/hls_gated/playlist.m3u8", "range": null, "ua": "ExoPlayer", "referer": null}
+{"ts": 1794937924.989, "kind": "request", "path": "/media/hls_gated/seg_000.ts", "range": null, "ua": "ExoPlayer", "referer": null}
+{"ts": 1794937924.99, "kind": "gated_denied", "path": "/media/hls_gated/seg_000.ts", "referer": null, "ua": "ExoPlayer"}
+{"ts": 1794937925.034, "kind": "request", "path": "/media/hls_gated/seg_000.ts", "range": null, "ua": "ExoPlayer", "referer": null}
+{"ts": 1794937925.034, "kind": "gated_denied", "path": "/media/hls_gated/seg_000.ts", "referer": null, "ua": "ExoPlayer"}
+{"ts": 1794937926.079, "kind": "request", "path": "/media/hls_gated/seg_000.ts", "range": null, "ua": "ExoPlayer", "referer": null}
+{"ts": 1794937926.079, "kind": "gated_denied", "path": "/media/hls_gated/seg_000.ts", "referer": null, "ua": "ExoPlayer"}
+{"ts": 1794937928.081, "kind": "request", "path": "/media/hls_gated/seg_000.ts", "range": null, "ua": "ExoPlayer", "referer": null}
+{"ts": 1794937928.081, "kind": "gated_denied", "path": "/media/hls_gated/seg_000.ts", "referer": null, "ua": "ExoPlayer"}

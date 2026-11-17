@@ -1,0 +1,17 @@
+{"ts": 1794937843.777, "kind": "start", "port": 8099, "gate": "none", "public_host": "192.168.100.52", "media_dir": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\evidence\\batch47\\mock_media"}
+{"ts": 1794937848.697, "kind": "request", "path": "/media/hls/playlist.m3u8?t=123", "range": null, "ua": "curl/8.19.0", "referer": null}
+{"ts": 1794937848.716, "kind": "request", "path": "/media/hls/seg_000.ts", "range": null, "ua": "curl/8.19.0", "referer": null}
+{"ts": 1794937848.733, "kind": "request", "path": "/media/hlsnoext", "range": null, "ua": "curl/8.19.0", "referer": null}
+{"ts": 1794937852.393, "kind": "request", "path": "/media/hls/playlist.m3u8?t=123&sign=abc", "range": null, "ua": "ExoPlayer", "referer": null}
+{"ts": 1794937852.394, "kind": "request", "path": "/media/hls/seg_000.ts", "range": null, "ua": "ExoPlayer", "referer": null}
+{"ts": 1794937852.418, "kind": "request", "path": "/media/hls/seg_001.ts", "range": null, "ua": "ExoPlayer", "referer": null}
+{"ts": 1794937852.422, "kind": "request", "path": "/media/hls/seg_002.ts", "range": null, "ua": "ExoPlayer", "referer": null}
+{"ts": 1794937852.426, "kind": "request", "path": "/media/hls/seg_003.ts", "range": null, "ua": "ExoPlayer", "referer": null}
+{"ts": 1794937864.579, "kind": "request", "path": "/chap/2", "range": null, "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "referer": null}
+{"ts": 1794937864.589, "kind": "request", "path": "/media/hlsnoext", "range": null, "ua": "ExoPlayer", "referer": null}
+{"ts": 1794937901.277, "kind": "request", "path": "/chap/3", "range": null, "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "referer": null}
+{"ts": 1794937901.284, "kind": "request", "path": "/media/hls_gated/playlist.m3u8", "range": null, "ua": "ExoPlayer", "referer": null}
+{"ts": 1794937901.287, "kind": "request", "path": "/media/hls_gated/seg_000.ts", "range": null, "ua": "ExoPlayer", "referer": null}
+{"ts": 1794937901.295, "kind": "request", "path": "/media/hls_gated/seg_001.ts", "range": null, "ua": "ExoPlayer", "referer": null}
+{"ts": 1794937901.306, "kind": "request", "path": "/media/hls_gated/seg_002.ts", "range": null, "ua": "ExoPlayer", "referer": null}
+{"ts": 1794937901.31, "kind": "request", "path": "/media/hls_gated/seg_003.ts", "range": null, "ua": "ExoPlayer", "referer": null}

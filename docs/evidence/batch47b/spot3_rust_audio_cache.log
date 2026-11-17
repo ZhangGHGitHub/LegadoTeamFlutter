@@ -1,0 +1,32 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.43s
+     Running unittests src\lib.rs (target\debug\deps\legado_ffi-262e2025d0c67765.exe)
+
+running 25 tests
+test api::audio_cache_api::tests::extension_detection_and_rejections ... ok
+test api::audio_cache_api::tests::file_name_and_metadata_roundtrip ... ok
+test api::audio_cache_api::tests::book_isolation ... ok
+test api::audio_cache_api::tests::key_if_blank_and_sensitivity ... ok
+test api::audio_cache_api::tests::key_vectors ... ok
+test api::audio_cache_api::tests::download_validation_errors ... ok
+test api::audio_cache_api::tests::cleanup_stale_threshold ... ok
+test api::audio_cache_api::tests::parse_five_segment_names ... ok
+test api::audio_cache_api::tests::cancel_aborts_inflight_download ... ok
+test api::audio_cache_api::tests::safe_title_normalization ... ok
+test api::audio_cache_api::tests::clear_book_all_and_idempotent ... ok
+test api::audio_cache_api::tests::download_strips_proxy_header_from_source_headers ... ok
+test api::audio_cache_api::tests::clear_chapter_waits_inflight_download_and_wins ... ok
+test api::audio_cache_api::tests::clear_chapter_isolated_and_idempotent ... ok
+test api::audio_cache_api::tests::download_installs_and_cleans_old_versions ... ok
+test api::audio_cache_api::tests::clear_chapter_removes_orphan_marker_with_zero_count ... ok
+test api::audio_cache_api::tests::download_idempotent_already_cached ... ok
+test api::audio_cache_api::tests::failures_degrade_without_panic ... ok
+test api::audio_cache_api::tests::download_failures_leave_no_residue ... ok
+test api::audio_cache_api::tests::concurrent_same_key_downloads_are_serialized ... ok
+test api::audio_cache_api::tests::get_file_returns_committed_path_or_none ... ok
+test api::audio_cache_api::tests::injected_dir_used ... ok
+test api::audio_cache_api::tests::latest_committed_prefers_newest ... ok
+test api::audio_cache_api::tests::list_sorted_unique_committed ... ok
+test api::audio_cache_api::tests::query_hit_requires_marker_and_nonzero_size ... ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 923 filtered out; finished in 3.42s
+

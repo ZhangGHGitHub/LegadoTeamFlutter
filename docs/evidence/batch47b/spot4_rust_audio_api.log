@@ -1,0 +1,20 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.34s
+     Running unittests src\lib.rs (target\debug\deps\legado_ffi-b960665ffc794578.exe)
+
+running 13 tests
+test api::audio_api::tests::test_lyric_from_variable ... ok
+test api::audio_api::tests::test_get_audio_chapter_media_volume_short_circuit ... ok
+test api::audio_api::tests::test_get_audio_chapter_media_no_origin_falls_back_to_chapter_url ... ok
+test api::audio_api::tests::test_audio_chapter_media_merges_same_site_login_header ... ok
+test api::audio_api::tests::test_get_audio_chapter_media_cache_hit ... ok
+test api::audio_api::tests::test_audio_progress ... ok
+test api::audio_api::tests::test_get_audio_chapter_media_large_lyric_file_fallback ... ok
+test api::audio_api::tests::test_get_audio_chapter_media_missing_chapter ... ok
+test api::audio_api::tests::test_audio_chapter_media_omits_login_header_for_cross_site_url ... ok
+test api::audio_api::tests::test_audio_chapter_media_omits_headers_key_when_absent ... ok
+test api::audio_api::tests::test_audio_chapter_media_strips_proxy_and_cookie_jar_marker ... ok
+test api::audio_api::tests::test_audio_chapter_media_no_source_has_no_headers ... ok
+test api::audio_api::tests::test_audio_chapter_media_returns_source_headers ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 810 filtered out; finished in 0.05s
+

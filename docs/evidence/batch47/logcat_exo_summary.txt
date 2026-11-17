@@ -1,0 +1,37 @@
+11-18 01:54:41.883  3635  3635 I ExoPlayerImpl: Release c8f0ae1 [AndroidXMedia3/1.9.2] [r9q, SM-G9900, Samsung, 35] [media3.common, media3.exoplayer, media3.decoder, media3.datasource, media3.extractor, media3.exoplayer.hls]
+11-18 01:54:41.907  3635  3635 I ExoPlayerImpl: Init 27c94b2 [AndroidXMedia3/1.9.2] [r9q, SM-G9900, Samsung, 35]
+11-18 01:54:54.080  3635  3635 I ExoPlayerImpl: Release 27c94b2 [AndroidXMedia3/1.9.2] [r9q, SM-G9900, Samsung, 35] [media3.common, media3.exoplayer, media3.decoder, media3.datasource, media3.extractor, media3.exoplayer.hls]
+11-18 01:54:54.084  3635  3635 I ExoPlayerImpl: Init 72c2eae [AndroidXMedia3/1.9.2] [r9q, SM-G9900, Samsung, 35]
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal: Playback error
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:   androidx.media3.exoplayer.ExoPlaybackException: Source error
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at androidx.media3.exoplayer.ExoPlayerImplInternal.handleIoException(ExoPlayerImplInternal.java:941)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at androidx.media3.exoplayer.ExoPlayerImplInternal.handleMessage(ExoPlayerImplInternal.java:913)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at android.os.Handler.dispatchMessage(Handler.java:105)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at android.os.Looper.loopOnce(Looper.java:232)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at android.os.Looper.loop(Looper.java:317)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at android.os.HandlerThread.run(HandlerThread.java:85)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:   Caused by: androidx.media3.datasource.HttpDataSource$HttpDataSourceException: java.net.ConnectException: Failed to connect to /192.168.100.52:8099
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at androidx.media3.datasource.DefaultHttpDataSource.open(DefaultHttpDataSource.java:372)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at androidx.media3.datasource.DefaultDataSource.open(DefaultDataSource.java:277)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at androidx.media3.datasource.StatsDataSource.open(StatsDataSource.java:89)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at androidx.media3.datasource.DataSourceInputStream.checkOpened(DataSourceInputStream.java:102)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at androidx.media3.datasource.DataSourceInputStream.open(DataSourceInputStream.java:65)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at androidx.media3.exoplayer.upstream.ParsingLoadable.load(ParsingLoadable.java:183)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at androidx.media3.exoplayer.upstream.Loader$LoadTask.run(Loader.java:453)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1156)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:651)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at java.lang.Thread.run(Thread.java:1119)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:   Caused by: java.net.ConnectException: Failed to connect to /192.168.100.52:8099
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at com.android.okhttp.internal.io.RealConnection.connectSocket(RealConnection.java:147)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at com.android.okhttp.internal.io.RealConnection.connect(RealConnection.java:116)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at com.android.okhttp.internal.http.StreamAllocation.findConnection(StreamAllocation.java:186)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at com.android.okhttp.internal.http.StreamAllocation.findHealthyConnection(StreamAllocation.java:128)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at com.android.okhttp.internal.http.StreamAllocation.newStream(StreamAllocation.java:97)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at com.android.okhttp.internal.http.HttpEngine.connect(HttpEngine.java:289)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at com.android.okhttp.internal.http.HttpEngine.sendRequest(HttpEngine.java:232)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at com.android.okhttp.internal.huc.HttpURLConnectionImpl.execute(HttpURLConnectionImpl.java:465)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at com.android.okhttp.internal.huc.HttpURLConnectionImpl.connect(HttpURLConnectionImpl.java:131)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at androidx.media3.datasource.DefaultHttpDataSource.makeConnection(DefaultHttpDataSource.java:647)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at androidx.media3.datasource.DefaultHttpDataSource.makeConnection(DefaultHttpDataSource.java:544)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       at androidx.media3.datasource.DefaultHttpDataSource.open(DefaultHttpDataSource.java:366)
+11-18 01:54:57.097  3635  4537 E ExoPlayerImplInternal:       ... 9 more
