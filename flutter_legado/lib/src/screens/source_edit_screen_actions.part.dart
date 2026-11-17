@@ -126,6 +126,14 @@ extension _SourceEditActions on _SourceEditScreenState {
   /// 规则键由保存层兜底——`RustApi.updateBookSource` 以读取时的原始 JSON 为底
   /// 做原 JSON 补丁（`utils/source_json_patch.dart`），因此这里重建规则对象
   /// 不会丢 `ruleContent.contentBatch` / `maxBatchSize` 等原版字段。
+  ///
+  /// [审查 P1-4] **非表单标量字段必须透传**：`customOrder`/`respondTime`/
+  /// `weight`/`mainJs`/`exploreScreen` 均无编辑入口，若在此按模型默认值
+  /// （0 / 180000 / 0 / null / null）重建，保存一次就把库内真实值抹掉：
+  /// - `customOrder=0` → 源跳到列表最前，用户自定义排序丢失；
+  /// - `respondTime=180000` → 覆盖 B13 刚写入的真实校验耗时；
+  /// - `mainJs=null` → JS 源的主脚本被清空；
+  /// - `weight=0` → 搜索权重归零。
   BookSource _buildSource() {
     // 文本（trim 后）
     String t(String key) => _ctrl(key).text.trim();
@@ -147,6 +155,12 @@ extension _SourceEditActions on _SourceEditScreenState {
       enabledCookieJar: _cookieJar,
       eventListener: _eventListener,
       customButton: _customButton,
+      // [审查 P1-4] 无编辑入口的标量字段：原样透传
+      customOrder: orig?.customOrder ?? 0,
+      respondTime: orig?.respondTime ?? 180000,
+      weight: orig?.weight ?? 0,
+      mainJs: orig?.mainJs,
+      exploreScreen: orig?.exploreScreen,
       header: n('header'),
       loginUrl: n('loginUrl'),
       loginUi: n('loginUi'),

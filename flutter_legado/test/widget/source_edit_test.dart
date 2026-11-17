@@ -195,5 +195,51 @@ void main() {
       );
       expect(reviewCheck.value, isTrue);
     });
+
+    /// [审查 P1-4] 编辑保存不得抹掉无表单入口的字段
+    ///
+    /// `customOrder`/`respondTime`/`weight`/`mainJs`/`exploreScreen` 在普通
+    /// 编辑页没有输入控件；`_buildSource()` 若按模型默认值重建，保存一次即
+    /// 写回 `customOrder=0`（排序丢失）、`respondTime=180000`（覆盖 B13 实测
+    /// 耗时）、`mainJs=null`（JS 源主脚本被清空）。
+    testWidgets('编辑保存透传 customOrder/respondTime/weight/mainJs/exploreScreen',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(800, 8000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      const source = BookSource(
+        bookSourceUrl: 'https://keep.com',
+        bookSourceName: '待编辑源',
+        customOrder: 12,
+        respondTime: 456,
+        weight: 25,
+        mainJs: 'var keep = true;',
+        exploreScreen: '<div>keep</div>',
+      );
+      when(() => mockApi.getBookSources()).thenAnswer((_) async => [source]);
+      when(
+        () => mockApi.updateBookSource(any()),
+      ).thenAnswer((_) async {});
+      await container.read(sourceNotifierProvider.notifier).loadSources();
+
+      await pumpEdit(tester, sourceUrl: 'https://keep.com');
+
+      // 只改名称后保存
+      await tester.enterText(
+        find.byKey(const ValueKey('sf_bookSourceName')),
+        '已改名',
+      );
+      await tester.tap(find.byTooltip('保存'));
+      await tester.pumpAndSettle();
+
+      final saved = verify(
+        () => mockApi.updateBookSource(captureAny()),
+      ).captured.single as BookSource;
+      expect(saved.bookSourceName, '已改名', reason: '表单字段按编辑值保存');
+      expect(saved.customOrder, 12, reason: '自定义排序不得被清零');
+      expect(saved.respondTime, 456, reason: '真实校验耗时不得被默认值覆盖');
+      expect(saved.weight, 25, reason: '搜索权重不得归零');
+      expect(saved.mainJs, 'var keep = true;', reason: 'JS 主脚本不得被抹掉');
+      expect(saved.exploreScreen, '<div>keep</div>', reason: '发现页脚本不得被抹掉');
+    });
   });
 }

@@ -276,5 +276,106 @@ void main() {
       }, resolveOriginal: (_) async => null);
       expect(payload2.containsKey('bookshelfCount'), isFalse);
     });
+
+    /// [审查 P1-4] 编辑保存不得抹掉无表单入口的标量字段
+    ///
+    /// 根因：`_buildSource()` 重建模型时 `customOrder`/`respondTime`/`weight`
+    /// 取默认值 0/180000/0，补丁层「标量以编辑值为准」直接覆盖库内真实值
+    /// → 源跳到最前（排序丢失）、B13 写入的真实校验耗时被覆盖、搜索权重归零。
+    test('编辑保存保留 customOrder/respondTime/weight 原值', () async {
+      final original = <String, dynamic>{
+        'bookSourceUrl': 'https://order.example',
+        'bookSourceName': '旧名',
+        'customOrder': 7,
+        'respondTime': 823,
+        'weight': 30,
+      };
+      // 普通编辑页重建后的模型 JSON：三个字段回落默认值
+      final edited = BookSource.fromJson(original)
+          .copyWith(bookSourceName: '新名')
+          .toJson();
+      expect(edited['customOrder'], 7, reason: '前置：模型往返本身保留该值');
+      // 模拟 _buildSource() 的默认值重建
+      final rebuilt = <String, dynamic>{
+        ...edited,
+        'customOrder': 0,
+        'respondTime': 180000,
+        'weight': 0,
+      };
+
+      final payload = await buildPatchedSourcePayload(
+        rebuilt,
+        resolveOriginal: (_) async => original,
+      );
+
+      expect(payload['bookSourceName'], '新名', reason: '表单字段仍按编辑值');
+      expect(payload['customOrder'], 7, reason: '用户自定义排序不得被清零');
+      expect(payload['respondTime'], 823, reason: '真实校验耗时不得被默认值覆盖');
+      expect(payload['weight'], 30, reason: '搜索权重不得归零');
+    });
+
+    /// [审查 P1-4] `mainJs`/`exploreScreen` 无编辑入口，编辑值 null 不得清空原值
+    test('编辑保存保留 mainJs/exploreScreen 原值', () async {
+      final original = <String, dynamic>{
+        'bookSourceUrl': 'https://js.example',
+        'bookSourceName': 'JS 源',
+        'mainJs': 'var x = 1;',
+        'exploreScreen': '<div>发现页</div>',
+      };
+      // 普通编辑页重建：两个可空字段恒输出 null
+      final edited = <String, dynamic>{
+        'bookSourceUrl': 'https://js.example',
+        'bookSourceName': 'JS 源改名',
+        'mainJs': null,
+        'exploreScreen': null,
+      };
+
+      final payload = await buildPatchedSourcePayload(
+        edited,
+        resolveOriginal: (_) async => original,
+      );
+
+      expect(payload['bookSourceName'], 'JS 源改名');
+      expect(payload['mainJs'], 'var x = 1;', reason: 'JS 源主脚本不得被 null 抹掉');
+      expect(
+        payload['exploreScreen'],
+        '<div>发现页</div>',
+        reason: '发现页脚本不得被 null 抹掉',
+      );
+    });
+
+    /// JS 编辑页显式写入新脚本时仍应覆盖原值（不得被「保留原值」误伤）
+    test('JS 编辑页显式 mainJs 仍覆盖原值', () async {
+      final original = <String, dynamic>{
+        'bookSourceUrl': 'https://js2.example',
+        'mainJs': 'old();',
+      };
+      final edited = <String, dynamic>{
+        'bookSourceUrl': 'https://js2.example',
+        'mainJs': 'new();',
+      };
+      final payload = await buildPatchedSourcePayload(
+        edited,
+        resolveOriginal: (_) async => original,
+      );
+      expect(payload['mainJs'], 'new();', reason: '显式新脚本必须生效');
+    });
+
+    /// 新建源（原 JSON 缺失）时仍用编辑值，不得凭空造出默认值
+    test('原 JSON 缺失时非表单字段保持编辑值', () async {
+      final edited = <String, dynamic>{
+        'bookSourceUrl': 'https://new.example',
+        'customOrder': 0,
+        'respondTime': 180000,
+        'weight': 0,
+      };
+      final payload = await buildPatchedSourcePayload(
+        edited,
+        resolveOriginal: (_) async => null,
+      );
+      expect(payload['customOrder'], 0);
+      expect(payload['respondTime'], 180000);
+      expect(payload['weight'], 0);
+    });
   });
 }

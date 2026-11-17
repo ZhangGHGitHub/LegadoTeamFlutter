@@ -23,10 +23,38 @@ import 'package:flutter/foundation.dart';
 /// 回写（污染源导出与备份）。补丁生成时一律剔除（批31b P3-1）。
 const String derivedBookshelfCountKey = 'bookshelfCount';
 
+/// [审查 P1-4] 无编辑入口、必须永远沿用库内原值的标量键
+///
+/// 这些字段在**任何**书源编辑页都没有输入控件，但 Dart 模型带默认值
+/// （`customOrder=0`、`respondTime=180000`、`weight=0`）。只要保存载荷由
+/// 「模型重建」产生（普通编辑页 `_buildSource()`、JS 编辑页
+/// `BookSource.fromJson(extractJsSource(...))`），它们就会被默认值覆盖：
+/// - `customOrder=0` → 源跳到列表最前，用户自定义排序丢失；
+/// - `respondTime=180000` → 覆盖 B13 书源校验刚写入的真实耗时；
+/// - `weight=0` → 搜索权重归零。
+///
+/// 补丁层在原 JSON 存在时**强制保留**原值——比逐页透传更稳的兜底：
+/// 新增编辑入口不会再次踩坑。原 JSON 缺失（新建源）时仍用编辑值。
+const List<String> nonFormScalarKeys = <String>[
+  'customOrder',
+  'respondTime',
+  'weight',
+];
+
+/// [审查 P1-4] 无编辑入口、**编辑值为 null 时不得视为清空**的可空字段
+///
+/// `mainJs` / `exploreScreen` 在普通书源编辑页没有输入控件；Dart 模型重建
+/// 后 `toJson` 恒输出 `"mainJs": null` / `"exploreScreen": null`，补丁层若按
+/// 「显式 null = 用户清空」处理，会把 JS 源的主脚本与发现页脚本整段抹掉。
+/// 这两列没有「清空」入口，故 null 一律理解为「未携带」→ 沿用原值。
+/// 非 null 的编辑值（JS 编辑页 `map['mainJs'] = content`）仍正常覆盖。
+const List<String> nonFormNullableKeys = <String>['mainJs', 'exploreScreen'];
+
 /// 以 [original] 为底、把 [edited] 深合上去，返回新 Map（不修改入参）。
 ///
 /// 语义见文件头注释；`Map` 值只做键级递归，不做 List 元素级合并。
 /// 顶层派生字段 [derivedBookshelfCountKey] 无论来自底稿还是编辑值都剔除。
+/// [nonFormScalarKeys] 中的键在原稿存在时一律取原值（[审查 P1-4]）。
 Map<String, dynamic> patchSourceJson(
   Map<String, dynamic>? original,
   Map<String, dynamic> edited,
@@ -37,6 +65,14 @@ Map<String, dynamic> patchSourceJson(
   final merged = Map<String, dynamic>.from(original)
     ..remove(derivedBookshelfCountKey);
   for (final entry in edited.entries) {
+    // [审查 P1-4] 非表单标量：编辑值只是模型默认值，不得覆盖库内真实值
+    if (nonFormScalarKeys.contains(entry.key) && original.containsKey(entry.key)) {
+      continue;
+    }
+    // [审查 P1-4] 非表单可空字段：null 表示「未携带」而非「清空」
+    if (nonFormNullableKeys.contains(entry.key) && entry.value == null) {
+      continue;
+    }
     final base = merged[entry.key];
     final patch = entry.value;
     if (base is Map && patch is Map) {
