@@ -1,0 +1,85 @@
+批次 46 推送前门禁 — QA 验收记录
+执行日期：2026-11-17
+HEAD：38fac0ddbd（本轮 7 笔提交 b9caef90e3..38fac0ddbd）
+执行者：QA 子代理（只读，未修改任何代码）
+
+[前置] 重建 DLL
+命令：cd rust && CARGO_HTTP_PROXY="" cargo build -p legado-ffi --features quickjs
+退出码：0
+输出：Finished `dev` profile [unoptimized + debuginfo] target(s) in 16.76s
+产物：rust/target/debug/legado_ffi.dll（75385856 字节，Nov 17 20:00）
+说明：flutter_legado/lib/src/services/rust_api.dart 策略 1 直接搜索 rust/target/debug/legado_ffi.dll，无需复制。
+
+[门禁 1] cargo fmt --all -- --check
+退出码：1  ❌ 失败
+输出：1 个文件 1 处格式差异
+  rust/legado-js/src/host_api/platform.rs:521
+  期望 rustfmt 展开为多行：
+    assert_eq!(
+        book_url_under_scope(Some("search:https://src.example.com")),
+        ""
+    );
+归属：fea0555073（git blame 确认该测试函数由本批提交引入）
+性质：纯格式问题（测试断言逻辑正确，cargo test 已通过），但 rust-ci.yml 第 17-19 行第一道 job 即为本检查，属硬阻塞。
+
+[门禁 2] cargo clippy --workspace --all-targets -- -D warnings
+退出码：0  ✅
+输出：Finished `dev` profile ... in 8.76s，无 warning
+
+[门禁 3] cargo clippy -p legado-js -p legado-fetcher -p legado-ffi -p legado-server -p legado-parser -p legado-book --features quickjs --all-targets -- -D warnings
+退出码：0  ✅
+输出：Finished `dev` profile ... in 9.92s，无 warning
+
+[门禁 4] cargo test --workspace（连跑 2 轮）
+第 1 轮退出码：0  ✅  passed=4191 failed=0 ignored=26
+第 2 轮退出码：0  ✅  passed=4191 failed=0 ignored=26
+两轮结果完全一致，无 flake。日志见 cargo_test_workspace_round1.log / round2.log
+
+[门禁 5] cargo test -p legado-js -p legado-ffi --features quickjs
+退出码：0  ✅
+主 target：legado-js 893 passed / 0 failed / 42 ignored（63.97s）；legado-ffi 777 passed / 0 failed / 2 ignored（14.14s）；其余 target 全绿
+日志见 cargo_test_quickjs.log
+
+[门禁 6] cargo audit --no-fetch
+退出码：0  ✅
+输出：Scanning Cargo.lock for vulnerabilities (496 crate dependencies)；warning: 6 allowed warnings found
+6 条均为 unmaintained 类（lzw / rusttype / stb_truetype / stdweb 等），无 RUSTSEC 漏洞（vulnerability）条目。
+
+[门禁 7] flutter analyze --no-fatal-infos
+退出码：0  ✅
+输出：Analyzing flutter_legado... No issues found! (ran in 15.1s)
+0 issue / 0 warning
+
+[门禁 8] flutter test（全量）
+退出码：0  ✅
+输出：02:54 +6085 ~1: All tests passed!
+日志见 flutter_test_full.log
+
+[抽查 1] flutter test test/unit/api_contract_test.dart
+退出码：0  ✅  11/11 全绿（+11: All tests passed!）
+348 方法三重独立验证：
+  1) 文档 docs/API_CONTRACT.md:457 声明「BookApi 接口当前共 348 个方法」
+  2) 测试内双解析器交叉断言（_extractMethods 结构扫描 vs _regexMethodNames 正则扫描）互差集为空
+  3) QA 独立第三方计数（python -I 正则扫描 lib/src/services/book_api.dart）= 348，重名 0
+record 返回类型盲区已修复：book_api.dart:1333 `Future<({String kind, String value})> chapterPayAction({`；解析器 _declOpenParen 位于 api_contract_test.dart:708
+
+[抽查 2] flutter test test/unit/l10n_stage3_bilingual_test.dart
+退出码：0  ✅  7/7 全绿（书籍详情/发现/字典 en 无中文残留、参数化插值、listSeparator 约定）
+
+[抽查 3] flutter test test/widget/video_open_player_privacy_test.dart
+退出码：0  ✅  11/11 全绿（+11: All tests passed!）
+覆盖：isFloat true/false 拒绝、载荷 bookUrl 权威身份、无载荷回退上下文、退化方案 B、interceptResult 管线、防过度拦截 5 例
+
+[抽查 4] 零引用组件移出残留检查
+flutter analyze 退出码 0，无 import 错误。
+7 个组件名 + 7 个类名在 flutter_legado/lib 与 test 内命中 0（唯一命中 badge_widget 为 reader_bookmark_badge_test.dart:153 的临时目录名字符串，非引用）。
+文件已迁至 docs/pending_deletion/lib/src/widgets/（7 个 .dart 齐备）。
+
+[抽查 5] flutter test test/performance/scroll_fps_test.dart
+退出码：0  ✅  2/2 全绿
+输出：平均帧耗时 1.20ms，最大 3.52ms，估算 836.8 FPS（目标 > 55 FPS）
+`// ignore: unnecessary_import`（第 5 行）已生效，flutter analyze 未报 unnecessary_import。
+
+结论：不通过（1 项阻塞）
+阻塞项：门禁 1 cargo fmt --check 失败（rust/legado-js/src/host_api/platform.rs:521，源自 fea0555073）
+其余 7 项门禁 + 5 项抽查全部通过。执行 `cargo fmt --all` 后复跑门禁 1 即可推送。

@@ -1,0 +1,12 @@
+Diff in \\?\D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-js\src\host_api\platform.rs:521:
+     #[test]
+     fn test_open_video_player_book_url_blank_for_non_book_flows() {
+         // 搜索：单源 `search:{bookSourceUrl}` / 多源运行级键 `search`
+[31m-        assert_eq!(book_url_under_scope(Some("search:https://src.example.com")), "");
+[0m[32m+        assert_eq!(
+[0m[32m+            book_url_under_scope(Some("search:https://src.example.com")),
+[0m[32m+            ""
+[0m[32m+        );
+[0m         assert_eq!(book_url_under_scope(Some("search")), "");
+         // 发现：`explore:{bookSourceUrl}`
+         assert_eq!(
