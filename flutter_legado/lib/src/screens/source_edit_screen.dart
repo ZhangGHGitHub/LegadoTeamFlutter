@@ -124,6 +124,37 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
   /// 被编辑书源的原始对象（表单未展示字段透传，保存不丢数据）
   BookSource? _originalSource;
 
+  /// 表单回填时的初始文本快照（key → trim 后文本）
+  ///
+  /// 用于区分「用户显式清空某字段」与「表单从未提供该字段」：
+  /// - 当前值与快照相同 → 用户没动过 → 保存时沿用原稿规则值；
+  /// - 当前值与快照不同（含被清空） → 用户编辑过 → 按表单值写入。
+  ///
+  /// 设备缺陷 P1-2 的根因即「表单按过期书源副本回填后，未编辑字段的过期值
+  /// 被当作用户输入写回库」，快照 + 权威回填是双层防线。
+  final Map<String, String> _initialValues = {};
+
+  /// 记录当前控制器文本作为后续「是否被用户编辑」的基准
+  void _snapshotInitialValues() {
+    _initialValues
+      ..clear()
+      ..addEntries(
+        _ctrls.entries.map(
+          (e) => MapEntry(e.key, e.value.text.trim()),
+        ),
+      );
+  }
+
+  /// 用户是否已改动过任一表单字段（与回填快照比较）
+  bool get _hasUserEdits {
+    for (final entry in _ctrls.entries) {
+      final initial = _initialValues[entry.key];
+      if (initial == null) continue;
+      if (entry.value.text.trim() != initial) return true;
+    }
+    return false;
+  }
+
   bool get isNew => widget.sourceUrl == null && widget.source == null;
 
   /// 按 key 惰性获取控制器
@@ -286,6 +317,10 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
     if (source != null) {
       _populateFields(source);
       setState(() {});
+      // [P1-2 修复] 调用方传入的对象可能是过期副本（发现页缓存/路由参数）。
+      // 先按它快速回填保证首帧有内容，再从权威数据源校正；用户已开始编辑
+      // 时绝不覆盖其输入。
+      _refreshFromAuthoritative(source.bookSourceUrl);
     } else if (!isNew) {
       _loadSource();
     }

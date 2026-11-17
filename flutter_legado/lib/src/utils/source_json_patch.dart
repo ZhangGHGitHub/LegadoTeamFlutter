@@ -50,6 +50,26 @@ const List<String> nonFormScalarKeys = <String>[
 /// 非 null 的编辑值（JS 编辑页 `map['mainJs'] = content`）仍正常覆盖。
 const List<String> nonFormNullableKeys = <String>['mainJs', 'exploreScreen'];
 
+/// [P1 缺陷 2] 规则对象键：整体为 null 时视为「未携带」而非「清空」
+///
+/// 规则对象（`ruleSearch` 等）在 Dart 模型里是可空字段；某入口若没走表单
+/// 重建（或模型未建模该对象），`toJson` 会输出 `"ruleSearch": null`。
+/// 补丁层若按「显式 null = 清空」处理，会把库内整段规则抹成 NULL
+/// （搜索随即报 `JS engine error: source is not defined` 一类的规则缺失）。
+/// 规则对象的「清空」没有 UI 入口（编辑页各字段清空走对象内键级 null），
+/// 故对象级 null 一律理解为「未携带」→ 沿用原稿对象。
+///
+/// 注意：对象**存在**时仍按 [patchSourceJson] 递归深合，键级 null 保留
+/// 「用户清空该字段」语义。
+const List<String> ruleObjectKeys = <String>[
+  'ruleSearch',
+  'ruleBookInfo',
+  'ruleToc',
+  'ruleContent',
+  'ruleExplore',
+  'ruleReview',
+];
+
 /// 以 [original] 为底、把 [edited] 深合上去，返回新 Map（不修改入参）。
 ///
 /// 语义见文件头注释；`Map` 值只做键级递归，不做 List 元素级合并。
@@ -71,6 +91,13 @@ Map<String, dynamic> patchSourceJson(
     }
     // [审查 P1-4] 非表单可空字段：null 表示「未携带」而非「清空」
     if (nonFormNullableKeys.contains(entry.key) && entry.value == null) {
+      continue;
+    }
+    // [P1 缺陷 2] 规则对象整体 null：视为「未携带」，沿用原稿对象
+    // （对象存在时下方递归深合，键级 null 仍表示用户清空）
+    if (ruleObjectKeys.contains(entry.key) &&
+        entry.value == null &&
+        original.containsKey(entry.key)) {
       continue;
     }
     final base = merged[entry.key];

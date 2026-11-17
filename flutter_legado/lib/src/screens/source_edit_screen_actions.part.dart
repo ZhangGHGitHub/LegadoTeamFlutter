@@ -134,16 +134,37 @@ extension _SourceEditActions on _SourceEditScreenState {
   /// - `respondTime=180000` → 覆盖 B13 刚写入的真实校验耗时；
   /// - `mainJs=null` → JS 源的主脚本被清空；
   /// - `weight=0` → 搜索权重归零。
+  ///
+  /// [P1-2] **规则字段按「是否被用户编辑」区分语义**：补丁层对 Map 递归深合，
+  /// 但「编辑值存在即覆盖」——只要规则对象里出现了某个键，库内该键就会被
+  /// 表单值覆盖。而表单内容可能来自过期副本（`@js:` 后缀已丢失），保存一次
+  /// 即把库内真实规则抹掉（设备症状：搜索报 `source is not defined`）。
+  /// 因此规则字段一律走 [rule]：用户没动过 → 沿用原稿值；动过（含清空）→
+  /// 按表单值写入。这样「未编辑字段保留」与「显式清空生效」同时成立。
   BookSource _buildSource() {
     // 文本（trim 后）
     String t(String key) => _ctrl(key).text.trim();
     // 可空文本：空串归一为 null（对齐原版 takeIf { isNotBlank }）
     String? n(String key) => t(key).isEmpty ? null : t(key);
 
+    /// 该表单字段是否被用户改动过（与回填基准比较）
+    bool edited(String key) {
+      final initial = _initialValues[key];
+      // 无基准（新建源/未经回填）→ 保守按「已编辑」处理，保持旧行为
+      if (initial == null) return true;
+      return t(key) != initial;
+    }
+
+    /// 规则字段取值：未编辑 → 原稿值；已编辑 → 表单值（空串 → null 即清空）
+    String? rule(String key, String? originalValue) =>
+        edited(key) ? n(key) : originalValue;
+
     final orig = _originalSource;
     final oSr = orig?.ruleSearch;
     final oEr = orig?.ruleExplore;
     final oIr = orig?.ruleBookInfo;
+    final oTr = orig?.ruleToc;
+    final oCr = orig?.ruleContent;
     final oRr = orig?.ruleReview;
 
     return BookSource(
@@ -178,74 +199,74 @@ extension _SourceEditActions on _SourceEditScreenState {
       // 搜索规则
       searchUrl: n('searchUrl'),
       ruleSearch: SearchRule(
-        checkKeyWord: n('s_checkKeyWord'),
-        bookList: n('s_bookList'),
-        name: n('s_name'),
-        author: n('s_author'),
-        kind: n('s_kind'),
-        wordCount: n('s_wordCount'),
-        lastChapter: n('s_lastChapter'),
-        intro: n('s_intro'),
-        coverUrl: n('s_coverUrl'),
-        bookUrl: n('s_bookUrl'),
+        checkKeyWord: rule('s_checkKeyWord', oSr?.checkKeyWord),
+        bookList: rule('s_bookList', oSr?.bookList),
+        name: rule('s_name', oSr?.name),
+        author: rule('s_author', oSr?.author),
+        kind: rule('s_kind', oSr?.kind),
+        wordCount: rule('s_wordCount', oSr?.wordCount),
+        lastChapter: rule('s_lastChapter', oSr?.lastChapter),
+        intro: rule('s_intro', oSr?.intro),
+        coverUrl: rule('s_coverUrl', oSr?.coverUrl),
+        bookUrl: rule('s_bookUrl', oSr?.bookUrl),
         // 表单未展示字段透传（原版编辑页同样不展示 updateTime）
         updateTime: oSr?.updateTime,
       ),
       // 发现规则
       exploreUrl: n('exploreUrl'),
       ruleExplore: ExploreRule(
-        bookList: n('e_bookList'),
-        name: n('e_name'),
-        author: n('e_author'),
-        kind: n('e_kind'),
-        wordCount: n('e_wordCount'),
-        lastChapter: n('e_lastChapter'),
-        intro: n('e_intro'),
-        coverUrl: n('e_coverUrl'),
-        bookUrl: n('e_bookUrl'),
+        bookList: rule('e_bookList', oEr?.bookList),
+        name: rule('e_name', oEr?.name),
+        author: rule('e_author', oEr?.author),
+        kind: rule('e_kind', oEr?.kind),
+        wordCount: rule('e_wordCount', oEr?.wordCount),
+        lastChapter: rule('e_lastChapter', oEr?.lastChapter),
+        intro: rule('e_intro', oEr?.intro),
+        coverUrl: rule('e_coverUrl', oEr?.coverUrl),
+        bookUrl: rule('e_bookUrl', oEr?.bookUrl),
         updateTime: oEr?.updateTime,
       ),
       // 详情规则
       ruleBookInfo: BookInfoRule(
-        init: n('i_init'),
-        name: n('i_name'),
-        author: n('i_author'),
-        kind: n('i_kind'),
-        wordCount: n('i_wordCount'),
-        lastChapter: n('i_lastChapter'),
-        intro: n('i_intro'),
-        coverUrl: n('i_coverUrl'),
-        tocUrl: n('i_tocUrl'),
-        canReName: n('i_canReName'),
-        downloadUrls: n('i_downloadUrls'),
+        init: rule('i_init', oIr?.init),
+        name: rule('i_name', oIr?.name),
+        author: rule('i_author', oIr?.author),
+        kind: rule('i_kind', oIr?.kind),
+        wordCount: rule('i_wordCount', oIr?.wordCount),
+        lastChapter: rule('i_lastChapter', oIr?.lastChapter),
+        intro: rule('i_intro', oIr?.intro),
+        coverUrl: rule('i_coverUrl', oIr?.coverUrl),
+        tocUrl: rule('i_tocUrl', oIr?.tocUrl),
+        canReName: rule('i_canReName', oIr?.canReName),
+        downloadUrls: rule('i_downloadUrls', oIr?.downloadUrls),
         updateTime: oIr?.updateTime,
       ),
       // 目录规则
       ruleToc: TocRule(
-        preUpdateJs: n('t_preUpdateJs'),
-        chapterList: n('t_chapterList'),
-        chapterName: n('t_chapterName'),
-        chapterUrl: n('t_chapterUrl'),
-        formatJs: n('t_formatJs'),
-        isVolume: n('t_isVolume'),
-        updateTime: n('t_updateTime'),
-        isVip: n('t_isVip'),
-        isPay: n('t_isPay'),
-        nextTocUrl: n('t_nextTocUrl'),
+        preUpdateJs: rule('t_preUpdateJs', oTr?.preUpdateJs),
+        chapterList: rule('t_chapterList', oTr?.chapterList),
+        chapterName: rule('t_chapterName', oTr?.chapterName),
+        chapterUrl: rule('t_chapterUrl', oTr?.chapterUrl),
+        formatJs: rule('t_formatJs', oTr?.formatJs),
+        isVolume: rule('t_isVolume', oTr?.isVolume),
+        updateTime: rule('t_updateTime', oTr?.updateTime),
+        isVip: rule('t_isVip', oTr?.isVip),
+        isPay: rule('t_isPay', oTr?.isPay),
+        nextTocUrl: rule('t_nextTocUrl', oTr?.nextTocUrl),
       ),
       // 正文规则
       ruleContent: ContentRule(
-        content: n('c_content'),
-        nextContentUrl: n('c_nextContentUrl'),
-        subContent: n('c_subContent'),
-        replaceRegex: n('c_replaceRegex'),
-        title: n('c_title'),
-        sourceRegex: n('c_sourceRegex'),
-        imageStyle: n('c_imageStyle'),
-        imageDecode: n('c_imageDecode'),
-        webJs: n('c_webJs'),
-        payAction: n('c_payAction'),
-        callBackJs: n('c_callBackJs'),
+        content: rule('c_content', oCr?.content),
+        nextContentUrl: rule('c_nextContentUrl', oCr?.nextContentUrl),
+        subContent: rule('c_subContent', oCr?.subContent),
+        replaceRegex: rule('c_replaceRegex', oCr?.replaceRegex),
+        title: rule('c_title', oCr?.title),
+        sourceRegex: rule('c_sourceRegex', oCr?.sourceRegex),
+        imageStyle: rule('c_imageStyle', oCr?.imageStyle),
+        imageDecode: rule('c_imageDecode', oCr?.imageDecode),
+        webJs: rule('c_webJs', oCr?.webJs),
+        payAction: rule('c_payAction', oCr?.payAction),
+        callBackJs: rule('c_callBackJs', oCr?.callBackJs),
       ),
       // 段评规则（对齐原版：仅编辑 reviewEntities 展示字段，其余透传）
       ruleReview: ReviewRule(
@@ -259,26 +280,29 @@ extension _SourceEditActions on _SourceEditScreenState {
         postReviewUrl: oRr?.postReviewUrl,
         postQuoteUrl: oRr?.postQuoteUrl,
         deleteUrl: oRr?.deleteUrl,
-        reviewSummaryUrl: n('r_reviewSummaryUrl'),
-        summaryListRule: n('r_summaryListRule'),
-        summaryParagraphIndexRule: n('r_summaryParagraphIndexRule'),
-        summaryCountRule: n('r_summaryCountRule'),
-        summaryParagraphDataRule: n('r_summaryParagraphDataRule'),
-        reviewDetailUrl: n('r_reviewDetailUrl'),
-        reviewDetailNextPageUrl: n('r_reviewDetailNextPageUrl'),
-        detailListRule: n('r_detailListRule'),
-        detailIdRule: n('r_detailIdRule'),
-        detailAvatarRule: n('r_detailAvatarRule'),
-        detailNameRule: n('r_detailNameRule'),
-        detailBadgeRule: n('r_detailBadgeRule'),
-        detailContentRule: n('r_detailContentRule'),
-        reviewQuoteUrl: n('r_reviewQuoteUrl'),
-        replyListRule: n('r_replyListRule'),
-        replyIdRule: n('r_replyIdRule'),
-        replyAvatarRule: n('r_replyAvatarRule'),
-        replyNameRule: n('r_replyNameRule'),
-        replyBadgeRule: n('r_replyBadgeRule'),
-        replyContentRule: n('r_replyContentRule'),
+        reviewSummaryUrl: rule('r_reviewSummaryUrl', oRr?.reviewSummaryUrl),
+        summaryListRule: rule('r_summaryListRule', oRr?.summaryListRule),
+        summaryParagraphIndexRule:
+            rule('r_summaryParagraphIndexRule', oRr?.summaryParagraphIndexRule),
+        summaryCountRule: rule('r_summaryCountRule', oRr?.summaryCountRule),
+        summaryParagraphDataRule:
+            rule('r_summaryParagraphDataRule', oRr?.summaryParagraphDataRule),
+        reviewDetailUrl: rule('r_reviewDetailUrl', oRr?.reviewDetailUrl),
+        reviewDetailNextPageUrl:
+            rule('r_reviewDetailNextPageUrl', oRr?.reviewDetailNextPageUrl),
+        detailListRule: rule('r_detailListRule', oRr?.detailListRule),
+        detailIdRule: rule('r_detailIdRule', oRr?.detailIdRule),
+        detailAvatarRule: rule('r_detailAvatarRule', oRr?.detailAvatarRule),
+        detailNameRule: rule('r_detailNameRule', oRr?.detailNameRule),
+        detailBadgeRule: rule('r_detailBadgeRule', oRr?.detailBadgeRule),
+        detailContentRule: rule('r_detailContentRule', oRr?.detailContentRule),
+        reviewQuoteUrl: rule('r_reviewQuoteUrl', oRr?.reviewQuoteUrl),
+        replyListRule: rule('r_replyListRule', oRr?.replyListRule),
+        replyIdRule: rule('r_replyIdRule', oRr?.replyIdRule),
+        replyAvatarRule: rule('r_replyAvatarRule', oRr?.replyAvatarRule),
+        replyNameRule: rule('r_replyNameRule', oRr?.replyNameRule),
+        replyBadgeRule: rule('r_replyBadgeRule', oRr?.replyBadgeRule),
+        replyContentRule: rule('r_replyContentRule', oRr?.replyContentRule),
       ),
     );
   }

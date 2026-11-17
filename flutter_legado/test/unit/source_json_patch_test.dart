@@ -377,5 +377,82 @@ void main() {
       expect(payload['respondTime'], 180000);
       expect(payload['weight'], 0);
     });
+
+    /// [P1 缺陷 2] 规则对象整体为 null 时不得清空原规则
+    ///
+    /// 设备症状：编辑页保存后 `ruleSearch` 从「带 `@js:` 后缀的对象」退化为
+    /// 纯表单键集合，搜索随即报 `JS engine error: source is not defined`。
+    /// 补丁层若把对象级 null 当「用户清空」，会把整段规则写成 NULL。
+    test('规则对象整体 null 视为未携带，保留原对象（覆盖 6 个规则键）', () {
+      const ruleKeys = <String>[
+        'ruleSearch',
+        'ruleBookInfo',
+        'ruleToc',
+        'ruleContent',
+        'ruleExplore',
+        'ruleReview',
+      ];
+      final original = <String, dynamic>{
+        'bookSourceUrl': 'https://rules.example',
+        for (final key in ruleKeys)
+          key: <String, dynamic>{
+            'marker': '$key-original',
+            'jsRule': "\$.x\n@js:source.put('k','v'); result",
+          },
+      };
+      final edited = <String, dynamic>{
+        'bookSourceUrl': 'https://rules.example',
+        for (final key in ruleKeys) key: null,
+      };
+
+      final patched = patchSourceJson(original, edited);
+
+      for (final key in ruleKeys) {
+        expect(
+          patched[key],
+          isNotNull,
+          reason: '$key 整体为 null 时不得清空库内规则',
+        );
+        final rule = patched[key] as Map<String, dynamic>;
+        expect(rule['marker'], '$key-original', reason: '$key 原值必须保留');
+        expect(
+          rule['jsRule'],
+          contains('@js:'),
+          reason: '$key 内的 @js: 后缀必须保留',
+        );
+      }
+    });
+
+    /// 原稿没有该规则对象时，编辑值 null 仍写 null（不凭空造对象）
+    test('原稿无该规则对象时 null 仍为 null', () {
+      final original = <String, dynamic>{
+        'bookSourceUrl': 'https://norule.example',
+      };
+      final edited = <String, dynamic>{
+        'bookSourceUrl': 'https://norule.example',
+        'ruleSearch': null,
+      };
+      final patched = patchSourceJson(original, edited);
+      expect(patched['ruleSearch'], isNull);
+    });
+
+    /// 规则对象存在时，键级 null 仍表示「用户清空该字段」（不被兜底误伤）
+    test('规则对象内的键级 null 仍清空（兜底不得过度保留）', () {
+      final original = <String, dynamic>{
+        'bookSourceUrl': 'https://clear.example',
+        'ruleSearch': <String, dynamic>{
+          'name': "\$.name\n@js:x; result",
+          'author': r'$.author',
+        },
+      };
+      final edited = <String, dynamic>{
+        'bookSourceUrl': 'https://clear.example',
+        'ruleSearch': <String, dynamic>{'name': null},
+      };
+      final patched = patchSourceJson(original, edited);
+      final rule = patched['ruleSearch'] as Map<String, dynamic>;
+      expect(rule['name'], isNull, reason: '用户清空的字段必须真的清空');
+      expect(rule['author'], r'$.author', reason: '同组未编辑字段保留');
+    });
   });
 }

@@ -26,22 +26,24 @@ extension _SourceEditLoad on _SourceEditScreenState {
   void _loadSource() {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final notifier = ref.read(sourceNotifierProvider.notifier);
-      var source = notifier.getSource(widget.sourceUrl!);
-      // 内存书源列表未加载/不含该源（阅读页、听书页等直达入口）：
-      // 兜底从 API 直接拉取，避免空表单（「编辑页没有任何书源信息」根因）
-      if (source == null) {
-        try {
-          final api = ref.read(bookApiProvider);
-          final sources = await api.getBookSources();
-          for (final s in sources) {
-            if (s.bookSourceUrl == widget.sourceUrl) {
-              source = s;
-              break;
-            }
+      BookSource? source = notifier.getSource(widget.sourceUrl!);
+      // [P1-2 修复] 回填必须以**权威数据源**为准，内存列表可能是过期副本
+      // （导入/备份恢复/发现页旧缓存都会留下旧对象）。设备缺陷：编辑页按过期
+      // 副本回填 → 表单里 ruleSearch.name 已无 `@js:` 后缀 → 保存把库内真实
+      // 规则覆盖掉 → 搜索报 `source is not defined`。
+      // 因此优先现拉一次 `getBookSources()`（同时兜住「内存列表未加载」的
+      // 直达入口），内存副本仅在现拉失败/未命中时兜底。
+      try {
+        final api = ref.read(bookApiProvider);
+        final sources = await api.getBookSources();
+        for (final s in sources) {
+          if (s.bookSourceUrl == widget.sourceUrl) {
+            source = s;
+            break;
           }
-        } catch (e) {
-          debugPrint('SourceEdit 兜底加载书源失败: $e');
         }
+      } catch (e) {
+        debugPrint('SourceEdit 拉取权威书源失败（沿用内存副本）: $e');
       }
       if (!mounted) return;
       if (source != null) {
@@ -54,12 +56,42 @@ extension _SourceEditLoad on _SourceEditScreenState {
     });
   }
 
+  /// [P1-2 修复] 用权威数据源校正表单回填（仅当用户尚未编辑任何字段）
+  ///
+  /// 调用方直接传入 [BookSource]（发现页/阅读页入口）时，该对象可能来自
+  /// 内存缓存或路由参数，已与库内不一致。规则字段一旦按过期值回填，
+  /// 保存就会把库内真实规则（如 `@js:` 后缀）覆盖掉。
+  ///
+  /// 保守策略：只在用户**完全没动过**表单时校正，避免覆盖正在进行的输入。
+  Future<void> _refreshFromAuthoritative(String url) async {
+    if (url.isEmpty) return;
+    try {
+      final api = ref.read(bookApiProvider);
+      final sources = await api.getBookSources();
+      final fresh = sources.where((s) => s.bookSourceUrl == url).firstOrNull;
+      if (!mounted || fresh == null) return;
+      if (_hasUserEdits) return;
+      // 内容一致时不必重填（避免无谓的 setState/光标跳动）
+      final current = _originalSource;
+      if (current != null &&
+          jsonEncode(fresh.toJson()) == jsonEncode(current.toJson())) {
+        return;
+      }
+      _populateFields(fresh);
+      setState(() {});
+    } catch (e) {
+      debugPrint('SourceEdit 权威书源校正失败（沿用传入对象）: $e');
+    }
+  }
+
   void _populateFields(BookSource source) {
     final values = _sourceToValues(source);
     values.forEach((key, value) => _ctrl(key).text = value);
     // 保存原始书源：_buildSource 时透传表单未展示字段（updateTime 等），
     // 避免保存一次编辑即抹掉既有规则数据（「修改后生效且不丢数据」）
     _originalSource = source;
+    // [P1-2] 记录回填基准：保存时据此区分「用户清空」与「用户没动过」
+    _snapshotInitialValues();
     // 评审 C1：同步记录既有 variable，_buildSource 时透传不抹掉
     _preservedVariable = source.variable;
     _enabled = source.enabled;
