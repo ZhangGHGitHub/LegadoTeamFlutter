@@ -68,7 +68,9 @@ class _ExpandableTextState extends State<_ExpandableText> {
                     child: Padding(
                       padding: const EdgeInsets.only(top: 4),
                       child: Text(
-                        _expanded ? '收起' : '展开',
+                        _expanded
+                            ? AppStrings.collapseLabel
+                            : AppStrings.expandLabel,
                         style: TextStyle(color: cs.primary, fontSize: 13),
                       ),
                     ),
@@ -152,7 +154,7 @@ class _VariableDialogState extends State<_VariableDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         FilledButton(
           onPressed: () {
@@ -160,7 +162,7 @@ class _VariableDialogState extends State<_VariableDialog> {
             final value = _controller.text;
             Navigator.pop(context, value);
           },
-          child: const Text('确定'),
+          child: Text(AppStrings.confirm),
         ),
       ],
     );

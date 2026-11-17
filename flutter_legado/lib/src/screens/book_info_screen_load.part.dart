@@ -80,7 +80,7 @@ extension _BookInfoLoad on _BookInfoScreenState {
           context,
           ref,
           bookUrl: book.bookUrl,
-          title: '验证后查看',
+          title: AppStrings.verifyToView,
         ),
       );
     });
@@ -95,7 +95,7 @@ extension _BookInfoLoad on _BookInfoScreenState {
         setState(() {
           _pageLoading = false;
           _privacyResolved = true;
-          _loadError = '缺少书籍参数';
+          _loadError = AppStrings.missingBookParams;
         });
       }
       return;

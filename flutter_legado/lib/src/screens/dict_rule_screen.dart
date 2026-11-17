@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../bridge/ffi.dart';
+import '../l10n/app_strings.dart';
 import '../providers/dict/dict_notifier.dart' show kDefaultDictRulesAsset;
 import '../providers/providers.dart';
 import '../routes.dart' show AppRoutes;
@@ -179,7 +180,7 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
     } catch (e) {
       _rows = previous;
       setState(() {});
-      _snack('启用/禁用失败：${_errMsg(e)}');
+      _snack(AppStrings.toggleRuleFailedWith(_errMsg(e)));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -210,7 +211,7 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
       });
     } catch (e) {
       setState(() => _rows = previous);
-      _snack('排序保存失败：${_errMsg(e)}');
+      _snack(AppStrings.reorderSaveFailedWith(_errMsg(e)));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -274,9 +275,9 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
         }
         _exitSelectMode();
       });
-      _snack('已${enabled ? '启用' : '禁用'} ${ids.length} 条规则');
+      _snack(AppStrings.rulesToggled(enabled, ids.length));
     } catch (e) {
-      _snack('批量${enabled ? '启用' : '禁用'}失败：${_errMsg(e)}');
+      _snack(AppStrings.batchToggleFailedWith(enabled, _errMsg(e)));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -290,22 +291,24 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除规则'),
+        title: Text(AppStrings.deleteRuleTitle),
         content: SizedBox(
           width: double.maxFinite,
           child: Text(
-            '确定删除选中的 ${targets.length} 条字典规则吗？\n'
-            '（${targets.map((r) => r.name).join('、')}）',
+            AppStrings.confirmDeleteDictRules(
+              targets.length,
+              targets.map((r) => r.name).join(AppStrings.listSeparator),
+            ),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('删除'),
+            child: Text(AppStrings.delete),
           ),
         ],
       ),
@@ -321,9 +324,9 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
         _rows.removeWhere((r) => _selectedIds.contains(r.id));
         _exitSelectMode();
       });
-      _snack('已删除 ${targets.length} 条规则');
+      _snack(AppStrings.rulesDeleted(targets.length));
     } catch (e) {
-      _snack('删除失败：${_errMsg(e)}');
+      _snack(AppStrings.deleteFailed(_errMsg(e)));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -354,7 +357,7 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
       content: json,
       fileName: 'exportDictRule.json',
       uploadFileName: 'export_rules.json',
-      subject: '导出字典规则',
+      subject: AppStrings.exportDictRules,
       passphraseType: SourcePassphraseType.dictRule,
     );
     if (!mounted || result == null) return;
@@ -370,7 +373,7 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
     await showDialog<void>(
       context: context,
       builder: (ctx) => _RuleEditDialog(
-        title: row == null ? '添加字典规则' : '编辑字典规则',
+        title: row == null ? AppStrings.addDictRuleEntry : AppStrings.editDictRule,
         initialName: row?.name ?? '',
         initialUrl: row == null
             ? 'https://example.com/dict?q={{key}}'
@@ -404,9 +407,13 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
       }
       // 新增的 sortNumber/id 以服务端为准，直接重载保证顺序与主键一致
       await _load();
-      _snack(row == null ? '已添加规则「$name」' : '已更新规则「$name」');
+      _snack(
+        row == null
+            ? AppStrings.ruleAddedNamed(name)
+            : AppStrings.ruleUpdatedNamed(name),
+      );
     } catch (e) {
-      _snack('保存失败：${_errMsg(e)}');
+      _snack(AppStrings.saveFailedWith(_errMsg(e)));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -440,9 +447,8 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
     await showDialog<String>(
       context: context,
       builder: (ctx) => _ImportTextDialog(
-        title: '本地导入',
-        hint: '粘贴 JSON（对象数组或单对象，字段 name/urlRule/showRule，'
-            'enabled/sortNumber 可选）',
+        title: AppStrings.importLocalAction,
+        hint: AppStrings.dictLocalImportHint,
         onImport: (value) => text = value,
       ),
     );
@@ -454,9 +460,9 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
           .read(bookApiProvider)
           .dictRuleImport(jsonOrUrl: payload, kind: 'text');
       await _load();
-      _snack('已导入 $n 条字典规则');
+      _snack(AppStrings.dictRulesImported(n));
     } catch (e) {
-      _snack('导入失败：${_errMsg(e)}');
+      _snack(AppStrings.importFailedWith(_errMsg(e)));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -474,7 +480,7 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
     final payload = raw is String ? raw.trim() : '';
     if (!mounted) return;
     if (payload.isEmpty) {
-      _snack('未获取到扫码内容');
+      _snack(AppStrings.qrContentMissing);
       return;
     }
     setState(() => _busy = true);
@@ -483,9 +489,9 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
           .read(bookApiProvider)
           .dictRuleImport(jsonOrUrl: payload, kind: 'text');
       await _load();
-      _snack('已导入 $n 条字典规则');
+      _snack(AppStrings.dictRulesImported(n));
     } catch (e) {
-      _snack('导入失败：${_errMsg(e)}');
+      _snack(AppStrings.importFailedWith(_errMsg(e)));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -498,7 +504,7 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
     await showDialog<String>(
       context: context,
       builder: (ctx) => _ImportTextDialog(
-        title: '在线导入',
+        title: AppStrings.importOnlineAction,
         hint: 'https://example.com/dictRules.json',
         isUrl: true,
         onImport: (value) => text = value,
@@ -508,7 +514,7 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
     if (value == null) return;
     // text 被闭包写入不可提升，经 value 提升为非空 String
     if (!value.startsWith('http://') && !value.startsWith('https://')) {
-      _snack('请输入有效的 http(s) 地址');
+      _snack(AppStrings.invalidHttpUrl);
       return;
     }
     setState(() => _busy = true);
@@ -517,9 +523,9 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
           .read(bookApiProvider)
           .dictRuleImport(jsonOrUrl: value, kind: 'url');
       await _load();
-      _snack('已导入 $n 条字典规则');
+      _snack(AppStrings.dictRulesImported(n));
     } catch (e) {
-      _snack('导入失败：${_errMsg(e)}');
+      _snack(AppStrings.importFailedWith(_errMsg(e)));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -537,9 +543,9 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
           .read(bookApiProvider)
           .dictRuleImport(jsonOrUrl: payload, kind: 'text');
       await _load();
-      _snack('已导入 $n 条默认字典规则');
+      _snack(AppStrings.defaultDictRuleRulesImported(n));
     } catch (e) {
-      _snack('导入默认失败：${_errMsg(e)}');
+      _snack(AppStrings.importDefaultFailedWith(_errMsg(e)));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -560,38 +566,59 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
               // 对标原版 FAB 新增（menu_add 同语义：DictRuleEditDialog 空表单）
               onPressed: _busy ? null : () => _showRuleEditor(),
               icon: const Icon(Symbols.add_rounded),
-              label: const Text('新增规则'),
+              label: Text(AppStrings.newRuleAction),
             ),
     );
   }
 
   PreferredSizeWidget _buildNormalAppBar() {
     return LegadoAppBar(
-      title: const Text('字典规则管理'),
+      title: Text(AppStrings.dictRuleManagement),
       actions: [
         // [M1 我的页字典合并 | full-stack-engineer + UI] 我的页单入口默认
         // 进本管理页（原「字典规则」查询入口与「规则管理」合并）；查询页
         // AppRoutes.dict 保留注册与深链，由本按钮保证页内可达，避免功能孤岛。
         IconButton(
           icon: const Icon(Symbols.menu_book_rounded),
-          tooltip: '字典查询',
+          tooltip: AppStrings.dictLookupTitle,
           onPressed: () => Navigator.of(context).pushNamed(AppRoutes.dict),
         ),
         // 对标 R.menu.dict_rule（menu_add/menu_import_local/menu_import_qr/
         // menu_import_onLine/menu_import_default/menu_help；
         // menu_import_qr 复用 QrcodeScreen 扫码链路，见 _importFromQr）
         PopupMenuButton<String>(
-          tooltip: '更多操作',
+          tooltip: AppStrings.moreOptions,
           icon: const Icon(Symbols.more_vert_rounded),
           onSelected: _onMenuSelected,
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'add', child: Text('新增规则')),
-            PopupMenuItem(value: 'importLocal', child: Text('本地导入')),
-            PopupMenuItem(value: 'importQr', child: Text('扫码导入')),
-            PopupMenuItem(value: 'importPassphrase', child: Text('口令导入')),
-            PopupMenuItem(value: 'importOnline', child: Text('在线导入')),
-            PopupMenuItem(value: 'importDefault', child: Text('导入默认')),
-            PopupMenuItem(value: 'help', child: Text('帮助')),
+          itemBuilder: (_) => [
+            PopupMenuItem(
+              value: 'add',
+              child: Text(AppStrings.newRuleAction),
+            ),
+            PopupMenuItem(
+              value: 'importLocal',
+              child: Text(AppStrings.importLocalAction),
+            ),
+            PopupMenuItem(
+              value: 'importQr',
+              child: Text(AppStrings.importQrAction),
+            ),
+            PopupMenuItem(
+              value: 'importPassphrase',
+              child: Text(AppStrings.importPassphraseAction),
+            ),
+            PopupMenuItem(
+              value: 'importOnline',
+              child: Text(AppStrings.importOnlineAction),
+            ),
+            PopupMenuItem(
+              value: 'importDefault',
+              child: Text(AppStrings.importDefaultAction),
+            ),
+            PopupMenuItem(
+              value: 'help',
+              child: Text(AppStrings.helpLabel),
+            ),
           ],
         ),
       ],
@@ -603,35 +630,35 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
     final allSelected =
         _rows.isNotEmpty && _selectedIds.length == _rows.length;
     return LegadoAppBar(
-      title: Text('已选 ${_selectedIds.length} 项'),
+      title: Text(AppStrings.selectedItemsCount(_selectedIds.length)),
       leading: IconButton(
         icon: const Icon(Symbols.close_rounded),
-        tooltip: '退出多选',
+        tooltip: AppStrings.exitMultiSelect,
         onPressed: _exitSelectMode,
       ),
       actions: [
         TextButton(
           onPressed: _selectToggleAll,
-          child: Text(allSelected ? '取消全选' : '全选'),
+          child: Text(allSelected ? AppStrings.deselectAll : AppStrings.selectAll),
         ),
         IconButton(
           icon: const Icon(Symbols.check_circle_outline_rounded),
-          tooltip: '启用选中',
+          tooltip: AppStrings.enableSelected,
           onPressed: _busy ? null : () => _batchSetEnabled(true),
         ),
         IconButton(
           icon: const Icon(Symbols.remove_circle_outline_rounded),
-          tooltip: '禁用选中',
+          tooltip: AppStrings.disableSelected,
           onPressed: _busy ? null : () => _batchSetEnabled(false),
         ),
         IconButton(
           icon: const Icon(Symbols.save_alt_rounded),
-          tooltip: '导出选中',
+          tooltip: AppStrings.exportSelected,
           onPressed: _busy ? null : _exportSelected,
         ),
         IconButton(
           icon: const Icon(Symbols.delete_rounded),
-          tooltip: '删除选中',
+          tooltip: AppStrings.deleteSelected,
           onPressed: _busy ? null : _batchDelete,
         ),
       ],
@@ -640,7 +667,7 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
 
   Widget _buildBody(ThemeData theme) {
     if (_loading) {
-      return const LoadingIndicator(message: '加载字典规则...');
+      return LoadingIndicator(message: AppStrings.loadingDictRules);
     }
     if (_error != null) {
       return ErrorView(message: _error!, onRetry: _load);
@@ -648,11 +675,11 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
     if (_rows.isEmpty) {
       return EmptyState(
         icon: Symbols.rule_folder_rounded,
-        title: '暂无字典规则',
-        subtitle: '点击右下角按钮添加，或从右上角菜单导入',
+        title: AppStrings.noDictRules,
+        subtitle: AppStrings.noDictRulesHint,
         action: FilledButton(
           onPressed: _busy ? null : () => _showRuleEditor(),
-          child: const Text('新增规则'),
+          child: Text(AppStrings.newRuleAction),
         ),
       );
     }
@@ -703,7 +730,9 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
           ),
         ),
         subtitle: Text(
-          row.urlRule.isEmpty ? '（未配置查询地址）' : row.urlRule,
+          row.urlRule.isEmpty
+              ? AppStrings.queryUrlNotConfigured
+              : row.urlRule,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
@@ -795,8 +824,8 @@ class _RuleEditDialogState extends State<_RuleEditDialog> {
                 autofocus: true,
                 // [LAYOUT_PLAN P2] 输入框走 inputDecorationTheme（不显式 border）
                 decoration: InputDecoration(
-                  labelText: '规则名称',
-                  errorText: _nameInvalid ? '规则名称不能为空' : null,
+                  labelText: AppStrings.dictRuleName,
+                  errorText: _nameInvalid ? AppStrings.ruleNameRequired : null,
                 ),
                 onChanged: (_) =>
                     setState(() => _nameInvalid = _nameCtrl.text.trim().isEmpty),
@@ -805,8 +834,8 @@ class _RuleEditDialogState extends State<_RuleEditDialog> {
               TextField(
                 controller: _urlCtrl,
                 maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: '查询地址（urlRule）',
+                decoration: InputDecoration(
+                  labelText: AppStrings.dictRuleQueryUrlLabel,
                   hintText: 'https://example.com/dict?q={{key}}',
                 ),
               ),
@@ -814,9 +843,9 @@ class _RuleEditDialogState extends State<_RuleEditDialog> {
               TextField(
                 controller: _showCtrl,
                 maxLines: 4,
-                decoration: const InputDecoration(
-                  labelText: '显示规则（showRule，可选）',
-                  hintText: 'CSS/XPath/JsonPath 或 @js: 规则，留空直接展示原文',
+                decoration: InputDecoration(
+                  labelText: AppStrings.dictRuleShowRuleLabel,
+                  hintText: AppStrings.dictRuleShowRuleHint,
                 ),
               ),
             ],
@@ -826,7 +855,7 @@ class _RuleEditDialogState extends State<_RuleEditDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         FilledButton(
           onPressed: () {
@@ -841,7 +870,7 @@ class _RuleEditDialogState extends State<_RuleEditDialog> {
             Navigator.of(context).pop();
             widget.onSaved(name, urlRule, showRule);
           },
-          child: const Text('保存'),
+          child: Text(AppStrings.save),
         ),
       ],
     );
@@ -904,7 +933,7 @@ class _ImportTextDialogState extends State<_ImportTextDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         FilledButton(
           onPressed: () {
@@ -912,7 +941,7 @@ class _ImportTextDialogState extends State<_ImportTextDialog> {
             Navigator.of(context).pop(value);
             widget.onImport(value);
           },
-          child: const Text('导入'),
+          child: Text(AppStrings.importLabel),
         ),
       ],
     );

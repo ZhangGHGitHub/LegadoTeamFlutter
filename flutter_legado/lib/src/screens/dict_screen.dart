@@ -5,6 +5,7 @@ import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/dict/dict_notifier.dart';
 import '../routes.dart';
@@ -57,7 +58,7 @@ class _DictScreenState extends ConsumerState<DictScreen> {
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('无法打开在线词典')),
+          SnackBar(content: Text(AppStrings.cannotOpenOnlineDict)),
         );
       }
     }
@@ -70,23 +71,23 @@ class _DictScreenState extends ConsumerState<DictScreen> {
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       topBar: LegadoAppBar(
-        title: const Text('字典查询'),
+        title: Text(AppStrings.dictLookupTitle),
         actions: [
           IconButton(
             icon: const Icon(Symbols.help_rounded),
-            tooltip: '帮助',
+            tooltip: AppStrings.helpLabel,
             onPressed: () => showHelp(context, HelpAssets.dictRuleHelp),
           ),
           IconButton(
             icon: const Icon(Symbols.rule_folder_rounded),
-            tooltip: '词典规则管理',
+            tooltip: AppStrings.dictRulesManageTitle,
             onPressed: _showRuleManager,
           ),
           // [C2 批2 | full-stack-engineer + UI] 字典规则管理页入口
           // （对齐原版 DictRuleActivity；既有「词典规则管理」弹窗保留）
           IconButton(
             icon: const Icon(Symbols.manage_search_rounded),
-            tooltip: '规则管理',
+            tooltip: AppStrings.ruleManagement,
             onPressed: () =>
                 Navigator.of(context).pushNamed(AppRoutes.dictRule),
           ),
@@ -116,16 +117,16 @@ class _DictScreenState extends ConsumerState<DictScreen> {
               textInputAction: TextInputAction.search,
               onSubmitted: (_) => _search(),
               // [LAYOUT_PLAN P2] 输入框走 inputDecorationTheme（不显式 border/radius）
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Symbols.search_rounded),
-                hintText: '输入单词查询释义',
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Symbols.search_rounded),
+                hintText: AppStrings.dictSearchHint,
               ),
             ),
           ),
           const SizedBox(width: 8),
           FilledButton(
             onPressed: _search,
-            child: const Text('查询'),
+            child: Text(AppStrings.queryAction),
           ),
         ],
       ),
@@ -162,10 +163,10 @@ class _DictScreenState extends ConsumerState<DictScreen> {
         children: [
           Icon(Symbols.menu_book_rounded, size: 64, color: theme.colorScheme.outline),
           const SizedBox(height: 16),
-          Text('输入单词开始查询', style: theme.textTheme.bodyLarge),
+          Text(AppStrings.dictStartHint, style: theme.textTheme.bodyLarge),
           const SizedBox(height: 8),
           Text(
-            '未收录的词可跳转在线词典',
+            AppStrings.dictOnlineFallbackHint,
             style: theme.textTheme.bodySmall,
           ),
         ],
@@ -213,7 +214,7 @@ class _DictScreenState extends ConsumerState<DictScreen> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    '本地词典',
+                    AppStrings.localDictionary,
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: theme.colorScheme.onPrimaryContainer,
                     ),
@@ -256,12 +257,12 @@ class _DictScreenState extends ConsumerState<DictScreen> {
                 color: theme.colorScheme.outline),
             const SizedBox(height: 8),
             Text(
-              '本地词典未收录「$word」',
+              AppStrings.dictWordNotFound(word),
               style: theme.textTheme.titleSmall,
             ),
             const SizedBox(height: 4),
             Text(
-              '可使用下方在线词典查询',
+              AppStrings.dictUseOnlineBelow,
               style: theme.textTheme.bodySmall,
             ),
           ],
@@ -274,11 +275,13 @@ class _DictScreenState extends ConsumerState<DictScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('在线词典', style: theme.textTheme.titleSmall),
+        Text(AppStrings.onlineDictionary, style: theme.textTheme.titleSmall),
         const SizedBox(height: 8),
         if (state.rules.isEmpty)
-          Text('暂无词典规则，点击右上角管理添加',
-              style: theme.textTheme.bodySmall)
+          Text(
+            AppStrings.noDictRulesTapManage,
+            style: theme.textTheme.bodySmall,
+          )
         else
           Wrap(
             spacing: 8,
@@ -304,13 +307,13 @@ class _DictScreenState extends ConsumerState<DictScreen> {
         builder: (ctx, setDialogState) {
           final rules = ref.read(dictNotifierProvider).rules;
           return AlertDialog(
-            title: const Text('词典规则管理'),
+            title: Text(AppStrings.dictRulesManageTitle),
             content: SizedBox(
               width: double.maxFinite,
               child: rules.isEmpty
-                  ? const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Text('暂无规则，点击下方按钮添加'),
+                  ? Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(AppStrings.noRulesTapAddBelow),
                     )
                   : ListView.separated(
                       shrinkWrap: true,
@@ -342,7 +345,13 @@ class _DictScreenState extends ConsumerState<DictScreen> {
                                     .deleteRule(index);
                               } catch (e) {
                                 messenger.showSnackBar(
-                                  SnackBar(content: Text('删除失败：${errorMessage(e)}')),
+                                  SnackBar(
+                                    content: Text(
+                                      AppStrings.deleteFailed(
+                                        errorMessage(e),
+                                      ),
+                                    ),
+                                  ),
                                 );
                               }
                               setDialogState(() {});
@@ -361,20 +370,22 @@ class _DictScreenState extends ConsumerState<DictScreen> {
                   setDialogState(() {});
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('已导入 $n 条原版默认词典规则')),
+                      SnackBar(
+                        content: Text(AppStrings.defaultDictRulesImported(n)),
+                      ),
                     );
                   }
                 },
-                child: const Text('导入默认'),
+                child: Text(AppStrings.importDefaultAction),
               ),
               TextButton(
                 onPressed: () =>
                     _showRuleEditor(ctx, onSaved: setDialogState),
-                child: const Text('添加规则'),
+                child: Text(AppStrings.addRuleAction),
               ),
               FilledButton(
                 onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('完成'),
+                child: Text(AppStrings.doneLabel),
               ),
             ],
           );
@@ -390,7 +401,7 @@ class _DictScreenState extends ConsumerState<DictScreen> {
     showDialog(
       context: ctx,
       builder: (editCtx) => AlertDialog(
-        title: const Text('添加词典规则'),
+        title: Text(AppStrings.addDictionaryRule),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -398,16 +409,16 @@ class _DictScreenState extends ConsumerState<DictScreen> {
             // 字段分组间距 12dp
             TextField(
               controller: nameCtrl,
-              decoration: const InputDecoration(
-                labelText: '规则名称',
+              decoration: InputDecoration(
+                labelText: AppStrings.dictRuleName,
               ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: urlCtrl,
-              decoration: const InputDecoration(
-                labelText: '查询地址',
-                hintText: '使用 {{key}} 作为单词占位符',
+              decoration: InputDecoration(
+                labelText: AppStrings.dictRuleQueryUrl,
+                hintText: AppStrings.dictWordPlaceholderHint,
               ),
             ),
           ],
@@ -415,7 +426,7 @@ class _DictScreenState extends ConsumerState<DictScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(editCtx).pop(),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () async {
@@ -431,7 +442,9 @@ class _DictScreenState extends ConsumerState<DictScreen> {
               } catch (e) {
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('保存失败：${errorMessage(e)}')),
+                    SnackBar(
+                      content: Text(AppStrings.saveFailedWith(errorMessage(e))),
+                    ),
                   );
                 }
                 return;
@@ -439,7 +452,7 @@ class _DictScreenState extends ConsumerState<DictScreen> {
               onSaved(() {});
               if (editCtx.mounted) Navigator.of(editCtx).pop();
             },
-            child: const Text('保存'),
+            child: Text(AppStrings.save),
           ),
         ],
       ),

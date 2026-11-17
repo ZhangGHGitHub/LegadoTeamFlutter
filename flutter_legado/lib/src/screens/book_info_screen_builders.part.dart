@@ -84,12 +84,15 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         SliverFillRemaining(
           hasScrollBody: false,
           child: PrivateLockedPage(
-            title: '私密书籍',
+            title: AppStrings.privateBookTitle,
             description: privacyLockedDescription(
               privacy,
-              fallback: '验证后查看书籍详情',
+              fallback: AppStrings.verifyToViewBookInfo,
             ),
-            actionText: privacyLockedActionText(privacy, fallback: '验证并查看'),
+            actionText: privacyLockedActionText(
+              privacy,
+              fallback: AppStrings.verifyAndView,
+            ),
             header: const PrivateLockedPlaceholderBars(),
             onAction: _requestPrivateUnlock,
             onBiometric: privacy.biometricUsable
@@ -109,7 +112,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       context,
       ref,
       bookUrl: book.bookUrl,
-      title: '验证后查看',
+      title: AppStrings.verifyToView,
     );
   }
 
@@ -302,7 +305,9 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         if (mounted) {
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(const SnackBar(content: Text('未配置回调或回调未接管')));
+          ).showSnackBar(
+            SnackBar(content: Text(AppStrings.callbackNotHandled)),
+          );
         }
       }
     } catch (e) {
@@ -310,7 +315,11 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('自定义按钮执行失败: ${errorMessage(e)}')));
+        ).showSnackBar(
+          SnackBar(
+            content: Text(AppStrings.customButtonFailedWith(errorMessage(e))),
+          ),
+        );
       }
     }
   }
@@ -343,7 +352,9 @@ extension _BookInfoBuilders on _BookInfoScreenState {
             if (mounted) {
               ScaffoldMessenger.of(
                 context,
-              ).showSnackBar(const SnackBar(content: Text('书籍信息暂不可用，请稍后重试')));
+              ).showSnackBar(
+                SnackBar(content: Text(AppStrings.bookInfoUnavailable)),
+              );
             }
           }
         }
@@ -365,11 +376,19 @@ extension _BookInfoBuilders on _BookInfoScreenState {
           );
           if (!mounted) return;
           setState(() => _loadedBook = updated);
-          _snack(updated.disableReadRecord ? '已关闭本书阅读记录' : '已恢复本书阅读记录');
+          _snack(
+            updated.disableReadRecord
+                ? AppStrings.bookReadRecordDisabled
+                : AppStrings.bookReadRecordRestored,
+          );
         } catch (e) {
           // BridgeError 未覆写 toString，须取 message 才能给出可读原因
           if (mounted) {
-            _snack('操作失败：${e is BridgeError ? e.message : e}');
+            _snack(
+              AppStrings.operationFailedWith(
+                e is BridgeError ? e.message : '$e',
+              ),
+            );
           }
         }
         break;
@@ -395,7 +414,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
           if (mounted) {
             ScaffoldMessenger.of(
               context,
-            ).showSnackBar(const SnackBar(content: Text('已拷贝书籍URL')));
+            ).showSnackBar(SnackBar(content: Text(AppStrings.bookUrlCopied)));
           }
         }
         break;
@@ -413,7 +432,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
           if (mounted) {
             ScaffoldMessenger.of(
               context,
-            ).showSnackBar(const SnackBar(content: Text('已拷贝目录URL')));
+            ).showSnackBar(SnackBar(content: Text(AppStrings.tocUrlCopied)));
           }
         }
         break;
@@ -446,7 +465,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         }
         if (mounted) {
           if (!_inBookshelf) {
-            _snack('拆分长章节将在加入书架后生效');
+            _snack(AppStrings.splitLongChapterTakesEffectAfterShelf);
           } else {
             _reload();
           }
@@ -464,7 +483,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         final b = _loadedBook;
         if (b == null) break;
         if (!ref.read(privacyNotifierProvider).hasPassword) {
-          _snack('请先在隐私设置中设置密码');
+          _snack(AppStrings.setPasswordInPrivacyFirst);
           break;
         }
         try {
@@ -488,10 +507,16 @@ extension _BookInfoBuilders on _BookInfoScreenState {
             if (target) _privateAutoUnlockRequested = true;
           });
           await ref.read(bookshelfNotifierProvider.notifier).refresh();
-          if (mounted) _snack(target ? '已标记为私密' : '已取消私密');
+          if (mounted) {
+            _snack(target ? AppStrings.markedPrivate : AppStrings.unmarkedPrivate);
+          }
         } catch (e) {
           if (mounted) {
-            _snack('操作失败：${e is BridgeError ? e.message : e}');
+            _snack(
+              AppStrings.operationFailedWith(
+                e is BridgeError ? e.message : '$e',
+              ),
+            );
           }
         }
         break;
@@ -559,7 +584,9 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     final feature = value;
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(SnackBar(content: Text('「$feature」后续版本支持')));
+    ).showSnackBar(
+      SnackBar(content: Text(AppStrings.featureSupportedLater(feature))),
+    );
   }
 
   /// 设置源变量（Task #63 冻结 / #64-65 实现，台账 §5.11-3，对齐原版 BookInfoActivity
@@ -576,14 +603,14 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     final api = ref.read(bookApiProvider);
     final source = _bookSource;
     if (source == null) {
-      _snack('书源不存在');
+      _snack(AppStrings.sourceNotExist);
       return;
     }
     // 说明文案（对齐原版 getDisplayVariableComment：书源注释优先）
     final srcComment = (source.variableComment ?? '').trim();
     final comment = srcComment.isNotEmpty
         ? srcComment
-        : '源变量可在js中通过source.getVariable()获取';
+        : AppStrings.sourceVariableHint;
     // 输入框预填当前书源 variable（对齐原版 source.getVariable 初值；
     // 评审 C1 后 variable 为非空串，无需 ?? 兼容）
     // [Task #70 D1 修复 | 2026-08-10] 重构为自持 StatefulWidget 对话框
@@ -594,7 +621,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     final input = await showDialog<String>(
       context: context,
       builder: (ctx) => _VariableDialog(
-        title: '设置源变量',
+        title: AppStrings.sourceSetVariable,
         comment: comment,
         initialText: source.variable,
       ),
@@ -612,10 +639,14 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         _bookSource = source.copyWith(variable: input);
       });
       _reload();
-      _snack(input.isEmpty ? '源变量已清除' : '源变量已保存');
+      _snack(
+        input.isEmpty ? AppStrings.sourceVariableCleared : AppStrings.sourceVariableSaved,
+      );
     } catch (e) {
       debugPrint('设置源变量失败: $e');
-      if (mounted) _snack('设置源变量失败: ${_errMsg(e)}');
+      if (mounted) {
+        _snack(AppStrings.sourceSetVariableFailed(_errMsg(e)));
+      }
     }
   }
 
@@ -633,7 +664,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     if (book == null) return;
     // 防御：仅本地书支持上传（在线书无本地文件，按原版语义不支持）
     if (_isOnlineBook(book)) {
-      _snack('上传至远程仅支持本地书籍');
+      _snack(AppStrings.uploadToRemoteLocalOnly);
       return;
     }
     // 前置：读取已保存的 WebDAV 配置（复用 SyncNotifier 既有配置链路）
@@ -651,8 +682,8 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('提示'),
-          content: const Text('已存在远程 webDav 地址，继续上传？'),
+          title: Text(AppStrings.noticeTitle),
+          content: Text(AppStrings.webdavUrlExistsConfirm),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -676,7 +707,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       await _showWebDavNotConfiguredDialog();
       return;
     }
-    _snack('正在上传至远程…');
+    _snack(AppStrings.uploadingToRemote);
     // [Task #55 F9 | 2026-08-10] 上传与 origin 回写分两阶段（批40 收敛到
     // 服务层）：回写失败时提示「上传成功但保存记录失败」而非误报「上传失败」
     try {
@@ -686,14 +717,14 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       if (!mounted) return;
       _snack(
         e.stage == WebDavBookUploadStage.upload
-            ? '上传失败: ${_errMsg(e.cause)}'
-            : '上传成功但保存记录失败，请重试',
+            ? AppStrings.uploadFailedWith(_errMsg(e.cause))
+            : AppStrings.uploadSavedRecordFailed,
       );
       return;
     }
     if (!mounted) return;
     _reload();
-    _snack('上传至远程成功');
+    _snack(AppStrings.uploadToRemoteSuccess);
   }
 
   /// WebDAV 未配置引导对话框（确认后跳转 WebDAV 设置页）
@@ -701,8 +732,8 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     final goSettings = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('未配置 WebDAV'),
-        content: const Text('上传至远程需要先配置 WebDAV 服务器信息'),
+        title: Text(AppStrings.webdavNotConfiguredTitle),
+        content: Text(AppStrings.webdavNotConfiguredDesc),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -710,7 +741,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('去设置'),
+            child: Text(AppStrings.goToSettings),
           ),
         ],
       ),
@@ -746,14 +777,14 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     final book = _loadedBook;
     final source = _bookSource;
     if (book == null || source == null) {
-      _snack('书源不存在');
+      _snack(AppStrings.sourceNotExist);
       return;
     }
     // 说明文案（对齐原版 getDisplayVariableComment：书源注释优先）
     final srcComment = (source.variableComment ?? '').trim();
     final comment = srcComment.isNotEmpty
         ? srcComment
-        : '书籍变量可在js中通过book.getVariable("custom")获取';
+        : AppStrings.bookVariableHint;
     // 输入框初值：解析 variable JSON Map 取 custom 键（解析失败视为空 Map）
     final customInit = _parseVariableMap(book.variable)['custom'];
     // [Task #70 D1 修复 | 2026-08-10] 同 _setSourceVariable：重构为自持
@@ -761,7 +792,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     final input = await showDialog<String>(
       context: context,
       builder: (ctx) => _VariableDialog(
-        title: '设置书籍变量',
+        title: AppStrings.setBookVariable,
         comment: comment,
         initialText: customInit?.toString() ?? '',
       ),
@@ -770,7 +801,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     // 原版 inBookshelf 守卫：仅在架时 saveBook，否则无条件 updateBook
     // 会把非在架书 upsert 进 books 表（M5）
     if (!_inBookshelf) {
-      _snack('请先加入书架');
+      _snack(AppStrings.addToShelfFirst);
       return;
     }
     try {
@@ -786,10 +817,10 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       await api.updateBook(full.copyWith(variable: jsonEncode(varMap)));
       if (!mounted) return;
       _reload();
-      _snack('书籍变量已保存');
+      _snack(AppStrings.bookVariableSaved);
     } catch (e) {
       debugPrint('保存书籍变量失败: $e');
-      if (mounted) _snack('保存书籍变量失败');
+      if (mounted) _snack(AppStrings.bookVariableSaveFailed);
     }
   }
 
@@ -841,11 +872,11 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       bookAuthor: book.author,
       // [fix Task#45 | 2026-08-09] 文案对齐原版 auto_task_book_update_name
       // （「更新 %s」含空格）— Qoder
-      name: '更新 ${book.name}',
+      name: AppStrings.updateTaskName(book.name),
     );
     if (!mounted) return;
     if (built == null) {
-      _snack('创建任务失败');
+      _snack(AppStrings.createTaskFailed);
       return;
     }
     await Navigator.pushNamed(
@@ -1127,7 +1158,9 @@ extension _BookInfoBuilders on _BookInfoScreenState {
                           ),
                           behavior: HitTestBehavior.opaque,
                           child: Text(
-                            book.author.isNotEmpty ? book.author : '未知作者',
+                            book.author.isNotEmpty
+                                ? book.author
+                                : AppStrings.unknownAuthor,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             // [U3 | 台账 0917] 中等可读灰（ref PIL 实测
@@ -1160,7 +1193,11 @@ extension _BookInfoBuilders on _BookInfoScreenState {
                                     : null,
                                 behavior: HitTestBehavior.opaque,
                                 child: Text(
-                                  '来源：${book.originName.isNotEmpty ? book.originName : book.origin}',
+                                  AppStrings.originLabel(
+                                    book.originName.isNotEmpty
+                                        ? book.originName
+                                        : book.origin,
+                                  ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   // [F1 | 台账 0917 08 批] onSurfaceVariant
@@ -1177,7 +1214,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
                             ),
                             _smallAction(
                               context,
-                              '换源',
+                              AppStrings.changeSource,
                               () => _showChangeSourceDialog(book),
                             ),
                           ],
@@ -1220,18 +1257,18 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         : chapters.length;
     if (chapterTotal <= 0) {
       return Text(
-        '暂无章节',
+        AppStrings.noChapters,
         style: ts.bodyLarge?.copyWith(color: cs.onSurfaceVariant),
       );
     }
     final dci = book.durChapterIndex;
     final String readState;
     if (dci == 0 && book.durChapterPos == 0) {
-      readState = '未读';
+      readState = AppStrings.unread;
     } else if (dci + 1 == chapterTotal && chapterTotal > 0) {
-      readState = '已读完';
+      readState = AppStrings.finishedReading;
     } else {
-      readState = '已读 ${dci + 1} 章';
+      readState = AppStrings.readChapters(dci + 1);
     }
     // [H4 | 台账 0917 反馈批七] ref 08 共N章行墨高 35px/字宽 33px≈
     // 12sp → 13sp 偏大，显式定 12sp
@@ -1240,7 +1277,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          '共 $chapterTotal 章',
+          AppStrings.totalChapters(chapterTotal),
           style: base?.copyWith(color: cs.primary, fontWeight: FontWeight.w700),
         ),
         const SizedBox(width: 8),
@@ -1378,7 +1415,13 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       // [H2 | 台账 0917 反馈批七] 在读行 16sp w700（ref 墨高 46px 粗体）；
       // [P2-21] 形态对齐参考 toc_s「在读 · %s」：标题原文直出，无「第N章」
       // 前缀（原「在读·第N章」前缀 + 1 基取 chapters[durIdx-1] 双错）
-      lines.add(line('在读 · $readTitle', fontSize: 16, weight: FontWeight.w700));
+      lines.add(
+        line(
+          AppStrings.readingWithTitle(readTitle),
+          fontSize: 16,
+          weight: FontWeight.w700,
+        ),
+      );
     }
     // 最新行（info：latestChapterTitle）
     // [E5 | 台账 0917 反馈批四] 部分书源的 latestChapterTitle 字段返回的是完结
@@ -1396,7 +1439,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     // latestChapterTitle 固定「已下载」（文件列表就绪即展示）
     if (BookOpenUtils.isWebFileBook(book) &&
         BookOpenUtils.buildWebFileList(book).isNotEmpty) {
-      latestTitle = '已下载';
+      latestTitle = AppStrings.downloadedLabel;
     } else if (latestStatusRe.hasMatch(latestTitle)) {
       final tocTotal = book.totalChapterNum > 0
           ? book.totalChapterNum
@@ -1411,7 +1454,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     }
     if (isMeaningfulText(latestTitle)) {
       // [H3 | 台账 0917 反馈批七] 最新行 13sp 常规字重（ref 墨高 40px）
-      lines.add(line('最新 · $latestTitle', fontSize: 13));
+      lines.add(line(AppStrings.latestWithTitle(latestTitle), fontSize: 13));
     }
     return lines;
   }
@@ -1481,7 +1524,9 @@ extension _BookInfoBuilders on _BookInfoScreenState {
               _inBookshelf
                   ? Symbols.playlist_remove_rounded
                   : Symbols.playlist_add_rounded,
-              _inBookshelf ? '已在书架' : '加书架',
+              _inBookshelf
+                  ? AppStrings.inBookshelfLabel
+                  : AppStrings.addToShelfShort,
               // webFile 书对齐原版 tv_shelf：先弹文件选择再导入
               () => isWebFile && !_inBookshelf
                   ? _showWebFilePicker()
@@ -1494,7 +1539,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
             Expanded(
               child: card(
                 Symbols.format_list_bulleted_rounded,
-                '查看目录',
+                AppStrings.viewChapters,
                 _openTocScreen,
               ),
             ),
@@ -1503,7 +1548,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
           Expanded(
             child: card(
               Symbols.swap_horiz_rounded,
-              '书源',
+              AppStrings.bookSourceLabel,
               () => _showChangeSourceDialog(book),
             ),
           ),
@@ -1511,7 +1556,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
           Expanded(
             child: card(
               Symbols.history_rounded,
-              '阅读记录',
+              AppStrings.readRecordLabel,
               () => Navigator.pushNamed(context, AppRoutes.readRecord),
             ),
           ),
@@ -1531,7 +1576,10 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       SliverToBoxAdapter(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: Text('角色', style: Theme.of(context).textTheme.titleMedium),
+          child: Text(
+            AppStrings.charactersLabel,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
         ),
       ),
       SliverToBoxAdapter(
@@ -1561,7 +1609,10 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       SliverToBoxAdapter(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: Text('相关书籍', style: Theme.of(context).textTheme.titleMedium),
+          child: Text(
+            AppStrings.relatedBooksLabel,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
         ),
       ),
     ];
@@ -1712,7 +1763,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       source = await _findSourceByOrigin(api, book.origin);
     }
     if (source == null) {
-      _snack('书源不存在');
+      _snack(AppStrings.sourceNotExist);
       return;
     }
     if (!mounted) return;
@@ -1805,7 +1856,9 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       setState(() => _chapters = chapters);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('目录已更新，共 ${chapters.length} 章')));
+      ).showSnackBar(
+        SnackBar(content: Text(AppStrings.tocUpdated(chapters.length))),
+      );
       if (_inBookshelf) {
         _reload();
       }
@@ -1827,7 +1880,9 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       } else {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('更新失败: ${errorMessage(e)}')));
+        ).showSnackBar(
+          SnackBar(content: Text(AppStrings.updateFailedWith(errorMessage(e)))),
+        );
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -1840,7 +1895,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     final book = _loadedBook;
     if (book == null) return;
     if (_chapters.isEmpty) {
-      _snack('目录为空');
+      _snack(AppStrings.tocEmpty);
       return;
     }
     if (!_inBookshelf) {
@@ -1889,16 +1944,16 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         final confirmed = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
-            title: const Text('移出书架'),
-            content: Text('确定将《${book.name}》移出书架吗？'),
+            title: Text(AppStrings.removeFromShelfTitle),
+            content: Text(AppStrings.confirmRemoveFromShelf(book.name)),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('取消'),
+                child: Text(AppStrings.cancel),
               ),
               TextButton(
                 onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('确定'),
+                child: Text(AppStrings.confirm),
               ),
             ],
           ),
@@ -1912,13 +1967,19 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       if (!mounted) return;
       if (!ok) {
         final err = ref.read(bookshelfNotifierProvider).error;
-        _snack(err != null ? '移出书架失败：${errorMessage(err)}' : '移出书架失败');
+        _snack(
+          err != null
+              ? AppStrings.removeFromShelfFailedWith(errorMessage(err))
+              : AppStrings.removeFromShelfFailedNoReason,
+        );
         return;
       }
       setState(() => _inBookshelf = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('《${book.name}》已移出书架')));
+      ).showSnackBar(
+        SnackBar(content: Text(AppStrings.removedFromShelf(book.name))),
+      );
     } else {
       // 清除 notShelf 位转正：之前阅读时可能已以 notShelf 临时落库，
       // addBook 走原地 UPDATE 安全 upsert（不会级联删章节），同时清掉标记进书架。
@@ -1930,13 +1991,17 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       if (!mounted) return;
       if (!ok) {
         final err = ref.read(bookshelfNotifierProvider).error;
-        _snack(err != null ? '加入书架失败：${errorMessage(err)}' : '加入书架失败');
+        _snack(
+          err != null
+              ? AppStrings.addToShelfFailedWith(errorMessage(err))
+              : AppStrings.addToShelfFailedNoReason,
+        );
         return;
       }
       setState(() => _inBookshelf = true);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('《${book.name}》已加入书架')));
+      ).showSnackBar(SnackBar(content: Text(AppStrings.addedToShelf(book.name))));
     }
   }
 
@@ -1953,11 +2018,11 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     final selected = await showDialog<int>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: const Text('选择分组'),
+        title: Text(AppStrings.selectGroup),
         children: [
           SimpleDialogOption(
             onPressed: () => Navigator.pop(ctx, 0),
-            child: const Text('未分组'),
+            child: Text(AppStrings.ungrouped),
           ),
           for (final g in groups)
             SimpleDialogOption(
@@ -1985,7 +2050,11 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         setState(() => _inBookshelf = true);
       } else {
         final err = ref.read(bookshelfNotifierProvider).error;
-        _snack(err != null ? '加入书架失败：${errorMessage(err)}' : '加入书架失败');
+        _snack(
+          err != null
+              ? AppStrings.addToShelfFailedWith(errorMessage(err))
+              : AppStrings.addToShelfFailedNoReason,
+        );
       }
     } else if (mounted) {
       setState(() => _loadedBook = updated);
@@ -2004,7 +2073,9 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     if (BookType.isLocalOrigin(book.origin)) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('本地书籍不支持书源登录')));
+      ).showSnackBar(
+        SnackBar(content: Text(AppStrings.localBookNoSourceLogin)),
+      );
       return;
     }
     final api = ref.read(bookApiProvider);
@@ -2024,14 +2095,16 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     if (source == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('未找到本书对应的书源')));
+      ).showSnackBar(
+        SnackBar(content: Text(AppStrings.sourceForBookNotFound)),
+      );
       return;
     }
     final ok = await showSourceLogin(context, ref, source);
     if (ok && mounted) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('登录成功')));
+      ).showSnackBar(SnackBar(content: Text(AppStrings.loginSuccess)));
     }
   }
 
@@ -2044,13 +2117,15 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('已置顶')));
+        ).showSnackBar(SnackBar(content: Text(AppStrings.pinned)));
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('置顶失败: ${errorMessage(e)}')));
+        ).showSnackBar(
+          SnackBar(content: Text(AppStrings.pinFailedWith(errorMessage(e)))),
+        );
       }
     }
   }
@@ -2071,13 +2146,17 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('已清除 $deleted 条章节缓存')));
+        ).showSnackBar(
+          SnackBar(content: Text(AppStrings.chapterCacheCleared(deleted))),
+        );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('清除缓存失败: ${errorMessage(e)}')));
+        ).showSnackBar(
+          SnackBar(content: Text(AppStrings.clearCacheFailedWith(errorMessage(e)))),
+        );
       }
     }
   }
@@ -2265,7 +2344,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         >(
           context: context,
           builder: (ctx) => SimpleDialog(
-            title: const Text('下载并导入文件'),
+            title: Text(AppStrings.downloadAndImportFile),
             children: [
               for (final f in files)
                 SimpleDialogOption(
@@ -2331,7 +2410,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         } catch (_) {}
         if (!mounted) return;
         if (!isArchive) {
-          _snack('该文件不是有效的压缩包格式');
+          _snack(AppStrings.invalidArchiveFormat);
           return;
         }
         await showDialog<void>(
@@ -2342,7 +2421,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       }
       if (!entry.isSupported) {
         setState(() => _webFileImportingUrl = null);
-        _snack('文件类型不支持：${entry.name}');
+        _snack(AppStrings.fileTypeUnsupported(entry.name));
         return;
       }
       final local = await ref
@@ -2356,7 +2435,9 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         _inBookshelf = true;
         _chapters = const [];
       });
-      messenger.showSnackBar(SnackBar(content: Text('《${local.name}》已导入书架')));
+      messenger.showSnackBar(
+        SnackBar(content: Text(AppStrings.importedToShelf(local.name))),
+      );
       if (openReader) {
         await _openReader(context, local, 0);
       }
@@ -2381,7 +2462,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
           child: Text(
-            '下载并导入文件',
+            AppStrings.downloadAndImportFile,
             style: Theme.of(context).textTheme.titleMedium,
           ),
         ),

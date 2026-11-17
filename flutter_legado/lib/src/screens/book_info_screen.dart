@@ -301,7 +301,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
       backgroundColor: const Color(0xFFAFF2C4),
       foregroundColor: const Color(0xFF0B5130),
       icon: const Icon(Symbols.menu_book_rounded),
-      label: const Text('阅读'),
+      label: Text(AppStrings.readAction),
       onPressed: () => BookOpenUtils.isWebFileBook(book)
           ? _showWebFilePicker(openReaderAfter: true)
           : _openReader(context, book, book.durChapterIndex),
@@ -318,7 +318,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
       if (_inBookshelf)
         IconButton(
           icon: const Icon(Symbols.edit_rounded),
-          tooltip: '编辑书籍信息',
+          tooltip: AppStrings.bookInfoEditTooltip,
           onPressed: () async {
             try {
               final book = _loadedBook;
@@ -339,16 +339,16 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
               // [审计修复 §4.1] 不再静默吞异常，向用户提示 — Qoder
               debugPrint('编辑书籍信息失败: $e');
               if (mounted) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('书籍信息暂不可用，请稍后重试')));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(AppStrings.bookInfoUnavailable)),
+                );
               }
             }
           },
         ),
       IconButton(
         icon: const Icon(Symbols.ios_share_rounded),
-        tooltip: '分享',
+        tooltip: AppStrings.shareAction,
         onPressed: () async {
           try {
             final book = _loadedBook;
@@ -372,9 +372,9 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
             // [审计修复 §4.1] 不再静默吞异常，向用户提示 — Qoder
             debugPrint('分享书籍失败: $e');
             if (mounted) {
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('书籍信息暂不可用，请稍后重试')));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(AppStrings.bookInfoUnavailable)),
+              );
             }
           }
         },
@@ -382,12 +382,12 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
       if (_bookSource?.customButton == true)
         IconButton(
           icon: const Icon(Symbols.extension_rounded),
-          tooltip: '自定义',
+          tooltip: AppStrings.customAction,
           onPressed: _onCustomButton,
         ),
       // 安卓原版三点菜单；P2-2 自定义按钮已接通 callBackBtn 中途 UI 桥
       PopupMenuButton<String>(
-        tooltip: '更多',
+        tooltip: AppStrings.moreActions,
         onSelected: _handleMenu,
         itemBuilder: (_) {
           final book = _loadedBook;
@@ -421,74 +421,124 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
             // ── 前段：对齐参考 08 菜单项序（U1 | 台账 0917）──
             // 编辑（顶栏编辑图标仅架上书显示；菜单项全量可用——能力已存在，
             // 非功能新增；_handleMenu 'edit' 逻辑同顶栏图标）
-            const PopupMenuItem(value: 'edit', child: Text('编辑')),
-            const PopupMenuItem(value: 'refresh', child: Text('刷新')),
-            const PopupMenuItem(value: 'readRecord', child: Text('阅读记录')),
+            PopupMenuItem(value: 'edit', child: Text(AppStrings.edit)),
+            PopupMenuItem(
+              value: 'refresh',
+              child: Text(AppStrings.refreshAction),
+            ),
+            PopupMenuItem(
+              value: 'readRecord',
+              child: Text(AppStrings.readRecordLabel),
+            ),
             // [批35] 书籍级阅读记录开关（对齐参考版
             // `BookInfoMenuAction.ToggleReadRecordDisabled`：仅架上书显示，
             // 勾选态 = 当前已独立关闭阅读记录）
             if (_inBookshelf && book != null)
               checkedItem(
                 'readRecordDisabled',
-                '独立关闭阅读记录',
+                AppStrings.bookDisableReadRecord,
                 book.disableReadRecord,
               ),
             // 设置源变量（Task #63 冻结 / #64-65 实现，§5.11-3 已接通）/
             // 设置书籍变量（[Task #39 §5.11-4] 已接通变量对话框 + updateBook）
             if (hasSource)
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'sourceVariable',
-                child: Text('设置源变量'),
+                child: Text(AppStrings.sourceSetVariable),
               ),
             if (hasSource)
-              const PopupMenuItem(value: 'bookVariable', child: Text('设置书籍变量')),
-            const PopupMenuItem(value: 'copyBookUrl', child: Text('拷贝书籍URL')),
-            const PopupMenuItem(value: 'copyTocUrl', child: Text('拷贝目录URL')),
-            const PopupMenuItem(value: 'top', child: Text('置顶')),
+              PopupMenuItem(
+                value: 'bookVariable',
+                child: Text(AppStrings.setBookVariable),
+              ),
+            PopupMenuItem(
+              value: 'copyBookUrl',
+              child: Text(AppStrings.copyBookUrl),
+            ),
+            PopupMenuItem(
+              value: 'copyTocUrl',
+              child: Text(AppStrings.copyTocUrl),
+            ),
+            PopupMenuItem(value: 'top', child: Text(AppStrings.pinToTop)),
             // 允许更新（书源存在；勾选态尾部 ✓）
             if (hasSource)
-              checkedItem('canUpdate', '允许更新', book?.canUpdate ?? true),
+              checkedItem(
+                'canUpdate',
+                AppStrings.allowUpdate,
+                book?.canUpdate ?? true,
+              ),
             // [UI-fix v2.0.3] 删除提醒接通本地持久化（对齐原版
             // LocalConfig.deleteBookAlert；勾选态尾部 ✓）
-            checkedItem('deleteAlert', '删除提醒', _deleteBookAlert),
-            const PopupMenuItem(value: 'clearCache', child: Text('清理缓存')),
+            checkedItem(
+              'deleteAlert',
+              AppStrings.deleteAlert,
+              _deleteBookAlert,
+            ),
+            PopupMenuItem(
+              value: 'clearCache',
+              child: Text(AppStrings.clearCacheTitle),
+            ),
             // ── 分隔线后：本端独有项（双基准 + 红线：功能不删除）──
             // [GLOBALCOMP B5] 自造 disabled PopupMenuItem+Divider 换统一
             // PillMenuDivider（对齐 B1 批 8 处弹窗菜单分隔形态）
             const PillMenuDivider<String>(),
             if (source?.customButton == true)
-              const PopupMenuItem(value: 'customBtn', child: Text('自定义')),
+              PopupMenuItem(
+                value: 'customBtn',
+                child: Text(AppStrings.customAction),
+              ),
             if (isLocal)
-              const PopupMenuItem(value: 'upload', child: Text('上传至远程')),
+              PopupMenuItem(
+                value: 'upload',
+                child: Text(AppStrings.uploadToRemote),
+              ),
             // 创建书籍更新任务（在架 + 书源 + 非本地 + 允许更新；
             // [Task #39 §5.11-2] 已接通 AutoTaskScreen 编辑/创建流程）
             if (_inBookshelf && hasSource && !isLocal && canUpd)
-              const PopupMenuItem(value: 'updateTask', child: Text('创建书籍更新任务')),
+              PopupMenuItem(
+                value: 'updateTask',
+                child: Text(AppStrings.createBookUpdateTask),
+              ),
             // 登录（书源支持登录时）
             if (hasLogin)
-              const PopupMenuItem(value: 'login', child: Text('登录')),
+              PopupMenuItem(
+                value: 'login',
+                child: Text(AppStrings.loginAction),
+              ),
             // [B1 形态对齐]「分组」由操作宫格收纳进 ⋮ 菜单（复用 _showChangeGroup）
-            const PopupMenuItem(value: 'group', child: Text('设置分组')),
+            PopupMenuItem(
+              value: 'group',
+              child: Text(AppStrings.groupSettings),
+            ),
             // 拆分长章节（仅本地 txt；勾选态尾部 ✓；
             // isLocalTxt 已隐含 book != null，Dart 3 提升生效）
             if (isLocalTxt)
               checkedItem(
                 'splitLongChapter',
-                '拆分长章节',
+                AppStrings.splitLongChapter,
                 book.readConfig?.splitLongChapter ?? true,
               ),
-            const PopupMenuItem(value: 'cacheDownloads', child: Text('缓存下载队列')),
-            const PopupMenuItem(value: 'log', child: Text('日志')),
+            PopupMenuItem(
+              value: 'cacheDownloads',
+              child: Text(AppStrings.cacheDownloadQueue),
+            ),
+            PopupMenuItem(value: 'log', child: Text(AppStrings.logLabel)),
             // [批9c] 标记/取消私密（对齐参考版 BookInfoMenuAction.TogglePrivate）
             PopupMenuItem<String>(
               value: 'togglePrivate',
               enabled: privacy.hasPassword,
               child: Row(
                 children: [
-                  Expanded(child: Text(_bookPrivate ? '取消私密' : '标记为私密')),
+                  Expanded(
+                    child: Text(
+                      _bookPrivate
+                          ? AppStrings.unmarkPrivate
+                          : AppStrings.markAsPrivate,
+                    ),
+                  ),
                   if (!privacy.hasPassword)
                     Text(
-                      '请先设置密码',
+                      AppStrings.setPasswordFirst,
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
@@ -566,7 +616,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
             : _loadError != null && _loadedBook == null
             ? ErrorView(message: _loadError!, onRetry: _reload)
             : _loadedBook == null
-            ? const ErrorView(message: '书籍不存在')
+            ? ErrorView(message: AppStrings.bookNotExist)
             : privateLocked
             // [批9c] 锁定页不组合任何真实详情内容
             ? _buildPrivateLockedPage(context, privacy)

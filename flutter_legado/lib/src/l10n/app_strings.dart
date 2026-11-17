@@ -1789,4 +1789,267 @@ class AppStrings {
       _locale == 'zh' ? '请输入 $min ~ $max 之间的数字' : 'Enter a number between $min and $max';
   static String currentFontSize(String size) =>
       _locale == 'zh' ? '当前字体大小: $size' : 'Current font size: $size';
+
+  // ----- L10N 阶段 3：书籍详情 / 发现 / 字典 -----
+
+  // 通用动作（多界面共用）
+  static String get readAction => _get('阅读', 'Read');
+  static String get shareAction => _get('分享', 'Share');
+  static String get refreshAction => _get('刷新', 'Refresh');
+  static String get customAction => _get('自定义', 'Custom');
+  static String get loginAction => _get('登录', 'Login');
+  static String get logLabel => _get('日志', 'Log');
+  static String get noticeTitle => _get('提示', 'Notice');
+  static String get goToSettings => _get('去设置', 'Go to settings');
+  static String get doneLabel => _get('完成', 'Done');
+  static String get queryAction => _get('查询', 'Look up');
+  static String get collapseLabel => _get('收起', 'Collapse');
+  static String get expandLabel => _get('展开', 'Expand');
+
+  // 书籍详情：顶栏与溢出菜单
+  static String get bookInfoEditTooltip => _get('编辑书籍信息', 'Edit book information');
+  static String get bookInfoUnavailable =>
+      _get('书籍信息暂不可用，请稍后重试', 'Book information is unavailable, please try again later');
+  static String get bookNotExist => _get('书籍不存在', 'Book not found');
+  static String get missingBookParams => _get('缺少书籍参数', 'Missing book parameters');
+  static String get bookDisableReadRecord => _get('独立关闭阅读记录', 'Disable record for this book');
+  static String get setBookVariable => _get('设置书籍变量', 'Set book variable');
+  static String get copyBookUrl => _get('拷贝书籍URL', 'Copy book URL');
+  static String get copyTocUrl => _get('拷贝目录URL', 'Copy chapters URL');
+  static String get allowUpdate => _get('允许更新', 'Enable update');
+  static String get deleteAlert => _get('删除提醒', 'Delete Alert');
+  static String get uploadToRemote => _get('上传至远程', 'Upload');
+  static String get createBookUpdateTask => _get('创建书籍更新任务', 'Create book update task');
+  static String get groupSettings => _get('设置分组', 'Group settings');
+  static String get splitLongChapter => _get('拆分长章节', 'Split extra-long chapters');
+  static String get cacheDownloadQueue => _get('缓存下载队列', 'Download queue');
+  static String get markAsPrivate => _get('标记为私密', 'Mark as private');
+  static String get setPasswordFirst => _get('请先设置密码', 'Set a password first');
+
+  // 书籍详情：私密锁定页
+  static String get privateBookTitle => _get('私密书籍', 'Private book');
+  static String get verifyToViewBookInfo =>
+      _get('验证后查看书籍详情', 'Verify to view book details');
+  static String get verifyToView => _get('验证后查看', 'Verify to view');
+
+  // 书籍详情：自定义按钮 / 变量 / 上传 / 任务
+  static String get callbackNotHandled =>
+      _get('未配置回调或回调未接管', 'No callback configured or the callback did not take over');
+  static String get splitLongChapterTakesEffectAfterShelf =>
+      _get('拆分长章节将在加入书架后生效', 'Splitting extra-long chapters takes effect after adding to the bookshelf');
+  static String get setPasswordInPrivacyFirst =>
+      _get('请先在隐私设置中设置密码', 'Set a password in privacy settings first');
+  static String get markedPrivate => _get('已标记为私密', 'Marked as private');
+  static String get unmarkedPrivate => _get('已取消私密', 'Private mark removed');
+  static String get sourceNotExist => _get('书源不存在', 'Book source not found');
+  static String get uploadToRemoteLocalOnly =>
+      _get('上传至远程仅支持本地书籍', 'Upload is only available for local books');
+  static String get webdavUrlExistsConfirm =>
+      _get('已存在远程 webDav 地址，继续上传？', 'Remote WebDAV URL exists, continue?');
+  static String get uploadingToRemote => _get('正在上传至远程…', 'Uploading…');
+  static String get uploadSavedRecordFailed =>
+      _get('上传成功但保存记录失败，请重试', 'Uploaded but saving the record failed, please retry');
+  static String get uploadToRemoteSuccess => _get('上传至远程成功', 'Uploaded successfully');
+  static String get webdavNotConfiguredTitle => _get('未配置 WebDAV', 'WebDAV not configured');
+  static String get webdavNotConfiguredDesc => _get(
+      '上传至远程需要先配置 WebDAV 服务器信息',
+      'Configure the WebDAV server before uploading');
+  static String get bookVariableHint => _get(
+      '书籍变量可在js中通过book.getVariable("custom")获取',
+      'Book variables can be read in JS via book.getVariable("custom")');
+  static String get addToShelfFirst => _get('请先加入书架', 'Add the book to the bookshelf first');
+  static String get bookVariableSaved => _get('书籍变量已保存', 'Book variable saved');
+  static String get bookVariableSaveFailed =>
+      _get('保存书籍变量失败', 'Failed to save the book variable');
+  static String get createTaskFailed => _get('创建任务失败', 'Failed to create the task');
+
+  // 书籍详情：元信息区
+  static String get finishedReading => _get('已读完', 'Finished');
+  static String get downloadedLabel => _get('已下载', 'Downloaded');
+  static String get inBookshelfLabel => _get('已在书架', 'In library');
+  static String get addToShelfShort => _get('加书架', 'Add to shelf');
+  static String get viewChapters => _get('查看目录', 'Chapters');
+  static String get bookSourceLabel => _get('书源', 'Source');
+  static String get charactersLabel => _get('角色', 'Characters');
+  static String get relatedBooksLabel => _get('相关书籍', 'Related books');
+
+  // 书籍详情：书架切换 / 缓存 / webFile
+  static String get removeFromShelfTitle => _get('移出书架', 'Remove from bookshelf');
+  static String get removeFromShelfFailedNoReason =>
+      _get('移出书架失败', 'Failed to remove from bookshelf');
+  static String get localBookNoSourceLogin =>
+      _get('本地书籍不支持书源登录', 'Local books do not support source login');
+  static String get sourceForBookNotFound =>
+      _get('未找到本书对应的书源', 'No book source found for this book');
+  static String get loginSuccess => _get('登录成功', 'Login successful');
+  static String get tocEmpty => _get('目录为空', 'Chapters are empty');
+  static String get downloadAndImportFile => _get('下载并导入文件', 'Download and import file');
+  static String get invalidArchiveFormat =>
+      _get('该文件不是有效的压缩包格式', 'The file is not a valid archive');
+
+  // 发现页
+  static String get exploreFilterSourcesHint => _get('筛选发现源', 'Filter discovery sources');
+  static String get switchToSourceContent => _get('切换到源内容', 'Switch to source content');
+  static String get exploreEmpty => _get('当前没有发现源！', 'Empty now!');
+  static String get selectExploreCategory => _get('选择发现分类', 'Select a discovery category');
+  static String get exploreCategoryHint => _get(
+      '展开左侧书源并点击分类，在此浏览书籍',
+      'Expand a source on the left and tap a category to browse books here');
+  static String get uninstalled => _get('已卸载', 'Uninstalled');
+  static String get noCategories => _get('无分类', 'No categories');
+
+  // 字典查询页
+  static String get cannotOpenOnlineDict =>
+      _get('无法打开在线词典', 'Unable to open the online dictionary');
+  static String get dictLookupTitle => _get('字典查询', 'Dictionary');
+  static String get dictRulesManageTitle => _get('词典规则管理', 'Dictionary rules');
+  static String get ruleManagement => _get('规则管理', 'Rules');
+  static String get dictSearchHint => _get('输入单词查询释义', 'Enter a word to look up');
+  static String get dictStartHint => _get('输入单词开始查询', 'Enter a word to start looking up');
+  static String get dictOnlineFallbackHint =>
+      _get('未收录的词可跳转在线词典', 'Words not found here can be looked up online');
+  static String get localDictionary => _get('本地词典', 'Local dictionary');
+  static String get dictUseOnlineBelow =>
+      _get('可使用下方在线词典查询', 'Use the online dictionaries below');
+  static String get onlineDictionary => _get('在线词典', 'Online dictionaries');
+  static String get noDictRulesTapManage =>
+      _get('暂无词典规则，点击右上角管理添加', 'No dictionary rules yet; add them via the top-right menu');
+  static String get noRulesTapAddBelow =>
+      _get('暂无规则，点击下方按钮添加', 'No rules yet; add one with the button below');
+  static String get importDefaultAction => _get('导入默认', 'Import default');
+  static String get addRuleAction => _get('添加规则', 'Add rule');
+  static String get addDictionaryRule => _get('添加词典规则', 'Add dictionary rule');
+  static String get dictRuleName => _get('规则名称', 'Rule name');
+  static String get dictRuleQueryUrl => _get('查询地址', 'Lookup URL');
+  static String get dictWordPlaceholderHint =>
+      _get('使用 {{key}} 作为单词占位符', 'Use {{key}} as the word placeholder');
+
+  // 字典规则管理页
+  static String get deleteRuleTitle => _get('删除规则', 'Delete rules');
+  static String get exportDictRules => _get('导出字典规则', 'Export dictionary rules');
+  static String get addDictRuleEntry => _get('添加字典规则', 'Add dictionary rule');
+  static String get editDictRule => _get('编辑字典规则', 'Edit dictionary rule');
+  static String get importLocalAction => _get('本地导入', 'Import local');
+  static String get importOnlineAction => _get('在线导入', 'Import online');
+  static String get importQrAction => _get('扫码导入', 'Scan to import');
+  static String get importPassphraseAction => _get('口令导入', 'Passphrase import');
+  static String get qrContentMissing => _get('未获取到扫码内容', 'No scanned content received');
+  static String get invalidHttpUrl => _get('请输入有效的 http(s) 地址', 'Enter a valid http(s) URL');
+  static String get newRuleAction => _get('新增规则', 'Add rule');
+  static String get dictRuleManagement => _get('字典规则管理', 'Dictionary rules');
+  static String get moreOptions => _get('更多操作', 'More actions');
+  static String get exitMultiSelect => _get('退出多选', 'Exit selection');
+  static String get deselectAll => _get('取消全选', 'Deselect all');
+  static String get enableSelected => _get('启用选中', 'Enable selected');
+  static String get disableSelected => _get('禁用选中', 'Disable selected');
+  static String get exportSelected => _get('导出选中', 'Export selected');
+  static String get deleteSelected => _get('删除选中', 'Delete selected');
+  static String get loadingDictRules => _get('加载字典规则...', 'Loading dictionary rules...');
+  static String get noDictRules => _get('暂无字典规则', 'No dictionary rules');
+  static String get noDictRulesHint =>
+      _get('点击右下角按钮添加，或从右上角菜单导入', 'Tap the button below to add, or import from the top-right menu');
+  static String get queryUrlNotConfigured => _get('（未配置查询地址）', '(Lookup URL not configured)');
+  static String get ruleNameRequired => _get('规则名称不能为空', 'Rule name cannot be empty');
+  static String get dictRuleQueryUrlLabel => _get('查询地址（urlRule）', 'Lookup URL(urlRule)');
+  static String get dictRuleShowRuleLabel =>
+      _get('显示规则（showRule，可选）', 'Display rule(showRule, optional)');
+  static String get dictRuleShowRuleHint => _get(
+      'CSS/XPath/JsonPath 或 @js: 规则，留空直接展示原文',
+      'CSS/XPath/JsonPath or @js: rule; leave empty to show the raw text');
+  static String get dictLocalImportHint => _get(
+      '粘贴 JSON（对象数组或单对象，字段 name/urlRule/showRule，enabled/sortNumber 可选）',
+      'Paste JSON (an array of objects or a single object; fields name/urlRule/showRule, enabled/sortNumber optional)');
+
+  // ----- L10N 阶段 3：参数化文案 -----
+  static String customButtonFailedWith(String error) => _locale == 'zh'
+      ? '自定义按钮执行失败: $error'
+      : 'Custom button failed: $error';
+  static String operationFailedWith(String reason) =>
+      _locale == 'zh' ? '操作失败：$reason' : 'Operation failed: $reason';
+  static String get bookUrlCopied => _get('已拷贝书籍URL', 'Book URL copied');
+  static String get tocUrlCopied => _get('已拷贝目录URL', 'Chapters URL copied');
+  static String featureSupportedLater(String feature) => _locale == 'zh'
+      ? '「$feature」后续版本支持'
+      : '"$feature" will be supported in a later version';
+  static String get bookReadRecordDisabled =>
+      _get('已关闭本书阅读记录', 'Read record disabled for this book');
+  static String get bookReadRecordRestored =>
+      _get('已恢复本书阅读记录', 'Read record restored for this book');
+  static String uploadFailedWith(String error) =>
+      _locale == 'zh' ? '上传失败: $error' : 'Upload failed: $error';
+  static String updateTaskName(String name) =>
+      _locale == 'zh' ? '更新 $name' : 'Update $name';
+  static String readChapters(int count) =>
+      _locale == 'zh' ? '已读 $count 章' : '$count chapters read';
+  static String totalChapters(int count) =>
+      _locale == 'zh' ? '共 $count 章' : '$count chapters';
+  static String readingWithTitle(String title) =>
+      _locale == 'zh' ? '在读 · $title' : 'Reading · $title';
+  static String latestWithTitle(String title) =>
+      _locale == 'zh' ? '最新 · $title' : 'Latest · $title';
+  static String tocUpdated(int count) => _locale == 'zh'
+      ? '目录已更新，共 $count 章'
+      : 'Chapters updated, $count in total';
+  static String updateFailedWith(String error) =>
+      _locale == 'zh' ? '更新失败: $error' : 'Update failed: $error';
+  static String confirmRemoveFromShelf(String name) => _locale == 'zh'
+      ? '确定将《$name》移出书架吗？'
+      : 'Remove "$name" from the bookshelf?';
+  static String removeFromShelfFailedWith(String error) =>
+      _locale == 'zh' ? '移出书架失败：$error' : 'Failed to remove from bookshelf: $error';
+  static String removedFromShelf(String name) =>
+      _locale == 'zh' ? '《$name》已移出书架' : '"$name" removed from the bookshelf';
+  static String addToShelfFailedWith(String error) =>
+      _locale == 'zh' ? '加入书架失败：$error' : 'Failed to add to bookshelf: $error';
+  static String addedToShelf(String name) =>
+      _locale == 'zh' ? '《$name》已加入书架' : '"$name" added to the bookshelf';
+  static String pinFailedWith(String error) =>
+      _locale == 'zh' ? '置顶失败: $error' : 'Failed to pin to top: $error';
+  static String chapterCacheCleared(int count) => _locale == 'zh'
+      ? '已清除 $count 条章节缓存'
+      : 'Cleared $count chapter cache entries';
+  static String clearCacheFailedWith(String error) =>
+      _locale == 'zh' ? '清除缓存失败: $error' : 'Failed to clear the cache: $error';
+  static String fileTypeUnsupported(String name) =>
+      _locale == 'zh' ? '文件类型不支持：$name' : 'Unsupported file type: $name';
+  static String importedToShelf(String name) =>
+      _locale == 'zh' ? '《$name》已导入书架' : '"$name" imported to the bookshelf';
+  static String dictWordNotFound(String word) => _locale == 'zh'
+      ? '本地词典未收录「$word」'
+      : '"$word" is not in the local dictionary';
+  static String defaultDictRulesImported(int count) => _locale == 'zh'
+      ? '已导入 $count 条原版默认词典规则'
+      : 'Imported $count default dictionary rules';
+  static String saveFailedWith(String error) =>
+      _locale == 'zh' ? '保存失败：$error' : 'Save failed: $error';
+  static String toggleRuleFailedWith(String error) =>
+      _locale == 'zh' ? '启用/禁用失败：$error' : 'Failed to toggle the rule: $error';
+  static String reorderSaveFailedWith(String error) =>
+      _locale == 'zh' ? '排序保存失败：$error' : 'Failed to save the order: $error';
+  static String rulesToggled(bool enabled, int count) => _locale == 'zh'
+      ? '已${enabled ? '启用' : '禁用'} $count 条规则'
+      : '${enabled ? 'Enabled' : 'Disabled'} $count rules';
+  static String batchToggleFailedWith(bool enabled, String error) => _locale == 'zh'
+      ? '批量${enabled ? '启用' : '禁用'}失败：$error'
+      : 'Failed to ${enabled ? 'enable' : 'disable'} the selected rules: $error';
+  static String confirmDeleteDictRules(int count, String names) => _locale == 'zh'
+      ? '确定删除选中的 $count 条字典规则吗？\n（$names）'
+      : 'Delete the $count selected dictionary rules?\n($names)';
+  static String rulesDeleted(int count) =>
+      _locale == 'zh' ? '已删除 $count 条规则' : 'Deleted $count rules';
+  static String ruleAddedNamed(String name) =>
+      _locale == 'zh' ? '已添加规则「$name」' : 'Rule "$name" added';
+  static String ruleUpdatedNamed(String name) =>
+      _locale == 'zh' ? '已更新规则「$name」' : 'Rule "$name" updated';
+  static String dictRulesImported(int count) =>
+      _locale == 'zh' ? '已导入 $count 条字典规则' : 'Imported $count dictionary rules';
+  static String importFailedWith(String error) =>
+      _locale == 'zh' ? '导入失败：$error' : 'Import failed: $error';
+  static String defaultDictRuleRulesImported(int count) => _locale == 'zh'
+      ? '已导入 $count 条默认字典规则'
+      : 'Imported $count default dictionary rules';
+  static String importDefaultFailedWith(String error) =>
+      _locale == 'zh' ? '导入默认失败：$error' : 'Failed to import defaults: $error';
+  static String selectedItemsCount(int count) =>
+      _locale == 'zh' ? '已选 $count 项' : '$count selected';
 }

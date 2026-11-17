@@ -20,6 +20,7 @@ import '../widgets/md3_fast_scroller.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/explore/explore_main_notifier.dart';
 import '../providers/explore/explore_main_state.dart';
@@ -118,14 +119,16 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
           // DynamicTopAppBar：标题+搜索切换钮+bottomContent 展开行；
           // FilterChip 横滑条为常驻 bottom 追加）
           topBar: DynamicSearchAppBar(
-            title: '发现',
+            title: AppStrings.discover,
             // [UI_SYNC_REFACTOR S1b 修正] 对齐参考 ListScaffold：subtitle=
             // 当前分组、搜索行默认收起（切换钮展开）、分组筛选走下拉菜单
             //（非常驻 FilterChip 横条）
-            subtitle: state.selectedGroup.isEmpty ? '全部' : state.selectedGroup,
+            subtitle: state.selectedGroup.isEmpty
+                ? AppStrings.allBooks
+                : state.selectedGroup,
             initialExpanded: false,
             searchController: _searchController,
-            searchHint: '筛选发现源',
+            searchHint: AppStrings.exploreFilterSourcesHint,
             onChanged: _onSearchChanged,
             onClear: () {
               _searchController.clear();
@@ -134,7 +137,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
             actions: [
               // [批36 源内容模式] 源列表 ⇄ 源内容切换（参考版顶栏 SwapHoriz）
               IconButton(
-                tooltip: '切换到源内容',
+                tooltip: AppStrings.switchToSourceContent,
                 icon: const Icon(Symbols.swap_horiz_rounded),
                 onPressed: () => ref
                     .read(exploreMainNotifierProvider.notifier)
@@ -144,16 +147,16 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
               // （对齐参考版/原版顶栏形态：搜索 + ⋮；原版 main_explore.xml 的
               //  menu_group 分组子菜单并入此处，文件夹图标能力无损收编）
               PopupMenuButton<String>(
-                tooltip: '更多',
+                tooltip: AppStrings.moreActions,
                 icon: const Icon(Symbols.more_vert_rounded),
                 onSelected: (group) {
                   ref.read(exploreNotifierProvider.notifier).selectGroup(group);
                   setState(() => _selectedCategory = null);
                 },
                 itemBuilder: (_) => [
-                  const PopupMenuItem<String>(
+                  PopupMenuItem<String>(
                     value: '',
-                    child: Text('全部'),
+                    child: Text(AppStrings.allBooks),
                   ),
                   for (final group in state.groups)
                     PopupMenuItem<String>(value: group, child: Text(group)),
@@ -197,9 +200,9 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
 
     final bookSources = state.filteredBookSources;
     if (bookSources.isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: Symbols.library_books_rounded,
-        title: '当前没有发现源！',
+        title: AppStrings.exploreEmpty,
         simple: true,
       );
     }
@@ -225,10 +228,10 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
         Flexible(
           flex: 3,
           child: _selectedCategory == null
-              ? const EmptyState(
+              ? EmptyState(
                   icon: Symbols.explore_rounded,
-                  title: '选择发现分类',
-                  subtitle: '展开左侧书源并点击分类，在此浏览书籍',
+                  title: AppStrings.selectExploreCategory,
+                  subtitle: AppStrings.exploreCategoryHint,
                   simple: true,
                 )
               : Column(
@@ -353,9 +356,9 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
     if (!mounted) return;
     if (ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('已卸载'),
-          duration: Duration(seconds: 1),
+        SnackBar(
+          content: Text(AppStrings.uninstalled),
+          duration: const Duration(seconds: 1),
         ),
       );
     }
@@ -375,15 +378,15 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
       await api.updateBookSource(updated);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('已置顶'),
-          duration: Duration(seconds: 1),
+        SnackBar(
+          content: Text(AppStrings.pinned),
+          duration: const Duration(seconds: 1),
         ),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('置顶失败: ${errorMessage(e)}')),
+        SnackBar(content: Text(AppStrings.pinFailedWith(errorMessage(e)))),
       );
     }
   }
@@ -394,9 +397,9 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
     if (!mounted) return;
     if (ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('登录成功'),
-          duration: Duration(seconds: 1),
+        SnackBar(
+          content: Text(AppStrings.loginSuccess),
+          duration: const Duration(seconds: 1),
         ),
       );
     }
@@ -584,16 +587,16 @@ class _SourceItemState extends ConsumerState<_SourceItem>
       context: context,
       position: RelativeRect.fromLTRB(pos.dx, pos.dy, pos.dx, pos.dy),
       items: [
-        const PopupMenuItem(value: 'edit', child: Text('编辑')),
-        const PopupMenuItem(value: 'top', child: Text('置顶')),
+        PopupMenuItem(value: 'edit', child: Text(AppStrings.edit)),
+        PopupMenuItem(value: 'top', child: Text(AppStrings.pinToTop)),
         if (_hasLoginUrl)
-          const PopupMenuItem(value: 'login', child: Text('登录')),
-        const PopupMenuItem(value: 'search', child: Text('搜索')),
-        const PopupMenuItem(value: 'refresh', child: Text('刷新')),
+          PopupMenuItem(value: 'login', child: Text(AppStrings.loginAction)),
+        PopupMenuItem(value: 'search', child: Text(AppStrings.search)),
+        PopupMenuItem(value: 'refresh', child: Text(AppStrings.refreshAction)),
         PopupMenuItem(
           value: 'uninstall',
           child: Text(
-            '删除',
+            AppStrings.delete,
             style: TextStyle(color: Theme.of(context).colorScheme.error),
           ),
         ),
@@ -664,7 +667,7 @@ class _SourceItemState extends ConsumerState<_SourceItem>
       return Padding(
         padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
         child: Text(
-          '无分类',
+          AppStrings.noCategories,
           style: theme.textTheme.bodySmall?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
