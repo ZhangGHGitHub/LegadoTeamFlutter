@@ -214,6 +214,25 @@ void main() {
       expect(floatBridge.shown, hasLength(1));
       expect(find.text(_blockedMessage), findsNothing);
     });
+
+    // 端到端：Rust `open_video_player` 真实载荷串（含 bookUrl）经
+    // interceptResult 拦截管线（生产路径，非 dispatchPayload 直调）同样被拦
+    testWidgets('interceptResult 管线：Rust 载荷串带 bookUrl 同样被拒', (
+      tester,
+    ) async {
+      await boot(books: [_privateBook]);
+      await pumpApp(tester);
+
+      const rustPayload =
+          '{"action":"openVideoPlayer","url":"$_videoUrl","title":"第1集",'
+          '"isFloat":true,"bookUrl":"$_privateBookUrl"}';
+      final result = await bridge().interceptResult(rustPayload);
+      await tester.pumpAndSettle();
+
+      expect(result, '', reason: '动作类载荷执行后回传空串');
+      expect(floatBridge.shown, isEmpty);
+      expect(find.text(_blockedMessage), findsOneWidget);
+    });
   });
 
   group('防过度拦截', () {
