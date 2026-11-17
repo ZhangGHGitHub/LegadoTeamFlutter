@@ -289,9 +289,15 @@ pub fn start_browser_await(url: &str, title: &str) -> String {
 /// Rust 无头运行时无法直接拉起播放器，因此返回一个结构化 JSON 桥接载荷，
 /// 由 Flutter / 平台侧拦截并真正打开内置视频播放器（或悬浮窗）。
 ///
+/// [P2-7] 载荷额外携带 `bookUrl`：书源 JS 运行时可能正处在某本书的规则
+/// 流程内，Flutter 侧据此做私密判定（否则 `isFloat` 分支绕过浮窗创建点的
+/// 私密闸门、全屏分支因无书身份被 `PrivateBookGate` 直接放行）。
+/// 无书籍身份（搜索/发现/直用引擎）时为空串，Flutter 侧退化到
+/// 「书架存在私密内容则要求会话已解锁」。
+///
 /// 返回 JSON：
 /// ```json
-/// {"action":"openVideoPlayer","url":"...","title":"...","isFloat":false}
+/// {"action":"openVideoPlayer","url":"...","title":"...","isFloat":false,"bookUrl":"..."}
 /// ```
 pub fn open_video_player(url: &str, title: &str, is_float: bool) -> String {
     let payload = serde_json::json!({
@@ -299,10 +305,43 @@ pub fn open_video_player(url: &str, title: &str, is_float: bool) -> String {
         "url": url,
         "title": title,
         "isFloat": is_float,
+        "bookUrl": current_book_url_from_flow_scope(),
     })
     .to_string();
     super::ui_action_queue::push_payload_json(&payload);
     payload
+}
+
+/// 当前 flow scope 中可用的**书籍身份**（[P2-7]）
+///
+/// `variable_store::set_flow_scope` 的键有两族（语义见
+/// `legado-fetcher/src/web_book.rs::begin_book_flow` 的文档注释）：
+///
+/// - **书籍流程键 = 书籍页取址点原样**：详情 `webbook_info` / 目录
+///   `webbook_chapters` / `reader::refresh_toc` / 换源 `source_switch` /
+///   预更新 `pre_update` 均以 `book_url`（或 `Book::book_page_fetch_url`，
+///   originBookUrl 优先、空回退 bookUrl）作为 scope 键 → 即书身份本身，
+///   直接透传给 Flutter 侧做私密判定；
+/// - **非书籍流程键**（无书身份，不得当作书 URL 参与私密判定）：
+///   - `search:{bookSourceUrl}` — 单源搜索流程（`webbook_search`）；
+///   - `explore:{bookSourceUrl}` — 发现流程
+///     （`webbook_explore_first_book`）；
+///   - `search` — 多源并行搜索的运行级键（`legado-ffi/src/api/search.rs`
+///     的 `search_books` / `multi_source_search` / `run_multi_stream`：
+///     并发各源共享单槽 scope，故用运行级键而非逐源键）。
+///
+/// 前缀判定用 `starts_with`，覆盖 `search:`/`explore:` 后接任意书源 URL
+/// 的形态；裸 `search` 用全等判定，避免把形如
+/// `search.example.com/book/1` 的合法书籍 URL 误判为非书籍流程。
+fn current_book_url_from_flow_scope() -> String {
+    let scope = match super::variable_store::current_flow_scope() {
+        Some(s) => s,
+        None => return String::new(),
+    };
+    if scope == "search" || scope.starts_with("search:") || scope.starts_with("explore:") {
+        return String::new();
+    }
+    scope
 }
 
 #[cfg(test)]
@@ -436,6 +475,8 @@ mod tests {
         assert_eq!(parsed["url"], "http://v.com/x.mp4");
         assert_eq!(parsed["title"], "第1集");
         assert_eq!(parsed["isFloat"], false);
+        // [P2-7] 无书籍流程 scope 时 bookUrl 为空串（Flutter 侧退化判定）
+        assert_eq!(parsed["bookUrl"], "");
     }
 
     #[test]
@@ -443,5 +484,65 @@ mod tests {
         let payload = open_video_player("http://v.com/y.m3u8", "", true);
         let parsed: serde_json::Value = serde_json::from_str(&payload).unwrap();
         assert_eq!(parsed["isFloat"], true);
+    }
+
+    // ---- [P2-7] bookUrl 载荷：flow scope → 书身份 ----
+
+    /// 在指定 flow scope 下取 openVideoPlayer 载荷的 bookUrl
+    ///
+    /// 经 `lock_variables` + `StoreGuard` 串行化并恢复进程级全局状态
+    /// （与 variable_store 自身测试同口径，避免并行测试互相污染 scope）。
+    fn book_url_under_scope(scope: Option<&str>) -> String {
+        let _lock = super::super::variable_store::lock_variables();
+        let _guard = super::super::variable_store::StoreGuard::new();
+        match scope {
+            Some(s) => super::super::variable_store::set_flow_scope(s).expect("设 flow scope"),
+            None => super::super::variable_store::clear_flow_scope().expect("清 flow scope"),
+        }
+        let payload = open_video_player("http://v.com/x.mp4", "", false);
+        let parsed: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        parsed["bookUrl"].as_str().unwrap_or_default().to_string()
+    }
+
+    #[test]
+    fn test_open_video_player_book_url_from_book_flow_scope() {
+        // 书籍流程键 = 书籍页取址点原样（详情/目录/换源/预更新入口）
+        assert_eq!(
+            book_url_under_scope(Some("https://a.example.com/book/1")),
+            "https://a.example.com/book/1"
+        );
+        // 换源后的 originBookUrl 形态（book_page_fetch_url 产物）同样透传
+        assert_eq!(
+            book_url_under_scope(Some("https://old.example.com/book/1")),
+            "https://old.example.com/book/1"
+        );
+    }
+
+    #[test]
+    fn test_open_video_player_book_url_blank_for_non_book_flows() {
+        // 搜索：单源 `search:{bookSourceUrl}` / 多源运行级键 `search`
+        assert_eq!(book_url_under_scope(Some("search:https://src.example.com")), "");
+        assert_eq!(book_url_under_scope(Some("search")), "");
+        // 发现：`explore:{bookSourceUrl}`
+        assert_eq!(
+            book_url_under_scope(Some("explore:https://src.example.com")),
+            ""
+        );
+        // 无流程（直用引擎 / 已结束流程）
+        assert_eq!(book_url_under_scope(None), "");
+    }
+
+    #[test]
+    fn test_open_video_player_book_url_not_misjudged_by_prefix() {
+        // 裸 `search` 用全等判定：形如 search.example.com 的合法书籍 URL
+        // 不得因前缀相似被误判为非书籍流程
+        assert_eq!(
+            book_url_under_scope(Some("search.example.com/book/1")),
+            "search.example.com/book/1"
+        );
+        assert_eq!(
+            book_url_under_scope(Some("explore.example.com/book/2")),
+            "explore.example.com/book/2"
+        );
     }
 }
