@@ -1,0 +1,18 @@
+# batch45c 门禁原始输出
+## 1. cargo fmt --all -- --check
+EXIT=0 (无输出=格式合规)
+
+## 2. cargo clippy --workspace --all-targets -- -D warnings
+Finished dev profile in 9.28s; EXIT=0
+
+## 3. clippy quickjs (js/fetcher/ffi/server/parser/book)
+Finished dev profile in 1.25s; EXIT=0
+
+## 6. cargo audit --no-fetch
+warning: 6 allowed warnings found; EXIT=0 (0 vulnerabilities)
+
+## 7. flutter analyze --no-fatal-infos
+No issues found! (ran in 15.4s); EXIT=0
+
+## 8. flutter test
+02:40 +6099 ~1: All tests passed!; EXIT=0

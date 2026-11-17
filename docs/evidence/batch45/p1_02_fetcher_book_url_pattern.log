@@ -1,0 +1,14 @@
+   Compiling legado-js v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-js)
+   Compiling legado-fetcher v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-fetcher)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.72s
+     Running unittests src\lib.rs (target\debug\deps\legado_fetcher-0ffb7ae939a58b8d.exe)
+
+running 5 tests
+test web_book::tests::test_matches_book_url_pattern ... ok
+test web_book::tests::test_matches_book_url_pattern_shuzhaige_lookahead_regression ... ok
+test web_book::tests::test_matches_book_url_pattern_length_near_limit ... ok
+test web_book::tests::test_matches_book_url_pattern_lookahead_still_matches ... ok
+test web_book::tests::test_explore_empty_list_with_book_url_pattern_skips_detail_fallback ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 188 filtered out; finished in 0.08s
+

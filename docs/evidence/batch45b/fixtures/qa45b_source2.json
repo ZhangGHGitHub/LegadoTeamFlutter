@@ -1,0 +1,41 @@
+[
+ {
+  "bookSourceUrl": "http://192.168.100.52:18120",
+  "bookSourceName": "QA45B变量源",
+  "bookSourceGroup": "QA45B",
+  "bookSourceType": 0,
+  "enabled": true,
+  "enabledExplore": false,
+  "enabledCookieJar": false,
+  "customOrder": 0,
+  "weight": 0,
+  "searchUrl": "http://192.168.100.52:18120/search?key={{key}}",
+  "ruleSearch": {
+   "bookList": "$.data[*]",
+   "name": "$.name\n@js:source.put('qa45b_var','PERSISTED_BY_JS_4511'); result",
+   "author": "$.author",
+   "intro": "$.intro",
+   "bookUrl": "$.bookUrl",
+   "coverUrl": "$.coverUrl",
+   "kind": "$.kind"
+  },
+  "ruleBookInfo": {
+   "name": "$.name",
+   "author": "$.author",
+   "intro": "$.intro",
+   "kind": "$.kind",
+   "coverUrl": "$.coverUrl",
+   "tocUrl": "$.tocUrl"
+  },
+  "ruleToc": {
+   "chapterList": "$.data[*]",
+   "chapterName": "$.name",
+   "chapterUrl": "$.url"
+  },
+  "ruleContent": {
+   "content": "$.url"
+  },
+  "ruleExplore": null,
+  "mainJs": null
+ }
+]

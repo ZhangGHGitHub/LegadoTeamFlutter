@@ -1,0 +1,10 @@
+    Checking legado-core v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-core)
+   Compiling legado-book v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-book)
+   Compiling legado-server v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-server)
+    Checking legado-parser v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-parser)
+    Checking legado-net v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-net)
+    Checking legado-db v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-db)
+    Checking legado-js v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-js)
+    Checking legado-fetcher v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-fetcher)
+    Checking legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 12.72s

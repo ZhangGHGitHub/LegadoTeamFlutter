@@ -1,0 +1,397 @@
+{
+  "version": 7,
+  "backupTime": 1794887236466,
+  "books": [
+    {
+      "author": "QA作者",
+      "bookUrl": "http://192.168.100.52:8925/book1.html",
+      "canUpdate": true,
+      "chapterInVolumeIndex": 0,
+      "disableReadRecord": false,
+      "downloadUrls": "",
+      "durChapterIndex": 3,
+      "durChapterPos": 0,
+      "durChapterTime": 1794822950576,
+      "durChapterTitle": "第四章",
+      "durVolumeIndex": 0,
+      "group": 0,
+      "intro": "用于批25 段评面板验收的本地书。",
+      "isPrivate": false,
+      "lastCheckCount": 0,
+      "lastCheckTime": 0,
+      "latestChapterTime": 1794708699220,
+      "latestChapterTitle": "第六章",
+      "name": "QA25 段评书",
+      "order": 0,
+      "origin": "http://192.168.100.52:8925",
+      "originBookUrl": "",
+      "originName": "QA25 段评源",
+      "originOrder": 0,
+      "syncTime": 0,
+      "tocUrl": "http://192.168.100.52:8925/book1.html",
+      "totalChapterNum": 6,
+      "type": 8
+    },
+    {
+      "author": "",
+      "bookUrl": "/data/user/0/io.legado.flutter_legado/files/external_import/big_utf8_cn.txt",
+      "canUpdate": true,
+      "chapterInVolumeIndex": 0,
+      "disableReadRecord": false,
+      "durChapterIndex": 39,
+      "durChapterPos": 0,
+      "durChapterTime": 1794886767498,
+      "durChapterTitle": "第40章 风起长安",
+      "durVolumeIndex": 0,
+      "group": 0,
+      "intro": "",
+      "isPrivate": true,
+      "lastCheckCount": 0,
+      "lastCheckTime": 1794884997435,
+      "latestChapterTime": 1794884997507,
+      "latestChapterTitle": "第40章 风起长安",
+      "name": "big_utf8_cn",
+      "order": 0,
+      "origin": "loc_book",
+      "originBookUrl": "",
+      "originName": "big_utf8_cn.txt",
+      "originOrder": 0,
+      "syncTime": 0,
+      "tocUrl": "",
+      "totalChapterNum": 40,
+      "type": 4096
+    },
+    {
+      "author": "",
+      "bookUrl": "/data/user/0/io.legado.flutter_legado/files/external_import/big_gbk_cn.txt",
+      "canUpdate": true,
+      "chapterInVolumeIndex": 0,
+      "disableReadRecord": false,
+      "durChapterIndex": 39,
+      "durChapterPos": 0,
+      "durChapterTime": 1794886614179,
+      "durChapterTitle": "第40章 风起长安",
+      "durVolumeIndex": 0,
+      "group": 0,
+      "intro": "",
+      "isPrivate": false,
+      "lastCheckCount": 0,
+      "lastCheckTime": 1794885196314,
+      "latestChapterTime": 1794885196346,
+      "latestChapterTitle": "第40章 风起长安",
+      "name": "big_gbk_cn",
+      "order": 0,
+      "origin": "loc_book",
+      "originBookUrl": "",
+      "originName": "big_gbk_cn.txt",
+      "originOrder": 0,
+      "syncTime": 0,
+      "tocUrl": "",
+      "totalChapterNum": 40,
+      "type": 4096
+    }
+  ],
+  "bookmarks": [],
+  "bookMarks": [],
+  "replaceRules": [],
+  "bookSources": [
+    {
+      "bookSourceComment": "// Error: 搜索链接规则为空",
+      "bookSourceGroup": "QA",
+      "bookSourceName": "QA25 段评源",
+      "bookSourceType": 0,
+      "bookSourceUrl": "http://192.168.100.52:8925",
+      "bookUrlPattern": ".*192\\.168\\.100\\.52:8925/book1\\.html.*",
+      "customButton": false,
+      "customOrder": 0,
+      "enabled": true,
+      "enabledCookieJar": false,
+      "enabledExplore": false,
+      "eventListener": false,
+      "lastUpdateTime": 0,
+      "respondTime": 0,
+      "ruleBookInfo": {
+        "author": "class.author@text",
+        "intro": "class.intro@text",
+        "name": "class.name@text"
+      },
+      "ruleContent": {
+        "content": "class.content@html"
+      },
+      "ruleReview": {
+        "detailBadgeRule": "$.tag",
+        "detailContentRule": "$.text",
+        "detailIdRule": "$.id",
+        "detailListRule": "$.comments",
+        "detailNameRule": "$.user",
+        "enabled": true,
+        "reviewDetailUrl": "http://192.168.100.52:8925/review/detail",
+        "reviewQuoteUrl": "http://192.168.100.52:8925/review/reply",
+        "reviewSummaryUrl": "http://192.168.100.52:8925/review/summary",
+        "summaryCountRule": "$.cnt",
+        "summaryListRule": "$.data",
+        "summaryParagraphDataRule": "$.token",
+        "summaryParagraphIndexRule": "$.idx"
+      },
+      "ruleToc": {
+        "chapterList": "id.list@tag.li",
+        "chapterName": "tag.a@text",
+        "chapterUrl": "tag.a@href"
+      },
+      "weight": 0
+    },
+    {
+      "bookSourceGroup": "QA45B",
+      "bookSourceName": "QA45B变量源",
+      "bookSourceType": 0,
+      "bookSourceUrl": "http://192.168.100.52:18120",
+      "customButton": false,
+      "customOrder": 0,
+      "enabled": true,
+      "enabledCookieJar": false,
+      "enabledExplore": false,
+      "eventListener": false,
+      "lastUpdateTime": 0,
+      "respondTime": 180000,
+      "ruleBookInfo": {
+        "author": "$.author",
+        "coverUrl": "$.coverUrl",
+        "intro": "$.intro",
+        "kind": "$.kind",
+        "name": "$.name",
+        "tocUrl": "$.tocUrl"
+      },
+      "ruleContent": {
+        "content": "$.url"
+      },
+      "ruleSearch": {
+        "author": "$.author",
+        "bookList": "$.data[*]",
+        "bookUrl": "$.bookUrl",
+        "coverUrl": "$.coverUrl",
+        "intro": "$.intro",
+        "kind": "$.kind",
+        "name": "$.name\n@js:source.put('qa45b_var','PERSISTED_BY_JS_4511'); result"
+      },
+      "ruleToc": {
+        "chapterList": "$.data[*]",
+        "chapterName": "$.name",
+        "chapterUrl": "$.url"
+      },
+      "searchUrl": "http://192.168.100.52:18120/search?key={{key}}",
+      "weight": 0
+    }
+  ],
+  "rssSources": [],
+  "readRecords": [
+    {
+      "author": "",
+      "bookName": "QA25 段评书",
+      "coverUrl": null,
+      "deviceId": "",
+      "displayAuthor": "",
+      "displayBookName": "QA25 段评书",
+      "lastChapterIndex": -1,
+      "lastChapterPos": 0,
+      "lastChapterTitle": null,
+      "lastRead": 1794822950578,
+      "metadataEditedAt": 0,
+      "readTime": 385841,
+      "resolvedAuthor": null
+    },
+    {
+      "author": "",
+      "bookName": "big_utf8_cn",
+      "coverUrl": null,
+      "deviceId": "",
+      "displayAuthor": "",
+      "displayBookName": "big_utf8_cn",
+      "lastChapterIndex": -1,
+      "lastChapterPos": 0,
+      "lastChapterTitle": null,
+      "lastRead": 1794886767500,
+      "metadataEditedAt": 0,
+      "readTime": 271625,
+      "resolvedAuthor": null
+    },
+    {
+      "author": "",
+      "bookName": "测试书一",
+      "coverUrl": null,
+      "deviceId": "",
+      "displayAuthor": "",
+      "displayBookName": "测试书一",
+      "lastChapterIndex": -1,
+      "lastChapterPos": 0,
+      "lastChapterTitle": null,
+      "lastRead": 1794823349016,
+      "metadataEditedAt": 0,
+      "readTime": 120961,
+      "resolvedAuthor": null
+    },
+    {
+      "author": "",
+      "bookName": "big_gbk_cn",
+      "coverUrl": null,
+      "deviceId": "",
+      "displayAuthor": "",
+      "displayBookName": "big_gbk_cn",
+      "lastChapterIndex": -1,
+      "lastChapterPos": 0,
+      "lastChapterTitle": null,
+      "lastRead": 1794886614182,
+      "metadataEditedAt": 0,
+      "readTime": 110096,
+      "resolvedAuthor": null
+    }
+  ],
+  "bookMemos": [],
+  "bookGroups": [],
+  "rssStars": [],
+  "highlights": [
+    {
+      "bookAuthor": "QA作者",
+      "bookName": "QA25 段评书",
+      "bookText": "第二章第二段：普通正文。",
+      "bookUrl": "http://192.168.100.52:8925/book1.html",
+      "chapterIndex": 1,
+      "chapterName": "第二章 后续",
+      "chapterPos": 13,
+      "chapterPosEnd": 25,
+      "chapterUrl": "http://192.168.100.52:8925/chapter2.html",
+      "layoutTitleLength": 0,
+      "note": "",
+      "style": "{\"type\":\"background\",\"color\":\"#FF90CAF9\"}",
+      "time": 1794708932625
+    },
+    {
+      "bookAuthor": "QA作者",
+      "bookName": "QA25 段评书",
+      "bookText": "第3章第一段：普通正文。",
+      "bookUrl": "http://192.168.100.52:8925/book1.html",
+      "chapterIndex": 2,
+      "chapterName": "第三章",
+      "chapterPos": 0,
+      "chapterPosEnd": 12,
+      "chapterUrl": "http://192.168.100.52:8925/chapter3.html",
+      "layoutTitleLength": 0,
+      "note": "",
+      "style": "{\"type\":\"background\",\"color\":\"#FF90CAF9\"}",
+      "time": 1794719495792
+    }
+  ],
+  "highlightRules": [],
+  "searchHistory": [
+    {
+      "lastUseTime": 1794887164331,
+      "usage": 3,
+      "word": "测试"
+    },
+    {
+      "lastUseTime": 1794822897672,
+      "usage": 4,
+      "word": "qa36"
+    },
+    {
+      "lastUseTime": 1794719535544,
+      "usage": 5,
+      "word": "qa37"
+    }
+  ],
+  "ruleSubs": [],
+  "txtTocRules": [],
+  "httpTTS": [
+    {
+      "concurrentRate": "0",
+      "contentType": "",
+      "enabledCookieJar": false,
+      "header": null,
+      "id": 3,
+      "isEnabled": true,
+      "jsLib": null,
+      "lastUpdateTime": 1794886515717,
+      "loginCheckJs": null,
+      "loginUi": null,
+      "loginUrl": null,
+      "name": "🌈Next引擎-长按切换音色",
+      "pauseDuration": 0,
+      "url": "@js:apiurl(speakText,speakSpeed);"
+    },
+    {
+      "concurrentRate": "0",
+      "contentType": "",
+      "enabledCookieJar": false,
+      "header": null,
+      "id": 2,
+      "isEnabled": true,
+      "jsLib": null,
+      "lastUpdateTime": 1794886515715,
+      "loginCheckJs": null,
+      "loginUi": null,
+      "loginUrl": null,
+      "name": "2.阿里云语音",
+      "pauseDuration": 0,
+      "url": "https://nls-gateway.cn-shanghai.aliyuncs.com/stream/v1/tts,{\"method\": \"POST\",\"body\": {\"appkey\":\"{{source.getLoginInfoMap().get('AppKey')}}\",\"text\":\"{{speakText}}\",\"format\":\"mp3\",\"volume\":100,\"speech_rate\":{{String((speakSpeed) * 20 - 400)}} }}"
+    },
+    {
+      "concurrentRate": "0",
+      "contentType": "",
+      "enabledCookieJar": false,
+      "header": null,
+      "id": 1,
+      "isEnabled": true,
+      "jsLib": null,
+      "lastUpdateTime": 1794886515700,
+      "loginCheckJs": null,
+      "loginUi": null,
+      "loginUrl": null,
+      "name": "1.百度",
+      "pauseDuration": 0,
+      "url": "http://tts.baidu.com/text2audio,{\n    \"method\": \"POST\",\n    \"body\": \"tex={{java.encodeURI(java.encodeURI(speakText))}}&spd={{(speakSpeed + 5) / 10 + 4}}&per=3&cuid=baidu_speech_demo&idx=1&cod=2&lan=zh&ctp=1&pdt=160&vol=5&aue=6&pit=5&_res_tag_=audio\"\n}"
+    }
+  ],
+  "dictRules": [],
+  "keyboardAssists": [],
+  "servers": [
+    {
+      "config": "ENC:sZUgT+s5MDEsecdk984ORb8Xc+T33GIhlNADVa+AjcfABMtK2vNUmoIW6yOCDGhUY14eNrBRDN0UdlsrIBoLrex6Oni+0wcFnJeGck3dp9k2QvTRQA9oWhpRRGLwN4YL",
+      "id": -1,
+      "name": "默认 WebDAV",
+      "sortNumber": 0,
+      "type": "WEBDAV"
+    }
+  ],
+  "readRecordDaily": [
+    {
+      "date": "2026-11-15",
+      "durationSeconds": 352
+    },
+    {
+      "date": "2026-11-16",
+      "durationSeconds": 153
+    },
+    {
+      "date": "2026-11-17",
+      "durationSeconds": 381
+    }
+  ],
+  "coverRules": [],
+  "chapterReviews": [],
+  "encryption": "aes-ecb-md5",
+  "appPrefs": {
+    "process_text": true,
+    "privacy_record_aliases_v1": "[{\"name\":\"QA39B-B-测试书一\",\"author\":\"作者甲\",\"bookUrl\":\"http://192.168.100.52:18090/book/1\"}]",
+    "reader_layout_is_night": false,
+    "webdav_servers_migrated": true,
+    "sync_webdav_remote_dir": "/legado/",
+    "reader_adv_letter_spacing_migrated": true,
+    "settingsMigrated_v271": true,
+    "defaultToRead": true,
+    "sync_webdav_device_name": "",
+    "check_source_keyword": "我的测试",
+    "app_locale": "zh",
+    "httpTtsSeedVersion": 1,
+    "private_verify_on_enter_group": false,
+    "private_unlock_scope": "every_time"
+  }
+}

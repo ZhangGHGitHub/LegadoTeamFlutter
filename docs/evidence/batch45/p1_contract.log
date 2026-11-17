@@ -1,0 +1,13 @@
+00:00 +0: loading D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/unit/api_contract_test.dart
+00:00 +0: API 契约自动校验 契约文档结构前置（§1.7 与附录合计行存在）
+00:00 +1: API 契约自动校验 §1.7 计数自洽：表 A/表 B 行数 == 导语与表题声明，表 A + 表 B == 合计
+00:00 +2: API 契约自动校验 BookApi ⊆ RustApi 且 BookApi ⊆ MockBookApi
+00:00 +3: API 契约自动校验 公共额外方法钉死：RustApi={toString, refreshReadBookConfig}，MockBookApi=∅
+00:00 +4: API 契约自动校验 每个 BookApi 方法都在契约中登记（直接行或 §1.7 等价对）
+00:00 +5: API 契约自动校验 §2.x 每节声明数 == 实际行数
+00:00 +6: API 契约自动校验 §2.52 书签标记 5 方法签名冻结（参数名/类型/返回）
+00:00 +7: API 契约自动校验 §2.53 隐私与私密标记 12 方法签名冻结（参数名/类型/返回）
+00:00 +8: API 契约自动校验 附录与 §2.x 按标题双射镜像，合计行 = 各行之和
+00:00 +9: API 契约自动校验 文档声明的 BookApi 总数 == 程序化计数
+00:00 +10: API 契约自动校验 第 7 项：Rust FFI 导出面 ↔ Dart wrapper 双向闭合
+00:00 +11: All tests passed!

@@ -1,0 +1,4 @@
+0829ad264987411460d6890b12e6d38e5fd891c7a1da8980caae43bada509250 *flutter_legado/build/app/outputs/flutter-apk/app-release.apk
+ 37766232  1981-01-01 01:01   lib/arm64-v8a/liblegado_ffi.so
+ 23609668  1981-01-01 01:01   lib/armeabi-v7a/liblegado_ffi.so
+ 42022632  1981-01-01 01:01   lib/x86_64/liblegado_ffi.so

@@ -1,0 +1,25 @@
+[
+ {
+  "sourceUrl": "http://192.168.100.52:18120/rss",
+  "sourceName": "QA45B订阅源",
+  "sourceGroup": "QA45B",
+  "sourceType": 0,
+  "enabled": true,
+  "enabledExplore": false,
+  "sortUrl": "http://192.168.100.52:18120/rss/list",
+  "loginUrl": "http://192.168.100.52:18120/rss/login",
+  "loginUi": null,
+  "loginCheckJs": null,
+  "header": null,
+  "jsLib": null,
+  "ruleArticles": "$.data[*]",
+  "ruleTitle": "$.title",
+  "ruleLink": "$.link",
+  "ruleContent": "$.content",
+  "ruleNextPage": null,
+  "ruleDates": null,
+  "ruleImage": null,
+  "ruleDescription": null,
+  "comment": null
+ }
+]

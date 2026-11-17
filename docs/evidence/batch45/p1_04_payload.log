@@ -1,0 +1,36 @@
+00:00 +0: loading D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_test.dart
+00:00 +0: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_test.dart: (setUpAll)
+00:00 +0: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_test.dart: SourceEditScreen 扁平单列结构 新建模式渲染 7 个规则分组段（扁平单列，调试为顶栏菜单）
+00:00 +1: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_test.dart: SourceEditScreen 扁平单列结构 新建模式渲染 7 个规则分组段（扁平单列，调试为顶栏菜单）
+00:00 +2: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_test.dart: SourceEditScreen 扁平单列结构 新建模式渲染 7 个规则分组段（扁平单列，调试为顶栏菜单）
+00:00 +3: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_test.dart: SourceEditScreen 扁平单列结构 新建模式渲染 7 个规则分组段（扁平单列，调试为顶栏菜单）
+00:00 +4: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_test.dart: SourceEditScreen 扁平单列结构 新建模式渲染 7 个规则分组段（扁平单列，调试为顶栏菜单）
+00:00 +5: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_test.dart: SourceEditScreen 扁平单列结构 新建模式渲染 7 个规则分组段（扁平单列，调试为顶栏菜单）
+00:00 +6: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_test.dart: SourceEditScreen 扁平单列结构 新建模式渲染 7 个规则分组段（扁平单列，调试为顶栏菜单）
+00:00 +6: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/unit/source_json_patch_test.dart: BookSourceRawCache 原始 JSON 缓存 非法 JSON / 空串不抛错且不污染缓存
+BookSourceRawCache 解析书源列表失败（忽略）: FormatException: Unexpected character (at character 1)
+not-json
+^
+
+00:00 +7: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_test.dart: SourceEditScreen 扁平单列结构 新建模式渲染 7 个规则分组段（扁平单列，调试为顶栏菜单）
+00:00 +8: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_test.dart: SourceEditScreen 扁平单列结构 新建模式渲染 7 个规则分组段（扁平单列，调试为顶栏菜单）
+00:00 +9: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_test.dart: SourceEditScreen 扁平单列结构 新建模式渲染 7 个规则分组段（扁平单列，调试为顶栏菜单）
+00:00 +10: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_test.dart: SourceEditScreen 扁平单列结构 新建模式渲染 7 个规则分组段（扁平单列，调试为顶栏菜单）
+00:00 +11: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_test.dart: SourceEditScreen 扁平单列结构 新建模式渲染 7 个规则分组段（扁平单列，调试为顶栏菜单）
+00:00 +12: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_test.dart: SourceEditScreen 扁平单列结构 新建模式渲染 7 个规则分组段（扁平单列，调试为顶栏菜单）
+00:00 +13: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_test.dart: SourceEditScreen 扁平单列结构 新建模式渲染 7 个规则分组段（扁平单列，调试为顶栏菜单）
+00:00 +14: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_test.dart: SourceEditScreen 扁平单列结构 新建模式渲染 7 个规则分组段（扁平单列，调试为顶栏菜单）
+00:00 +15: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_test.dart: SourceEditScreen 扁平单列结构 新建模式渲染 7 个规则分组段（扁平单列，调试为顶栏菜单）
+00:00 +16: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_test.dart: SourceEditScreen 扁平单列结构 新建模式渲染 7 个规则分组段（扁平单列，调试为顶栏菜单）
+00:00 +17: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_max_lines_test.dart: 默认 99：全部多行字段展开到 99 行（含规则字段，P2-3 口径）
+00:01 +18: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_test.dart: SourceEditScreen 扁平单列结构 顶部设置段展示开关，各分组展示对应字段
+00:01 +19: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_max_lines_test.dart: 偏好 10 生效：多行字段 maxLines=10
+00:01 +20: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_max_lines_test.dart: 偏好 10 生效：多行字段 maxLines=10
+00:01 +21: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_test.dart: SourceEditScreen 校验与保存 填写名称与 URL 后保存成功创建书源
+00:01 +22: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_max_lines_test.dart: 单行字段不套用：URL/名称/分组/并发率保持 maxLines=1
+00:02 +23: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_test.dart: SourceEditScreen 编辑模式回填 回填发现/详情/评论规则字段与开关
+00:02 +24: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_max_lines_test.dart: 越界回落：偏好 < 10 回落默认 99
+00:02 +25: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_test.dart: SourceEditScreen 编辑模式回填 编辑保存透传 customOrder/respondTime/weight/mainJs/exploreScreen
+00:03 +26: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_test.dart: SourceEditScreen 编辑模式回填 编辑保存透传 customOrder/respondTime/weight/mainJs/exploreScreen
+00:03 +27: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/source_edit_test.dart: (tearDownAll)
+00:03 +27: All tests passed!

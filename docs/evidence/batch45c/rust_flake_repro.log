@@ -1,0 +1,31 @@
+# 定向复现：invalidate_forces_rebuild + login_check 并发（缺陷取证）
+===== RUN 1 =====
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 770 filtered out; finished in 0.01s
+===== RUN 2 =====
+---- engine_cache::tests::invalidate_forces_rebuild stdout ----
+thread 'engine_cache::tests::invalidate_forces_rebuild' (33644) panicked at legado-js\src\engine_cache.rs:649:9:
+assertion `left == right` failed: 失效后条目必须移除
+  left: 1
+ right: 0
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 770 filtered out; finished in 0.01s
+===== RUN 3 =====
+---- engine_cache::tests::invalidate_forces_rebuild stdout ----
+thread 'engine_cache::tests::invalidate_forces_rebuild' (1576) panicked at legado-js\src\engine_cache.rs:649:9:
+assertion `left == right` failed: 失效后条目必须移除
+  left: 1
+ right: 0
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 770 filtered out; finished in 0.01s
+===== RUN 4 =====
+---- engine_cache::tests::invalidate_forces_rebuild stdout ----
+thread 'engine_cache::tests::invalidate_forces_rebuild' (15916) panicked at legado-js\src\engine_cache.rs:649:9:
+assertion `left == right` failed: 失效后条目必须移除
+  left: 1
+ right: 0
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 770 filtered out; finished in 0.01s
+===== RUN 5 =====
+---- engine_cache::tests::invalidate_forces_rebuild stdout ----
+thread 'engine_cache::tests::invalidate_forces_rebuild' (34864) panicked at legado-js\src\engine_cache.rs:649:9:
+assertion `left == right` failed: 失效后条目必须移除
+  left: 1
+ right: 0
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 770 filtered out; finished in 0.01s

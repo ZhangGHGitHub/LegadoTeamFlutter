@@ -1,0 +1,15 @@
+    Checking rustls-webpki v0.103.17
+    Checking legado-core v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-core)
+    Checking h2 v0.4.19
+    Checking r2d2 v0.8.10
+    Checking zip v9.5.1
+    Checking r2d2_sqlite v0.36.0
+    Checking rustls v0.23.46
+    Checking hyper v1.11.0
+    Checking tokio-rustls v0.26.4
+    Checking hyper-util v0.1.20
+    Checking hyper-rustls v0.27.9
+    Checking reqwest v0.12.28
+    Checking legado-net v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-net)
+    Checking legado-db v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-db)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 8.06s

@@ -1,0 +1,17 @@
+   Compiling legado-js v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-js)
+   Compiling legado-fetcher v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-fetcher)
+   Compiling legado-server v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-server)
+   Compiling legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.52s
+     Running unittests src\lib.rs (target\debug\deps\legado_ffi-262e2025d0c67765.exe)
+
+running 6 tests
+test api::web_book::tests::test_ffi_matches_book_url_pattern_empty_and_invalid ... ok
+test api::web_book::tests::test_ffi_matches_book_url_pattern_shuzhaige_real_source ... ok
+test api::web_book::tests::test_ffi_matches_book_url_pattern_full_match_semantics ... ok
+test api::web_book::tests::test_ffi_matches_book_url_pattern_regex_specials ... ok
+test api::s0_fixture_tests::s0b_book_url_pattern_hit ... ok
+test api::s0_fixture_tests::s0b_book_url_pattern_miss ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 929 filtered out; finished in 0.13s
+

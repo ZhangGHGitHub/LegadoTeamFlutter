@@ -1,0 +1,132 @@
+00:00 +0: loading D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_recent_privacy_test.dart
+00:00 +0: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_recent_privacy_test.dart: 私密书作为最近阅读：书名/作者/章节不渲染，点击不打开阅读器
+00:00 +1: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_test.dart: 初始结构：五页签（首页/书架/发现/订阅/我的），默认落书架
+00:00 +1: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_recent_privacy_test.dart: 非私密书作为最近阅读：正常显示书名/作者/章节（防过度脱敏）
+[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载
+00:00 +2: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_test.dart: 初始结构：五页签（首页/书架/发现/订阅/我的），默认落书架
+00:00 +3: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_test.dart: 初始结构：五页签（首页/书架/发现/订阅/我的），默认落书架
+00:00 +4: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_test.dart: 初始结构：五页签（首页/书架/发现/订阅/我的），默认落书架
+00:00 +5: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_test.dart: 初始结构：五页签（首页/书架/发现/订阅/我的），默认落书架
+00:00 +5: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_recent_privacy_test.dart: 隐私标记加载失败：fail-open 明文（锁住既有语义）
+[隐私] 读取私密书籍标记失败（按无标记处理）：Bad state: markers down
+00:00 +6: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_test.dart: 初始结构：五页签（首页/书架/发现/订阅/我的），默认落书架
+00:01 +7: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_test.dart: 初始结构：五页签（首页/书架/发现/订阅/我的），默认落书架
+00:01 +8: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_test.dart: 初始结构：五页签（首页/书架/发现/订阅/我的），默认落书架
+00:01 +9: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_test.dart: 初始结构：五页签（首页/书架/发现/订阅/我的），默认落书架
+00:01 +10: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_test.dart: 初始结构：五页签（首页/书架/发现/订阅/我的），默认落书架
+00:01 +11: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_test.dart: 初始结构：五页签（首页/书架/发现/订阅/我的），默认落书架
+00:01 +12: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_test.dart: 初始结构：五页签（首页/书架/发现/订阅/我的），默认落书架
+00:01 +13: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_test.dart: 初始结构：五页签（首页/书架/发现/订阅/我的），默认落书架
+[隐私] 读取私密书籍标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<String>>'
+[隐私] 读取私密分组标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<int>>'
+[隐私] 读取隐私凭据失败（fail-closed）：type 'Null' is not a subtype of type 'Future<bool>'
+[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载
+00:01 +14: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/settings_home_item_background_test.dart: 默认：无项目图，14 张卡不建图片层
+00:01 +15: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/settings_home_item_background_test.dart: 默认：无项目图，14 张卡不建图片层
+00:01 +16: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: 默认配置：五页签、书架落点不变（回归）
+00:01 +17: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: 默认配置：五页签、书架落点不变（回归）
+00:01 +18: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: 默认配置：五页签、书架落点不变（回归）
+00:01 +19: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: 默认配置：五页签、书架落点不变（回归）
+00:01 +19: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_test.dart: 首页页签：点击切入并渲染最近阅读/统计/目标表盘
+[隐私] 读取私密书籍标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<String>>'
+[隐私] 读取私密分组标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<int>>'
+[隐私] 读取隐私凭据失败（fail-closed）：type 'Null' is not a subtype of type 'Future<bool>'
+00:01 +20: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: 默认配置：五页签、书架落点不变（回归）
+00:01 +21: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: 默认配置：五页签、书架落点不变（回归）
+00:01 +22: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: 默认配置：五页签、书架落点不变（回归）
+00:01 +23: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: 默认配置：五页签、书架落点不变（回归）
+00:01 +23: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_test.dart: 底栏切页到发现页，选中态同步（滑动切页）
+[隐私] 读取私密书籍标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<String>>'
+[隐私] 读取私密分组标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<int>>'
+[隐私] 读取隐私凭据失败（fail-closed）：type 'Null' is not a subtype of type 'Future<bool>'
+00:01 +24: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: 默认配置：五页签、书架落点不变（回归）
+[隐私] 读取私密书籍标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<String>>'
+[隐私] 读取私密分组标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<int>>'
+[隐私] 读取隐私凭据失败（fail-closed）：type 'Null' is not a subtype of type 'Future<bool>'
+[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载
+00:01 +25: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_test.dart: 点击底栏项直接跳页（对标 setCurrentItem）
+[隐私] 读取私密书籍标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<String>>'
+[隐私] 读取私密分组标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<int>>'
+[隐私] 读取隐私凭据失败（fail-closed）：type 'Null' is not a subtype of type 'Future<bool>'
+00:02 +26: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: 显隐：首页/发现/订阅全隐藏后仅剩书架与我的
+[隐私] 读取私密书籍标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<String>>'
+[隐私] 读取私密分组标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<int>>'
+[隐私] 读取隐私凭据失败（fail-closed）：type 'Null' is not a subtype of type 'Future<bool>'
+00:02 +27: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_test.dart: 返回键：非书架页先切回书架页
+00:02 +27: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: 顺序：按 mainNavigationOrder 构建底栏，默认页按新索引落点
+[隐私] 读取私密书籍标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<String>>'
+[隐私] 读取私密分组标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<int>>'
+[隐私] 读取隐私凭据失败（fail-closed）：type 'Null' is not a subtype of type 'Future<bool>'
+00:02 +28: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_test.dart: 返回键：非书架页先切回书架页
+[隐私] 读取私密书籍标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<String>>'
+[隐私] 读取私密分组标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<int>>'
+[隐私] 读取隐私凭据失败（fail-closed）：type 'Null' is not a subtype of type 'Future<bool>'
+00:02 +29: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: 默认首页：explore 在加载后切到发现页
+[隐私] 读取私密书籍标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<String>>'
+[隐私] 读取私密分组标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<int>>'
+[隐私] 读取隐私凭据失败（fail-closed）：type 'Null' is not a subtype of type 'Future<bool>'
+00:02 +30: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_test.dart: 返回键：书架页首次按下弹出双击退出提示
+[隐私] 读取私密书籍标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<String>>'
+[隐私] 读取私密分组标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<int>>'
+[隐私] 读取隐私凭据失败（fail-closed）：type 'Null' is not a subtype of type 'Future<bool>'
+00:02 +31: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: 默认首页被隐藏：落回首个可见页签（索引 0）
+[隐私] 读取私密书籍标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<String>>'
+[隐私] 读取私密分组标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<int>>'
+[隐私] 读取隐私凭据失败（fail-closed）：type 'Null' is not a subtype of type 'Future<bool>'
+00:02 +32: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_test.dart: 双击底栏书架项：列表回滚顶部（对标 gotoTop）
+[隐私] 读取私密书籍标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<String>>'
+[隐私] 读取私密分组标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<int>>'
+[隐私] 读取隐私凭据失败（fail-closed）：type 'Null' is not a subtype of type 'Future<bool>'
+00:02 +33: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: 默认首页不可见且首个可见项不是书架：落点仍是索引 0
+[隐私] 读取私密书籍标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<String>>'
+[隐私] 读取私密分组标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<int>>'
+[隐私] 读取隐私凭据失败（fail-closed）：type 'Null' is not a subtype of type 'Future<bool>'
+00:03 +34: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: 当前页被隐藏：回退首个可见页签
+[隐私] 读取私密书籍标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<String>>'
+[隐私] 读取私密分组标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<int>>'
+[隐私] 读取隐私凭据失败（fail-closed）：type 'Null' is not a subtype of type 'Future<bool>'
+00:03 +35: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: 底栏文字：unlabeled/selected 档位映射到 NavigationBar
+[隐私] 读取私密书籍标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<String>>'
+[隐私] 读取私密分组标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<int>>'
+[隐私] 读取隐私凭据失败（fail-closed）：type 'Null' is not a subtype of type 'Future<bool>'
+00:03 +36: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: 自定义导航图标：图标路径透传到 NavSpecIcon
+[隐私] 读取私密书籍标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<String>>'
+[隐私] 读取私密分组标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<int>>'
+[隐私] 读取隐私凭据失败（fail-closed）：type 'Null' is not a subtype of type 'Future<bool>'
+00:03 +37: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: 重启（重新挂载）：顺序与显隐保持
+[隐私] 读取私密书籍标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<String>>'
+[隐私] 读取私密分组标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<int>>'
+[隐私] 读取隐私凭据失败（fail-closed）：type 'Null' is not a subtype of type 'Future<bool>'
+[隐私] 读取私密书籍标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<String>>'
+[隐私] 读取私密分组标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<int>>'
+[隐私] 读取隐私凭据失败（fail-closed）：type 'Null' is not a subtype of type 'Future<bool>'
+00:03 +38: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: 顺序变化：书架页 State（滚动位置）跟随页签保持
+[隐私] 读取私密书籍标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<String>>'
+[隐私] 读取私密分组标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<int>>'
+[隐私] 读取隐私凭据失败（fail-closed）：type 'Null' is not a subtype of type 'Future<bool>'
+00:04 +39: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: 备份恢复同会话：applyFromBackup + invalidate 立即刷新底栏
+[隐私] 读取私密书籍标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<String>>'
+[隐私] 读取私密分组标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<int>>'
+[隐私] 读取隐私凭据失败（fail-closed）：type 'Null' is not a subtype of type 'Future<bool>'
+00:04 +40: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: 返回键：顺序变化后仍按书架新索引回退
+[隐私] 读取私密书籍标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<String>>'
+[隐私] 读取私密分组标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<int>>'
+[隐私] 读取隐私凭据失败（fail-closed）：type 'Null' is not a subtype of type 'Future<bool>'
+00:04 +41: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: 路由压栈/出栈（深链等外页）后当前页签保持
+[隐私] 读取私密书籍标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<String>>'
+[隐私] 读取私密分组标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<int>>'
+[隐私] 读取隐私凭据失败（fail-closed）：type 'Null' is not a subtype of type 'Future<bool>'
+00:04 +42: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: 横竖屏切换：底栏 → Rail → 底栏，PageView 与选中页签始终同步
+[隐私] 读取私密书籍标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<String>>'
+[隐私] 读取私密分组标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<int>>'
+[隐私] 读取隐私凭据失败（fail-closed）：type 'Null' is not a subtype of type 'Future<bool>'
+00:04 +43: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: 顺序重排后横竖屏切换：Rail 索引、PageView、内容一致
+[隐私] 读取私密书籍标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<String>>'
+[隐私] 读取私密分组标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<int>>'
+[隐私] 读取隐私凭据失败（fail-closed）：type 'Null' is not a subtype of type 'Future<bool>'
+00:05 +44: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: 单页配置：initialPage=1 由 post-frame 收敛到索引 0
+[隐私] 读取私密书籍标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<String>>'
+[隐私] 读取私密分组标记失败（按无标记处理）：type 'Null' is not a subtype of type 'Future<List<int>>'
+[隐私] 读取隐私凭据失败（fail-closed）：type 'Null' is not a subtype of type 'Future<bool>'
+00:05 +45: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/home_navigation_config_test.dart: (tearDownAll)
+00:05 +45: All tests passed!

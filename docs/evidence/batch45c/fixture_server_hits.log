@@ -1,0 +1,8 @@
+/search?key=abc
+/c/search?key=qatest45c
+/b/search?key=qatest45c
+/a/search?key=qatest45c
+
+--- 对照实验（缺陷1 实参验证） ---
+[全部书源] 关键词 qatest45c → /a/search /b/search /c/search （3 源，进度 4/4 含 1 个无 searchUrl 源）
+[单源 QA45C-C] 关键词 singleonly → 仅 /c/search （1 源）

@@ -1,0 +1,50 @@
+   Compiling legado-core v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-core)
+   Compiling legado-book v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-book)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.09s
+     Running unittests src\lib.rs (target\debug\deps\legado_book-6eafe013e635ea8c.exe)
+
+running 41 tests
+test txt::tests::test_clamp_max_length_with_no_toc ... ok
+test txt::tests::test_decode_text_utf8 ... ok
+test txt::tests::test_decode_text_utf8_bom ... ok
+test txt::tests::test_detect_encoding_ascii_unchanged ... ok
+test txt::tests::test_chapter_patterns_no_match ... ok
+test txt::tests::test_chapter_patterns_match_chinese ... ok
+test txt::tests::test_detect_encoding_large_utf8_sample_still_utf8 ... ok
+test txt::tests::test_chapter_patterns_match_english ... ok
+test txt::tests::test_detect_encoding_larger_sample_sees_chinese ... ok
+test txt::tests::test_is_volume_title_false ... ok
+test txt::tests::test_is_volume_title_true ... ok
+test txt::tests::test_builtin_rule_hit_skips_length_split ... ok
+test txt::tests::test_detect_encoding_chardetng_fallback_for_western_text ... ok
+test txt::tests::test_custom_rule_crlf_offsets_are_exact ... ok
+test txt::tests::test_cache_keyed_by_encoding_and_alias_normalized ... ok
+test txt::tests::test_custom_rule_falls_back_to_builtin ... ok
+test txt::tests::test_multibyte_cjk_evidence_discriminates ... ok
+test txt::tests::test_charset_override_decodes_gbk_after_ascii_prefix ... ok
+test txt::tests::test_cache_invalidated_after_file_rewritten ... ok
+test txt::tests::test_normalize_charset_aliases_and_unknown ... ok
+test txt::tests::test_parse_by_length_exact_n_and_n_plus_one ... ok
+test txt::tests::test_parse_by_length_multibyte_multi_chapters ... ok
+test txt::tests::test_parse_by_length_no_newline_hard_cut ... ok
+test txt::tests::test_chapter_content_reuses_decoded_cache ... ok
+test txt::tests::test_cache_keeps_two_books_isolated ... ok
+test txt::tests::test_parse_by_length_splits_at_newline ... ok
+test txt::tests::test_split_toc_rule_matches_original_format ... ok
+test txt::tests::test_cache_invalidated_by_fingerprint_on_same_size_same_mtime_rewrite ... ok
+test txt::tests::test_parse_by_length_tail_merge_and_keep ... ok
+test txt::tests::test_split_toc_rule_preserves_external_format ... ok
+test txt::tests::test_get_chapters_no_rule_splits_by_length_default ... ok
+test txt::tests::test_get_chapters_short_and_empty_files ... ok
+test txt::tests::test_parse_by_length_multibyte_char_boundary ... ok
+test txt::tests::test_custom_rule_skips_empty_titles_and_keeps_zero_width ... ok
+test txt::tests::test_rule_hit_skips_length_split ... ok
+test txt::tests::test_custom_rule_parses_utf8_and_gbk ... ok
+test txt::tests::test_parse_by_length_gbk_decoded_before_split ... ok
+test txt::tests::test_large_utf8_end_to_end_no_mojibake ... ok
+test txt::tests::test_detect_encoding_large_gbk_sample_all_alignments ... ok
+test txt::tests::test_large_txt_chapter_reads_hit_cache ... ok
+test txt::tests::test_large_gbk_end_to_end_no_mojibake ... ok
+
+test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 214 filtered out; finished in 0.51s
+

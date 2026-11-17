@@ -1,0 +1,88 @@
+00:00 +0: loading D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_confirm_test.dart
+00:00 +0: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_confirm_test.dart: (setUpAll)
+00:00 +0: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_confirm_test.dart: 同步书库（合并）：文案说明上传本地覆盖远端、不覆盖本地进度
+00:00 +1: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_password_test.dart: 探测需要密码：弹密码框列出受保护文件，取消后不调用 restore
+00:00 +2: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_password_test.dart: 探测需要密码：弹密码框列出受保护文件，取消后不调用 restore
+00:00 +2: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_confirm_test.dart: 确认 WebDAV 同步：执行 webdavFullSync
+[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载
+[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载
+恢复后同步 UserAgent 失败（不阻断恢复）：type 'Null' is not a subtype of type 'Future<void>'
+恢复后同步线程数失败（不阻断恢复）：type 'Null' is not a subtype of type 'Future<void>'
+恢复后同步替换净化默认开关失败（不阻断恢复）：type 'Null' is not a subtype of type 'Future<void>'
+[ProcessText] 设置组件状态失败（enabled=true）：TimeoutException after 0:00:03.000000: Future not completed
+00:00 +3: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_password_test.dart: 探测需要密码：弹密码框列出受保护文件，取消后不调用 restore
+00:01 +4: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_confirm_test.dart: 确认 WebDAV 同步：进度文案为「同步中…」而非「恢复中…」
+[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载
+恢复后同步 UserAgent 失败（不阻断恢复）：type 'Null' is not a subtype of type 'Future<void>'
+恢复后同步线程数失败（不阻断恢复）：type 'Null' is not a subtype of type 'Future<void>'
+恢复后同步替换净化默认开关失败（不阻断恢复）：type 'Null' is not a subtype of type 'Future<void>'
+[ProcessText] 设置组件状态失败（enabled=true）：TimeoutException after 0:00:03.000000: Future not completed
+00:01 +5: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_password_test.dart: 密码错误一次：重开密码框内联提示，第二次正确后以密码恢复
+00:01 +6: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_password_test.dart: 密码错误一次：重开密码框内联提示，第二次正确后以密码恢复
+00:01 +6: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_confirm_test.dart: 同步书库：DB 中完整凭据正常发起 webdavFullSync
+[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载
+恢复后同步 UserAgent 失败（不阻断恢复）：type 'Null' is not a subtype of type 'Future<void>'
+恢复后同步线程数失败（不阻断恢复）：type 'Null' is not a subtype of type 'Future<void>'
+恢复后同步替换净化默认开关失败（不阻断恢复）：type 'Null' is not a subtype of type 'Future<void>'
+[ProcessText] 设置组件状态失败（enabled=true）：TimeoutException after 0:00:03.000000: Future not completed
+00:01 +7: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_password_test.dart: 密码错误一次：重开密码框内联提示，第二次正确后以密码恢复
+[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载
+[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载
+[ProcessText] 设置组件状态失败（enabled=true）：TimeoutException after 0:00:03.000000: Future not completed
+00:01 +8: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_confirm_test.dart: WebDAV 未配置：恢复 Sheet 网络项禁用，点按不执行
+00:01 +9: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_password_test.dart: 本地恢复：密码连续错误三次后仍可继续重试（不设上限）
+00:01 +10: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_password_test.dart: 本地恢复：密码连续错误三次后仍可继续重试（不设上限）
+00:01 +11: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_password_test.dart: 本地恢复：密码连续错误三次后仍可继续重试（不设上限）
+[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载
+[ProcessText] 设置组件状态失败（enabled=true）：TimeoutException after 0:00:03.000000: Future not completed
+00:01 +12: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_confirm_test.dart: 选择 zip 且配置了恢复忽略项：提示忽略项对 zip 不生效、恢复行为不变
+[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载
+恢复后同步 UserAgent 失败（不阻断恢复）：type 'Null' is not a subtype of type 'Future<void>'
+恢复后同步线程数失败（不阻断恢复）：type 'Null' is not a subtype of type 'Future<void>'
+恢复后同步替换净化默认开关失败（不阻断恢复）：type 'Null' is not a subtype of type 'Future<void>'
+[ProcessText] 设置组件状态失败（enabled=true）：TimeoutException after 0:00:03.000000: Future not completed
+00:01 +13: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_password_test.dart: 探测无需密码：不弹密码框，restore 的 password 为 null
+[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载
+[ProcessText] 设置组件状态失败（enabled=true）：TimeoutException after 0:00:03.000000: Future not completed
+00:02 +14: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_confirm_test.dart: 确认本地恢复：选择器允许 .json/.zip，选择文件后调用 restore
+[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载
+恢复后同步 UserAgent 失败（不阻断恢复）：type 'Null' is not a subtype of type 'Future<void>'
+恢复后同步线程数失败（不阻断恢复）：type 'Null' is not a subtype of type 'Future<void>'
+恢复后同步替换净化默认开关失败（不阻断恢复）：type 'Null' is not a subtype of type 'Future<void>'
+[ProcessText] 设置组件状态失败（enabled=true）：TimeoutException after 0:00:03.000000: Future not completed
+00:02 +15: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_password_test.dart: 恢复完成后把 userAgent 同步到 Rust config
+[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载
+[ProcessText] 设置组件状态失败（enabled=true）：TimeoutException after 0:00:03.000000: Future not completed
+00:02 +16: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_password_test.dart: 恢复完成后把 threadCount 同步到 Rust config
+[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载
+[ProcessText] 设置组件状态失败（enabled=true）：TimeoutException after 0:00:03.000000: Future not completed
+00:02 +17: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_password_test.dart: 恢复后 threadCount 存量 999 夹逼为 256 同步 Rust
+[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载
+[ProcessText] 设置组件状态失败（enabled=true）：TimeoutException after 0:00:03.000000: Future not completed
+00:02 +18: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_password_test.dart: 恢复 appPrefs 后护眼设置同会话立即重读（无默认值中间帧）
+[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载
+[ProcessText] 设置组件状态失败（enabled=true）：TimeoutException after 0:00:03.000000: Future not completed
+00:02 +19: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_password_test.dart: 恢复 appPrefs 后容器外观设置同会话立即重读
+[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载
+[ProcessText] 设置组件状态失败（enabled=true）：TimeoutException after 0:00:03.000000: Future not completed
+00:02 +20: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_password_test.dart: 恢复 appPrefs 后菜单样式 provider 同会话重读（批3a）
+[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载
+[ProcessText] 设置组件状态失败（enabled=true）：TimeoutException after 0:00:03.000000: Future not completed
+00:02 +21: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_password_test.dart: 中文/含空格密码原样透传（不 trim）
+[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载
+[ProcessText] 设置组件状态失败（enabled=true）：TimeoutException after 0:00:03.000000: Future not completed
+00:02 +22: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_password_test.dart: 加密内容损坏：提示备份文件损坏，不进入密码重试
+00:03 +23: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_password_test.dart: 明文 JSON 备份：探测一次但不弹密码框
+00:03 +24: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_password_test.dart: 加密 JSON 备份：弹密码框列出受保护字段
+00:03 +25: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_password_test.dart: 空密码提交：内联提示且留在对话框，不调用 restore
+00:03 +26: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_password_test.dart: 纯空白密码提交同样被拦截（密码原文不 trim）
+[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载
+[ProcessText] 设置组件状态失败（enabled=true）：TimeoutException after 0:00:03.000000: Future not completed
+00:03 +27: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_password_test.dart: .json 命名的加密 zip（文件魔数判定）仍弹密码框并透传密码
+[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载
+[ProcessText] 设置组件状态失败（enabled=true）：TimeoutException after 0:00:03.000000: Future not completed
+00:03 +28: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_password_test.dart: 探测无需密码但后端要求密码：防御性重开密码框
+[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载
+[ProcessText] 设置组件状态失败（enabled=true）：TimeoutException after 0:00:03.000000: Future not completed
+00:03 +29: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_restore_password_test.dart: (tearDownAll)
+00:03 +29: All tests passed!

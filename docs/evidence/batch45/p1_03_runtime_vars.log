@@ -1,0 +1,13 @@
+   Compiling legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 11.98s
+     Running tests\backup_restore_runtime_vars.rs (target\debug\deps\backup_restore_runtime_vars-205999030cab76e2.exe)
+
+running 5 tests
+test delete_source_clears_five_family_cache_rows ... ok
+test lazy_reload_after_memory_clear_without_restore_hook ... ok
+test remove_login_header_deletes_db_row_without_memory_hit ... ok
+test reimport_same_url_does_not_inherit_old_login_header ... ok
+test restore_makes_new_runtime_variables_visible_immediately ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+

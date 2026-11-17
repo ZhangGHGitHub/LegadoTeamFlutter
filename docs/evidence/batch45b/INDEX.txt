@@ -1,0 +1,89 @@
+批40~45（2.0.510+511）设备验收证据索引
+=====================================
+设备：MuMu 实例0「Test2」，guest 192.168.100.63:5555，Android 15，x86_64，非 root(uid=2000)
+HEAD：5630aad510 ｜ 构建：三 ABI 全量 Rust release 重建 + flutter build apk --release
+
+[步骤1 构建与安装]
+01_build_so.log               三 ABI Rust release 重建（arm64-v8a/armeabi-v7a/x86_64）
+02_verify_ffi.log             verify-ffi-android.ps1：三 ABI FRB hash + Rust 源码指纹一致 PASSED
+03_build_apk_release.log      flutter build apk --release（208.0MB）
+03b_apk_sha256.txt            APK sha256 = 0829ad264987411460d6890b12e6d38e5fd891c7a1da8980caae43bada509250
+                              + APK 内三 ABI liblegado_ffi.so 清单
+06_smoke_debug.log            debug 冒烟 8/8 PASSED（-CheckUI，含书架/发现/订阅/我的）
+04_launch_home.png / 05_launch_ui.xml   release 冷启动首屏
+
+[A 大 TXT 编码 P1-1]
+fixtures/big_utf8_cn.txt      148,591B（>64KB）UTF-8 中文，40 章
+fixtures/big_gbk_cn.txt       99,151B（>64KB）GBK 中文，40 章
+10b_after_view_intent.png     导入确认框（big_utf8_cn.txt）
+10c_utf8_imported.png         详情页：145.1 KB / 共 40 章 / 首章「第1章 风起长安」
+10d_utf8_reading.png          首章正文（中文正确无乱码）
+10k_toc.png / 10l_toc_bottom.xml  目录 1/40，章标题全部正常
+10m_utf8_ch40.png             第40章（100%）正文正确
+11b_gbk_detail.png            详情页：96.8 KB / 共 40 章
+11c_gbk_reading.png           GBK 首章正文正确无乱码
+11d_gbk_ch40.png              GBK 第40章（100%）正文正确
+
+[B 备份 v7 + 加密 P1-5/P1-6]
+21e_backup_v7_nopwd.json      无密码备份：version=7，books=3/bookSources=1/readRecords=4/
+                              servers=1/readRecordDaily=3，servers.config 明文
+23f_backup_v7_encrypted.json  有密码备份：servers.config = "ENC:..."，encryption="aes-ecb-md5"
+24b_restore_pwd.png           B-② 恢复弹「输入备份密码」（P1-6 通过）
+24h_ok_snack.xml              B-② 正确密码 → 「恢复成功」
+24f_snack1.png / .xml         B-③ 错密码 → 「恢复完成，但有 1 个服务器配置因备份密码未提供或
+                              错误而未恢复（已保留本机配置）」
+（DB 证据）错密码后 servers.config 仍为明文本机 WebDAV 配置（未被清空，P1-5 通过）
+
+[C 私密闸门 P1-8]
+33a_home_baseline_before_private.png  基线：累计阅读 2 本 / 0.1 小时 / 0-30 分钟
+35d_private_set.xml           big_utf8_cn 标记私密（书架显示「已隐藏」）
+36c_home_after_coldstart.png  首页脱敏：累计 3 本（已剔除私密书）/ 今日目标「— / 30 分钟」
+37b_heatmap.png               阅读记录页热力图脱敏：「私密书籍未验证，暂不显示每日阅读时长」
+                              + 成就卡「已读 3 本 累计 9分钟43秒（不含未解锁内容）」
+43a_verify.xml                EveryTime：「验证后仅放行当前内容，离开即重新锁定」
+44a_relock.xml                离开后书架重新显示「已隐藏」（授权撤销生效）
+（DB 证据）big_utf8_cn isPrivate=1；private_enabled=true
+
+[D 变量持久化 P1-3]
+（JS 写入证据）搜索触发 source.put → caches 落库
+  key = v_http://192.168.100.52:18120_qa45b_var
+  value = PERSISTED_BY_JS_4511
+fixtures/qa45b_restore.zip    原版 zip 备份，含 runtimeSourceCache.json
+                              值 RESTORED_FROM_ZIP_4511
+（恢复即时生效证据）恢复前库内 STALE2 → 恢复后立即 RESTORED_FROM_ZIP_4511，
+  进程未重启（pid 9598 前后不变）
+
+[E RSS 登录 C3]
+64b_rss_menu.xml              RSS 源菜单出现「登录」入口（仅 loginUrl 非空时显示）
+64c_login_page.png            首次：WebView 打开 loginUrl（mock 404，夹具缺路径）
+65a_login_ok.png              补齐 mock 后：登录页真实渲染表单（账号/密码/登录按钮）
+50_mock_server.log            mock 命中 /rss/login 两次
+
+[F 主流程]
+70c_page2.png                 阅读翻页 1/6 → 2/6
+70f_toc.xml                   目录 6 章，当前 4/6
+70g_ch5.xml                   翻章到第五章，正文正确加载
+72c_longpress.xml             长按正文 → 选择菜单
+72d_more.xml                  选择菜单「高亮」入口
+72f_hl_done.png               高亮颜色/笔记面板
+73a_hl_saved.png              高亮保存后正文内联粉色渲染；highlights 2→3
+75g_saved.xml                 书源改名保存后仍在第 1 位（排序位置不变）
+（DB 证据）customOrder=5 保留、respondTime=180000 保留、ruleSearch 未丢失
+78b_search_ok.xml             搜索：结果 1，mock 命中 /search
+
+[回归确认]
+80e_check_result.xml          书源校验（规则级）：「校验结束：2/2，失效 1 个」，
+                              QA45B 干净源「校验成功 19ms」；mock 依次命中
+                              /search → /book/1 → /toc/1 → /content/1/1
+82f_saved.xml                 TXT 目录规则新增成功（QA45B_RULE / 第[0-9]+章）
+（DB 证据）txtTocRules 落库正确
+83a_dict.xml                  词典规则页正常；dictRules 表 5 条；
+                              config:dict_rules 缓存键 = 0（无存储分裂）
+（目录并发 P1-9）快速翻章后 logcat SQLITE_BUSY / database is locked = 0 次
+
+[全局稳定性]
+FATAL EXCEPTION = 0；E/flutter = 0；ANR = 0；OutOfMemoryError = 0
+
+[工具]
+tools/dev.sh                  设备截图/输入辅助（逻辑 display → SF 物理 id 映射）
+tools/mock_source_server.py   最小 mock 书源服务（搜索/详情/目录/正文/RSS 登录页）
