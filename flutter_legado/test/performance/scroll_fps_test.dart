@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
-// ScrollCacheExtent 定义在渲染层（rendering/viewport.dart），widgets/material 未导出
+// ScrollCacheExtent 定义在渲染层（rendering/viewport.dart），widgets/material 未导出。
+// 保留显式 import 以兼容仓库固定的 Flutter 3.44.8（该版本 material 未再导出此符号）；
+// 新版 Flutter 已由 material 透出，故显式忽略 unnecessary_import。
+// ignore: unnecessary_import
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 

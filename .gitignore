@@ -90,6 +90,10 @@ flutter_legado/test_out.txt
 # uiautomator 转储默认落盘名：`adb shell uiautomator dump` 后 pull 到仓库根的残留
 .fd.xml
 .oh.xml
+# 自定义命名的 uiautomator 转储（如 `adb pull ... ui_home.xml`）落在仓库根的残留；
+# 仅锚定根目录，不影响 docs/evidence/** 下已入库的 ui_*.xml 证据
+/ui_*.xml
+/ui_*.png
 # Windows 下 `> nul` 的重定向产物（Git Bash 会把它建成真实文件）
 nul
 # 根 package.json（commitizen 用）被 pnpm 生成的锁文件，内容含机器本地路径，与构建链无关
