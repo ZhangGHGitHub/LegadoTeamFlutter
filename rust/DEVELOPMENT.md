@@ -48,7 +48,7 @@ flutter_rust_bridge_codegen --version
 
 ## 项目结构
 
-本项目由 8 个 Rust crate 组成，分层架构如下：
+本项目由 9 个 Rust crate 组成（以 `rust/Cargo.toml` 的 `members` 为准），分层架构如下：
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -67,7 +67,9 @@ flutter_rust_bridge_codegen --version
 │            (公共类型 / 错误 / 工具)                   │
 └─────────────────────────────────────────────────────┘
 
-legado-server — 独立 HTTP 服务，依赖 legado-core/db/net/parser/js
+legado-fetcher — 书源抓取编排（搜索/详情/目录/正文规则链、书源校验与失效分组），
+                 依赖 legado-parser / legado-net / legado-js / legado-core
+legado-server  — 独立 HTTP 服务，依赖 legado-core/db/net/parser/js/fetcher
 ```
 
 ### Crate 依赖关系
@@ -80,8 +82,9 @@ legado-server — 独立 HTTP 服务，依赖 legado-core/db/net/parser/js
 | **legado-js** | core | JavaScript 沙箱（可选 QuickJS feature） |
 | **legado-book** | core | 书籍文件解析（EPUB/TXT/MOBI/PDF） |
 | **legado-db** | core | SQLite 数据库（rusqlite bundled） |
+| **legado-fetcher** | core, parser, net, js | 书源抓取编排：搜索/详情/目录/正文规则链、书源校验与失效分组 |
 | **legado-ffi** | 全部 | FFI 出口，聚合所有 crate |
-| **legado-server** | core, db, net, parser, js | axum HTTP 服务 |
+| **legado-server** | core, db, net, book, parser, js, fetcher | axum HTTP 服务 |
 
 ---
 
@@ -311,9 +314,9 @@ make gen      # flutter_rust_bridge_codegen generate
 | 文件 | 职责 |
 |------|------|
 | `connection.rs` | 数据库连接管理（tokio::Mutex 包装） |
-| `schema.rs` | Schema v95 定义（CREATE TABLE 语句） |
+| `schema.rs` | Schema 定义（CREATE TABLE 语句）；版本以 `SCHEMA_VERSION` 常量为准（当前 119） |
 | `migration.rs` | 迁移框架入口 |
-| `migration/migrations.rs` | 具体迁移脚本（v90→v95） |
+| `migration/migrations.rs` | 具体迁移脚本（v90→当前 `SCHEMA_VERSION`，当前 119） |
 | `import.rs` | RoomImporter：从 Android Room 导入数据 |
 | `repository/` | Repository 模式 |
 | `repository/book_repository.rs` | 书籍 CRUD |
@@ -613,6 +616,11 @@ cargo test --workspace test_search
 
 ## 测试统计（2026-08-01）
 
+> ⚠️ **历史快照（2026-08-01），当前以 CI 为准**：下表为当时手工汇总的 crate 测试数，此后各 crate 持续新增用例，
+> 表中数值（含 `legado-fetcher` 缺行、FFI 导出数、Flutter 用例数）均已过时，**不得用作当前基线**。
+> 当前测试规模与通过状态以 CI（`.github/workflows/rust-ci.yml`、`.github/workflows/flutter-ci.yml`）的
+> 最近一次运行为唯一依据；本表仅作历史演进追溯。
+
 | Crate | 测试数（默认） | 测试数（quickjs） | 备注 |
 |-------|---------------|-------------------|------|
 | legado-core | 502 | 502 | 数据模型、规则、加密、排版、换源、WebBook、CacheBook、ReadState、AudioPreload |
@@ -620,7 +628,7 @@ cargo test --workspace test_search
 | legado-net | 188 | 188 | HTTP、Cookie、RSS、WebDAV、并发去重、UA/代理/SSL、SourceChecker、QUIC |
 | legado-js | 158 | 327 | 默认 158 + QuickJS 额外 169（含宿主 API + 沙箱 + SourceEngine） |
 | legado-book | 120 | 120 | EPUB/TXT/MOBI/PDF + 导出服务 + 封面提取 + EXTH 元数据 + TxtSearch 搜索引擎 |
-| legado-db | 220 | 220 | Schema v95 + 25 Repository（100% 覆盖）+ Migration + RoomImporter（215 单元 + 4 集成 + 1 文档） |
+| legado-db | 220 | 220 | Schema 以 `SCHEMA_VERSION` 为准（当前 119）+ 31 Repository（100% 覆盖）+ Migration + RoomImporter（215 单元 + 4 集成 + 1 文档） |
 | legado-ffi | 105 | 105 | 103+ FFI 导出 + 换源 + WebBook(真实链路) + 书签 + 替换规则 |
 | legado-server | 164 | 164 | axum + 53 REST + 5 WS + MCP + 集成测试 |
 | **合计** | **1409** | **1578** | Flutter: 952 tests（2026-08-02 实测，Phase 5.4 去重后） |

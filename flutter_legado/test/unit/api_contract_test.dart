@@ -482,6 +482,35 @@ void main() {
           break;
         }
       }
+      // 双解析器交叉校验：结构扫描（_extractMethods）与正则扫描
+      // （_regexMethodNames）是两套独立实现，二者必须得到同一方法集合。
+      // 这条断言是 P1-2 的防复发闸门——单解析器的盲区（如 record 返回
+      // 类型）会让「文档数 == 解析器输出」这类自洽比较永久通过。
+      final regexNames = _regexMethodNames(
+        _read('lib/src/services/book_api.dart'),
+      );
+      final structuralOnly = bSet.difference(regexNames).toList()..sort();
+      final regexOnly = regexNames.difference(bSet).toList()..sort();
+      expect(
+        structuralOnly,
+        isEmpty,
+        reason: '结构解析器多出方法（正则解析器未识别）：$structuralOnly',
+      );
+      expect(
+        regexOnly,
+        isEmpty,
+        reason:
+            '结构解析器漏掉方法（正则解析器已识别，疑似返回类型含括号/'
+            '泛型导致丢行）：$regexOnly',
+      );
+      // 文档声明数必须同时等于两套独立解析结果
+      expect(
+        docCount,
+        regexNames.length,
+        reason:
+            '文档声明 $docCount ≠ book_api.dart 正则独立计数 '
+            '${regexNames.length}，请同步更新文档计数',
+      );
       expect(
         docCount,
         bNames.length,
@@ -669,11 +698,56 @@ bool _candidate(String line) {
   return line.contains('(');
 }
 
+/// 声明参数列表的左括号位置。
+///
+/// 不能直接取行内第一个 `(`：返回类型可能自带括号——record 类型
+/// `Future<({String kind, String value})> chapterPayAction({` 的第一个
+/// `(` 属于类型字面量，取它会得到空方法名并把该方法整体丢弃
+/// （2026-11-17 文档一致性核查发现的 P1-2 根因：BookApi 少计 1 个方法）。
+/// 这里按 `<`/`>` 深度跳过泛型与 record 类型内部，只返回顶层 `(`。
+int _declOpenParen(String line) {
+  int angle = 0;
+  for (int i = 0; i < line.length; i++) {
+    int c = line.codeUnitAt(i);
+    if (c == 60) {
+      angle++;
+      continue;
+    }
+    if (c == 62) {
+      if (angle > 0) angle--;
+      continue;
+    }
+    if (c == 40 && angle == 0) return i;
+  }
+  return -1;
+}
+
+/// 独立计数策略：正则直扫 `  Future<...> name(` / `  Stream<...> name(`。
+///
+/// 与 [_extractMethods] 的逐字符结构扫描是两套独立实现，用于交叉校验
+/// BookApi 方法总数——单一解析器的盲区（如 record 返回类型）不得被
+/// 文档计数"自洽"掩盖。
+final RegExp _methodDeclRe = RegExp(
+  r'^\s{2}(?:Future|Stream)<.+>\s+([A-Za-z_]\w*)\s*\(',
+);
+
+Set<String> _regexMethodNames(String src) {
+  final names = <String>{};
+  for (final line in src.split('\n')) {
+    final m = _methodDeclRe.firstMatch(line);
+    if (m == null) continue;
+    final rest = line.trimLeft();
+    if (_blockStarts.any((w) => rest.startsWith(w))) continue;
+    names.add(m.group(1)!);
+  }
+  return names;
+}
+
 List<String> _extractMethods(String src, String className) {
   final names = <String>{};
   for (final line in src.split('\n')) {
     if (!_candidate(line)) continue;
-    int p = line.indexOf('(');
+    int p = _declOpenParen(line);
     if (p <= 2) continue;
     int e = p - 1;
     while (e > 2 && _isIdentChar(line.codeUnitAt(e))) {

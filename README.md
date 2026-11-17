@@ -68,7 +68,7 @@ flutter test
 
 ## 版本与发布
 
-- 当前版本：**2.0.509+510**（以 `flutter_legado/pubspec.yaml` 的 `version` 为准）
+- 当前版本：**2.0.510+511**（以 `flutter_legado/pubspec.yaml` 的 `version` 为准）
 - 功能基准：Android 原版 `com.legado.app.release` 3.26081008
 - 版本规范：[语义化版本](https://semver.org/lang/zh-CN/)
 - 提交规范：[约定式提交](https://www.conventionalcommits.org/zh-hans/)，形如 `fix(ui): …` / `feat(rust): …` / `docs: …` / `chore: …`（scope 用 `rust` / `ui` / `android` / `ios` / `bridge` / `contract` 等）
