@@ -777,6 +777,88 @@ mod tests {
         assert_eq!(state_repo(conn).find_all().unwrap().len(), 2);
     }
 
+    /// 并发回归（真实触发链）：`update_with_check_state` 先读后写，
+    /// 期间另一连接提交写入 → 不得因快照升级失败报 `database is locked`
+    ///
+    /// 对应 QA 复现路径：`update_source()` → `update_with_check_state()`
+    /// （`find_by_url` 读旧源/旧状态 → `insert` 写回）。修复前 `in_transaction`
+    /// 用 DEFERRED，本测试必红；修复后 BEGIN IMMEDIATE 在事务起点持写锁。
+    #[test]
+    fn test_update_with_check_state_survives_concurrent_writer() {
+        use crate::Database;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+        use std::thread;
+        use std::time::Duration;
+
+        // 必须用文件库：:memory: 每条连接是独立数据库，无法复现两连接竞争
+        let dir = std::env::temp_dir().join("legado_db_test_update_check_state");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(format!("race_{}.db", std::process::id()));
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
+        }
+        let db = Database::open(path.to_str().unwrap()).unwrap();
+        let pool = db.pool().clone();
+        drop(db);
+
+        {
+            let seed = Database::from_pool(&pool).unwrap();
+            BookSourceRepository::new(seed.connection())
+                .insert_with_check_state(&make_source("https://race.example.com", "race"))
+                .unwrap();
+        }
+
+        let stop = Arc::new(AtomicBool::new(false));
+        // 并发写者：独立连接持续提交同 URL 的 INSERT OR REPLACE
+        let writer = {
+            let pool = pool.clone();
+            let stop = Arc::clone(&stop);
+            thread::spawn(move || {
+                let db = Database::from_pool(&pool).unwrap();
+                let conn = db.connection();
+                while !stop.load(Ordering::SeqCst) {
+                    let _ = conn.execute(
+                        "INSERT OR REPLACE INTO book_sources (bookSourceUrl, bookSourceName)
+                         VALUES ('https://race.example.com', 'race')",
+                        [],
+                    );
+                }
+            })
+        };
+
+        thread::sleep(Duration::from_millis(20));
+
+        let db_a = Database::from_pool(&pool).unwrap();
+        let repo = BookSourceRepository::new(db_a.connection());
+        let mut src = make_source("https://race.example.com", "race");
+        // 规则内容变化 → 走「读旧源/旧状态 + 写新源 + 写新状态」全链路
+        src.search_url = Some("https://race.example.com/search?q={key}".to_string());
+
+        let outcome = (0..20).try_for_each(|i| {
+            src.custom_order = i;
+            repo.update_with_check_state(&src)
+                .map_err(|e| format!("第 {i} 轮 update_with_check_state 失败: {e}"))
+        });
+
+        stop.store(true, Ordering::SeqCst);
+        writer.join().expect("写线程不应 panic");
+
+        outcome.expect("并发写者存在时 update_with_check_state 不得失败");
+
+        let state = state_repo(db_a.connection())
+            .find_by_url("https://race.example.com")
+            .unwrap()
+            .unwrap();
+        assert_eq!(state.status, "NEEDS_CHECK");
+
+        drop(db_a);
+        drop(pool);
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
+        }
+    }
+
     /// CAS 成功：expected 快照与库内一致，字段被更新并返回 true
     #[test]
     fn test_update_check_result_success() {

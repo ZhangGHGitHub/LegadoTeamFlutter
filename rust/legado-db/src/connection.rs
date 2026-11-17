@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
-use rusqlite::Connection;
+use rusqlite::{Connection, Transaction, TransactionBehavior};
 
 use legado_core::{LegadoError, LegadoResult};
 
@@ -235,16 +235,36 @@ impl Database {
 /// 在单个数据库事务内执行批量写入闭包（批量导入共享事务边界，P1-1）
 ///
 /// 语义：
-/// - **autocommit 连接**：`BEGIN` → 执行闭包 → 成功 `COMMIT` 后才返回 `Ok`；
-///   闭包返回 `Err` 时 `Transaction` 在 drop 中回滚，调用方观察到 `Err` 且
-///   库内零改动（不会出现前 k-1 条已提交、第 k 条失败的部分成功态）。
+/// - **autocommit 连接**：`BEGIN IMMEDIATE` → 执行闭包 → 成功 `COMMIT` 后才
+///   返回 `Ok`；闭包返回 `Err` 时 `Transaction` 在 drop 中回滚，调用方观察到
+///   `Err` 且库内零改动（不会出现前 k-1 条已提交、第 k 条失败的部分成功态）。
 /// - **已处于外层显式事务内**（`is_autocommit() == false`）：不再发起
 ///   `BEGIN`，直接在既有事务内执行闭包，避免 "cannot start a transaction
 ///   within a transaction" 嵌套错误；提交/回滚由外层事务负责（组合语义）。
 ///
+/// # 为什么是 `TransactionBehavior::Immediate`（P1 并发缺陷修复）
+///
+/// 本函数的调用方全部是**写事务**（2026-11-17 盘点：16 个生产调用点无一纯读），
+/// 且其中多处在闭包内**先读后写**（典型：[`crate::repository::book_source_repository::BookSourceRepository::update_with_check_state`]
+/// 先 `find_by_url` 读旧源/旧状态、再 `insert` 写回）。若用 DEFERRED（`BEGIN`
+/// 不取锁、首条语句才定读/写角色），事务会先建立**读快照**；一旦另一连接在
+/// 「读完成、写开始」窗口内提交了写入，本连接从读快照升级为写会立即失败
+/// `SQLITE_BUSY_SNAPSHOT`（报 `database is locked`），而 **`busy_timeout`
+/// 对这种快照升级失败完全无效**（SQLite 不会重试）。生产上「书源校验写回 +
+/// 用户编辑」「备份恢复（读旧行→写新行）」等并发路径都会命中。
+///
+/// `BEGIN IMMEDIATE` 在事务起点就取写锁：后续读到的都是最新已提交状态，
+/// 不存在快照升级，竞争退化为常规的锁等待并由 `busy_timeout=5000` 兜住。
+/// 仓内先例：`legado_ffi::api::privacy_api`（隐私密码写事务）、`reader.rs` 的
+/// 本地目录落库、`video_api.rs` 的章节 variable 读-改-写均显式使用 IMMEDIATE。
+///
+/// 性能影响：调用方本就全部写入，DEFERRED 也会在首条写语句处取同一把写锁，
+/// 提前到 `BEGIN` 的额外串行窗口仅为本闭包开头的少量读语句；纯读路径（不走
+/// 本函数）在 WAL 下不受写锁阻塞（见 `test_in_transaction_does_not_block_wal_readers`）。
+///
 /// 背景：rusqlite 0.41.1（当前版本；0.31 起即如此）的
 /// `Connection::transaction` 需要 `&mut Connection`，而本项目连接经 r2d2 池
-/// 共享为 `&Connection`，故沿用项目既有的 `unchecked_transaction()` 模式
+/// 共享为 `&Connection`，故沿用项目既有的 `Transaction::new_unchecked` 模式
 /// （见 source_switch / reader / toc_update）。升级后签名未变，结论仍成立。
 pub fn in_transaction<T, F>(conn: &Connection, context: &str, f: F) -> LegadoResult<T>
 where
@@ -256,9 +276,9 @@ where
         return f(conn);
     }
 
-    let tx = conn
-        .unchecked_transaction()
-        .map_err(|e| LegadoError::Database(format!("{context}: 开启事务失败: {e}")))?;
+    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(|e| {
+        LegadoError::Database(format!("{context}: 开启事务失败（BEGIN IMMEDIATE）: {e}"))
+    })?;
     let result = f(conn)?;
     tx.commit()
         .map_err(|e| LegadoError::Database(format!("{context}: 提交事务失败: {e}")))?;
@@ -467,5 +487,196 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM tx_probe", [], |row| row.get(0))
             .unwrap();
         assert_eq!(count, 1, "内层写入应随外层提交落库");
+    }
+
+    // ─── 并发：BEGIN IMMEDIATE 修复「先读后写」快照升级失败 ───────────────
+
+    /// 建一个全新的文件库（WAL），返回连接池与文件路径
+    ///
+    /// 必须用**文件库**：`:memory:` 每条连接是独立数据库，无法复现两连接竞争。
+    fn open_shared_file_db(tag: &str) -> (std::path::PathBuf, Pool<SqliteConnectionManager>) {
+        let dir = std::env::temp_dir().join("legado_db_test_tx_behavior");
+        std::fs::create_dir_all(&dir).expect("创建临时目录失败");
+        let path = dir.join(format!("{tag}_{}.db", std::process::id()));
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
+        }
+        let pool = {
+            let db = Database::open(path.to_str().expect("临时路径须为合法 UTF-8")).unwrap();
+            db.pool().clone()
+        };
+        {
+            let seed = Database::from_pool(&pool).unwrap();
+            seed.connection()
+                .execute_batch(
+                    "CREATE TABLE IF NOT EXISTS tx_race (id INTEGER PRIMARY KEY, v TEXT)",
+                )
+                .unwrap();
+        }
+        (path, pool)
+    }
+
+    fn remove_file_db(path: &std::path::Path) {
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
+        }
+    }
+
+    /// 并发回归：A 在事务内「先读后写」，B 在中间提交写入 → A 不得失败
+    ///
+    /// 缺陷复现（修复前必红）：`in_transaction` 用 DEFERRED（裸 `BEGIN`），
+    /// A 的首条 SELECT 建立读快照；B 在 A「读完成、写开始」窗口内提交后，
+    /// A 的写语句升级快照立即失败 `database is locked`（SQLITE_BUSY_SNAPSHOT，
+    /// **`busy_timeout=5000` 对此完全不重试**）。
+    ///
+    /// 修复后（BEGIN IMMEDIATE）：A 在事务起点即持写锁，B 的提交被挡在
+    /// 锁外排队，A 读到的始终是最新已提交状态，写不会再失败。
+    #[test]
+    fn test_in_transaction_read_then_write_survives_concurrent_commit() {
+        use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+        use std::sync::Arc;
+        use std::thread;
+        use std::time::{Duration, Instant};
+
+        let (path, pool) = open_shared_file_db("race");
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let commits = Arc::new(AtomicI64::new(0));
+
+        // 写线程 B：独立连接上做自动提交写（不显式开事务），持续制造并发提交
+        let writer = {
+            let pool = pool.clone();
+            let stop = Arc::clone(&stop);
+            let commits = Arc::clone(&commits);
+            thread::spawn(move || {
+                let db = Database::from_pool(&pool).unwrap();
+                let conn = db.connection();
+                while !stop.load(Ordering::SeqCst) {
+                    if conn
+                        .execute("INSERT OR REPLACE INTO tx_race (id, v) VALUES (1, 'b')", [])
+                        .is_ok()
+                    {
+                        commits.fetch_add(1, Ordering::SeqCst);
+                    }
+                }
+            })
+        };
+
+        // 确保 B 已进入写循环（否则 A 的事务期间可能无并发写者）
+        let wait_start = Instant::now();
+        while commits.load(Ordering::SeqCst) == 0 {
+            assert!(
+                wait_start.elapsed() < Duration::from_secs(10),
+                "写线程未能完成首次提交"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+
+        let db_a = Database::from_pool(&pool).unwrap();
+        let conn_a = db_a.connection();
+        // 探针连接：用极短 busy_timeout 判定「A 是否在事务起点就持写锁」
+        let db_probe = Database::from_pool(&pool).unwrap();
+        let conn_probe = db_probe.connection();
+        conn_probe.pragma_update(None, "busy_timeout", 50).unwrap();
+
+        let mut commits_at_read = 0i64;
+        let result = in_transaction(conn_a, "并发读后写", |conn| {
+            // 1) 先读：DEFERRED 下这一刻建立读快照
+            let _before: i64 = conn
+                .query_row("SELECT COUNT(*) FROM tx_race", [], |row| row.get(0))
+                .map_err(|e| LegadoError::Database(format!("事务内读失败: {e}")))?;
+            commits_at_read = commits.load(Ordering::SeqCst);
+
+            // 2) 留出「读完成、写开始」窗口：DEFERRED 下 B 会在此窗口内提交，
+            //    使 A 的快照过期；IMMEDIATE 下 A 已持写锁，B 只能排队
+            thread::sleep(Duration::from_millis(300));
+
+            // 3) 再写：DEFERRED 下此处快照升级失败（`database is locked`，
+            //    busy_timeout 不生效）——修复前本断言即红
+            conn.execute("INSERT OR REPLACE INTO tx_race (id, v) VALUES (2, 'a')", [])
+                .map_err(|e| LegadoError::Database(format!("事务内写失败: {e}")))?;
+
+            // 4) 确定性证据：IMMEDIATE 在事务起点即持写锁，探针连接（50ms
+            //    busy_timeout）此刻拿不到写锁；DEFERRED 下它能拿到 → 本断言红
+            assert!(
+                Transaction::new_unchecked(conn_probe, TransactionBehavior::Immediate).is_err(),
+                "事务起点应已持写锁；探针连接却拿到了写锁，说明仍是 DEFERRED"
+            );
+            Ok(())
+        });
+
+        stop.store(true, Ordering::SeqCst);
+        writer.join().expect("写线程不应 panic");
+
+        result.expect(
+            "并发读后写事务不得失败：BEGIN IMMEDIATE 已取写锁，\
+             其他连接的提交应在 busy_timeout 内排队而非触发 SQLITE_BUSY_SNAPSHOT",
+        );
+        assert!(
+            commits.load(Ordering::SeqCst) > commits_at_read,
+            "写线程应至少成功提交一次，否则未构成并发竞争"
+        );
+
+        let written: i64 = db_a
+            .connection()
+            .query_row("SELECT COUNT(*) FROM tx_race WHERE id = 2", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(written, 1, "A 的写入必须随事务提交落库");
+
+        drop(db_probe);
+        drop(db_a);
+        drop(pool);
+        remove_file_db(&path);
+    }
+
+    /// 性能回退核查：写事务期间 WAL 纯读连接不被阻塞
+    ///
+    /// `BEGIN IMMEDIATE` 只是把写锁提前到事务起点，不影响 WAL 的读写并发：
+    /// 读连接读的是最近已提交快照，既不等待写锁，也读不到未提交改动。
+    /// 若此处阻塞，读路径会等满 busy_timeout(5s) 再报错——故以 1s 上界断言。
+    #[test]
+    fn test_in_transaction_does_not_block_wal_readers() {
+        use std::time::{Duration, Instant};
+
+        let (path, pool) = open_shared_file_db("reader");
+
+        let db_a = Database::from_pool(&pool).unwrap();
+        let conn_a = db_a.connection();
+        let db_reader = Database::from_pool(&pool).unwrap();
+        let reader = db_reader.connection();
+
+        in_transaction(conn_a, "写事务持有写锁", |conn| {
+            conn.execute(
+                "INSERT OR REPLACE INTO tx_race (id, v) VALUES (1, 'uncommitted')",
+                [],
+            )
+            .map_err(|e| LegadoError::Database(format!("事务内写失败: {e}")))?;
+
+            let started = Instant::now();
+            let visible: i64 = reader
+                .query_row("SELECT COUNT(*) FROM tx_race", [], |row| row.get(0))
+                .map_err(|e| LegadoError::Database(format!("并发读失败: {e}")))?;
+            let elapsed = started.elapsed();
+
+            assert!(
+                elapsed < Duration::from_secs(1),
+                "WAL 读连接不得被写事务阻塞（实测 {elapsed:?}，busy_timeout 为 5s）"
+            );
+            assert_eq!(visible, 0, "读连接只应看到已提交快照，不得读到未提交写入");
+            Ok(())
+        })
+        .expect("写事务应成功提交");
+
+        let after: i64 = reader
+            .query_row("SELECT COUNT(*) FROM tx_race", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(after, 1, "事务提交后读连接应看到新行");
+
+        drop(db_reader);
+        drop(db_a);
+        drop(pool);
+        remove_file_db(&path);
     }
 }
