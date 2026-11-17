@@ -12,6 +12,7 @@ import 'package:video_player/video_player.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../services/book_api.dart';
+import '../services/platform_bridge_service.dart';
 import '../services/video_float_window.dart';
 import '../utils/video_play_utils.dart';
 import '../utils/video_progress.dart';
@@ -292,6 +293,11 @@ class _VideoScreenState extends State<VideoScreen> {
   void initState() {
     super.initState();
     _playSettingsLoaded = _loadPlaySettings();
+    // [P2-7] 登记当前视频书上下文：书源 JS 在本页内再调 openVideoPlayer
+    // 且载荷未带 bookUrl 时，桥接服务据此做私密判定（否则无身份即放行）。
+    // 直链模式（book == null）登记空串，不提供书身份。
+    PlatformBridgeService.instance.currentVideoBookUrl =
+        widget.book?.bookUrl ?? '';
     // 直链模式起播需先读 video_pos_ 进度（对齐原版 seekOnStart），
     // ProviderScope 依赖 InheritedWidget，统一在 didChangeDependencies 调度
     _loadingChapter = true;
@@ -1057,6 +1063,12 @@ class _VideoScreenState extends State<VideoScreen> {
 
   @override
   void dispose() {
+    // [P2-7] 释放视频页书上下文（仅当仍指向本书时清除，避免误清后续页面
+    // 已登记的身份；pop 转场期间新页可能先于本页 dispose 完成登记）
+    if (PlatformBridgeService.instance.currentVideoBookUrl ==
+        (widget.book?.bookUrl ?? '')) {
+      PlatformBridgeService.instance.currentVideoBookUrl = '';
+    }
     _tipTimer?.cancel();
     _directPosTimer?.cancel();
     // 直链进度落盘（对齐原版 VideoPlayerActivity.onDestroy → saveRead()）

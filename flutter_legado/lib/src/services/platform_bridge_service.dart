@@ -5,11 +5,17 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    show ProviderContainer, ProviderScope;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../models/models.dart';
+import '../providers/privacy/privacy_content_notifier.dart';
+import '../providers/privacy/privacy_notifier.dart';
 import '../providers/ui_settings/ui_settings_notifier.dart';
 import '../routes.dart';
+import '../utils/private_book_access.dart';
 import '../utils/video_play_utils.dart';
 import '../utils/webview_support.dart';
 import '../widgets/open_url_confirm_dialog.dart';
@@ -201,6 +207,9 @@ class PlatformBridgeService {
           url: (payload['url'] ?? '').toString(),
           title: (payload['title'] ?? '').toString(),
           isFloat: payload['isFloat'] == true,
+          // [P2-7] Rust 侧在书籍流程内附带 bookUrl（flow scope）；缺省时
+          // 由 [_openVideoPlayer] 退化到页面上下文/会话解锁判定
+          bookUrl: (payload['bookUrl'] ?? '').toString(),
         );
         return '';
       case 'refreshBookInfo':
@@ -1018,6 +1027,77 @@ class PlatformBridgeService {
     }
   }
 
+  /// 悬浮窗平台门控覆写（测试性，同 [saveViaDownloadsOverride] 范式）：
+  /// 默认 `!kIsWeb && Platform.isAndroid`。widget 测试宿主（Windows）无法
+  /// 伪造 Platform 静态属性，经此覆写强制走 float 分支，测试后须置回 null。
+  bool? videoFloatPlatformOverride;
+
+  /// 当前平台是否具备原生视频悬浮窗（统一门控，见 [videoFloatPlatformOverride]）
+  bool get videoFloatPlatformSupported =>
+      videoFloatPlatformOverride ?? (!kIsWeb && Platform.isAndroid);
+
+  /// [P2-7] 当前视频页正在播放的书籍（由 `VideoScreen` 挂载时登记）
+  ///
+  /// 书源 JS 载荷缺 `bookUrl` 时的身份回退：源脚本可在已打开的视频页内
+  /// 再次调用 `openVideoPlayer`（自动连播/换集直链），此时页面上下文就是
+  /// 当前书，必须据此做私密判定，否则无身份即放行。
+  String currentVideoBookUrl = '';
+
+  /// [P2-7] 书源 JS `openVideoPlayer` 私密闸门（静默判定，不弹框）
+  ///
+  /// 修复前两条分支都绕过私密判定：`isFloat=true` 直接
+  /// `VideoFloatWindowBridge.show`（绕过 `VideoFloatWindowCoordinator` 的
+  /// `canEnterWindowForBook`）；`isFloat=false` push `/video` 只带
+  /// `Map<String,String>`，路由层 `PrivateBookGate(bookUrl: '')` 因无书身份
+  /// 直接放行。书源 JS 持有当前书上下文，可对私密书无验证拉起播放。
+  ///
+  /// 判定顺序（全部静默，本服务无 BuildContext 可用）：
+  /// 1. 书身份：载荷 `bookUrl`（Rust 书籍流程 flow scope，权威）>
+  ///    [currentVideoBookUrl]（当前视频页）；
+  /// 2. 有书身份 → `isBookAllowedWithoutPrompt`（与浮窗创建点 / 路由闸门
+  ///    同一判定链，已覆盖非私密 / 总开关 / 会话解锁 / EveryTime 目标授权）；
+  /// 3. 无书身份 → 仅当书架存在私密内容时要求会话级解锁（退化方案 B：
+  ///    无身份无法判定来源，但也不给私密内容留后门；无任何私密内容时
+  ///    不误锁普通直链播放）。
+  ///
+  /// 判定链任何异常一律 fail-open（与 `ensurePrivateAccess` 同口径）。
+  Future<bool> _allowOpenVideoPlayer(String payloadBookUrl) async {
+    final context = navigatorKey.currentContext;
+    if (context == null) return true;
+    final ProviderContainer container;
+    try {
+      container = ProviderScope.containerOf(context, listen: false);
+    } catch (e) {
+      // 无 Riverpod 作用域（极端降级）：无法判定，按 fail-open 放行
+      debugPrint('[PlatformBridge] openVideoPlayer：无 ProviderScope，跳过私密判定');
+      return true;
+    }
+    try {
+      await container.read(privacyNotifierProvider.notifier).ensureLoaded();
+      final content =
+          await container.read(privacyContentProvider.notifier).ensureLoaded();
+      final privacy = container.read(privacyNotifierProvider);
+      if (!privacy.enabled || !privacy.verifyOnOpenBook) return true;
+      if (!content.loaded) return true;
+      final payloadUrl = payloadBookUrl.trim();
+      final identity =
+          payloadUrl.isNotEmpty ? payloadUrl : currentVideoBookUrl.trim();
+      if (identity.isEmpty) {
+        final hasPrivateContent = content.privateBookUrls.isNotEmpty ||
+            content.privateGroupIds.isNotEmpty;
+        if (!hasPrivateContent) return true;
+        return privacy.contentSessionUnlocked;
+      }
+      // 快照未命中说明该书不在书架（不可能带私密标记）：用最小身份对象
+      // 走同一判定链，私密标记/分组位仍由快照负责。
+      final book = content.booksByUrl[identity] ?? Book(bookUrl: identity);
+      return isBookAllowedWithoutPrompt(book, privacy, content);
+    } catch (e) {
+      debugPrint('[PlatformBridge] openVideoPlayer 私密判定失败（放行）：$e');
+      return true;
+    }
+  }
+
   /// openVideoPlayer → 内置视频播放页（video_player 已接通）
   ///
   /// [V-B3] isFloat=true 对齐原版 SourceHelp.openVideoPlayer(isFloat=true)
@@ -1026,10 +1106,14 @@ class PlatformBridgeService {
   /// 启动失败按原因提示并停留（权限缺失 → 引导系统设置页；FGS 后台启动
   /// 受限 → 引导回应用内重试；不静默降级）。
   /// 非 Android / MPD 文本 / 无法解析时回退全屏播放页。
+  ///
+  /// [P2-7] 两条分支动作前统一过 [_allowOpenVideoPlayer] 静默私密判定；
+  /// 未授权直接拒绝并提示，不创建浮窗、不压栈播放页。
   Future<void> _openVideoPlayer({
     required String url,
     required String title,
     required bool isFloat,
+    String bookUrl = '',
   }) async {
     if (url.isEmpty) return;
     final navigator = _navigator;
@@ -1037,7 +1121,11 @@ class PlatformBridgeService {
       debugPrint('[PlatformBridge] openVideoPlayer：Navigator 未装配，忽略');
       return;
     }
-    if (isFloat && !kIsWeb && Platform.isAndroid) {
+    if (!await _allowOpenVideoPlayer(bookUrl)) {
+      _showSnackBar('私密视频需先在应用内验证后再播放');
+      return;
+    }
+    if (isFloat && videoFloatPlatformSupported) {
       final target = resolveVideoPlayTarget(content: url, chapterUrl: url);
       if (!target.isMpd && target.url.isNotEmpty) {
         final displayTitle = title.isNotEmpty ? title : '视频播放';
