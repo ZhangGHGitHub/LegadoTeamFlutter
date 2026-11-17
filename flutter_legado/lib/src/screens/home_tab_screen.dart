@@ -14,6 +14,7 @@ import '../providers/read_record/read_record_notifier.dart';
 import '../routes.dart';
 import '../services/privacy_content_service.dart';
 import '../utils/book_open_utils.dart';
+import '../utils/read_stats_privacy.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/privacy/private_locked_cover.dart';
 
@@ -176,11 +177,41 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
       privacy: privacy,
       privacyContent: privacyContent,
     );
-    final readBooks =
-        records.where((r) => r.readTime > 0).length;
-    final totalHours = (totalMs / 3600000).toStringAsFixed(1);
+
+    // [P1-8] 统计口径脱敏（与阅读记录页 `read_record_screen.dart` 同源纯函数）：
+    // - pending：隐私策略/私密标记未就绪（首帧竞态）→ 一律中性占位，
+    //   绝不先渲染真实数字（与最近阅读卡 pending 态同口径）；
+    // - masked：存在「私密且未获准」的记录 → `readRecordDaily` 只有日期+
+    //   秒数、没有书籍维度，无法剔除私密书贡献的时长（A3 判定「不可接受」
+    //   的时长反推路径），故今日分钟数显示占位；本数/累计改用逐条剔除口径。
+    final statsPending = !readStatsPrivacyReady(privacy, privacyContent);
+    final statsRecords = ref
+        .read(readRecordNotifierProvider.notifier)
+        .allRecords;
+    final statsMasked =
+        !statsPending &&
+        hasLockedRecordsForStats(statsRecords, privacy, privacyContent);
+    final visibleRecords = statsPending
+        ? const <ReadRecordShow>[]
+        : filterLockedRecords(statsRecords, privacy, privacyContent);
+    // 本数：逐条记录可真正剔除私密书，按剔除后口径统计
+    final readBooks = visibleRecords.where((r) => r.readTime > 0).length;
+    // 累计时长：优先用剔除后记录的求和（可精确剔除）；未就绪时 0（占位）
+    final visibleTotalMs = visibleRecords.fold<int>(
+      0,
+      (sum, r) => sum + r.readTime,
+    );
+    // `totalMs` 是未剔除的全量累计，仅在「无脱敏需求」时与剔除口径等价；
+    // 为保持既有行为（未启用隐私时显示库内累计值），非 masked 且非 pending
+    // 时沿用 totalMs，避免与阅读记录页的 `visibleReadTimeMs` 出现细微差异。
+    final effectiveTotalMs = statsPending
+        ? 0
+        : (statsMasked ? visibleTotalMs : totalMs);
+    final totalHours = (effectiveTotalMs / 3600000).toStringAsFixed(1);
+    // 今日分钟数：存在私密未授权记录时聚合值不可信 → 占位
+    final todayStatsAvailable = _todayLoaded && !statsPending && !statsMasked;
     final goalSeconds = _goalMinutes * 60;
-    final progress = goalSeconds <= 0
+    final progress = !todayStatsAvailable || goalSeconds <= 0
         ? 0.0
         : (_todaySeconds / goalSeconds).clamp(0.0, 1.0);
     final todayMinutes = (_todaySeconds / 60).round();
@@ -234,10 +265,13 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: Theme.of(context).textTheme.bodySmall),
-                            Text('$readBooks 本',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.titleMedium),
+                            Text(
+                              // [P1-8] 隐私快照未就绪 → 占位（不先渲染真实本数）
+                              statsPending ? '— 本' : '$readBooks 本',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
                           ],
                         ),
                       ),
@@ -261,10 +295,13 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: Theme.of(context).textTheme.bodySmall),
-                            Text('$totalHours 小时',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.titleMedium),
+                            Text(
+                              // [P1-8] 未就绪占位；masked 时已按剔除后口径算
+                              statsPending ? '— 小时' : '$totalHours 小时',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
                           ],
                         ),
                       ),
@@ -298,7 +335,8 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
                   width: double.infinity,
                   child: CustomPaint(
                     painter: _GoalDialPainter(
-                      progress: _todayLoaded ? progress : 0,
+                      // [P1-8] pending/masked 时进度归零（不泄漏已读时长比例）
+                      progress: todayStatsAvailable ? progress : 0,
                       trackColor: cs.surfaceContainerHighest,
                       progressColor: cs.primary,
                     ),
@@ -307,7 +345,10 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            _todayLoaded
+                            // [P1-8] pending/masked 时显示中性占位「—」：
+                            // `readRecordDaily` 只有日期+秒数，无法剔除私密书
+                            // 贡献，直接展示今日分钟数等于泄漏私密阅读时长。
+                            todayStatsAvailable
                                 ? '$todayMinutes / $_goalMinutes'
                                 : '— / $_goalMinutes',
                             style: Theme.of(context)

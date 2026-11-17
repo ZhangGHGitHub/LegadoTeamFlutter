@@ -412,4 +412,96 @@ void main() {
     expect(find.text('私密书籍'), findsOneWidget);
     expect(find.text(_secretName), findsNothing);
   });
+
+  // ─── P1-8：首页统计口径脱敏（审查 2026-11-17） ───────────────────
+  //
+  // 根因：首页 Tab 的本数/累计/今日分钟三处统计口径**都没有**接
+  // `read_stats_privacy.dart`（阅读记录页已接）。`_todaySeconds` 直读
+  // `readRecordDailyList`，而该表只有「日期 + 秒数」没有书籍维度 ——
+  // 存在私密未授权记录时无法剔除其贡献，展示即泄漏（A3 判定「不可接受」）。
+  group('P1-8 首页统计脱敏', () {
+    /// 今日日期键（与 HomeTabScreen._dayKey 同格式）
+    String todayKey() {
+      final d = DateTime.now();
+      return '${d.year}-${d.month.toString().padLeft(2, '0')}'
+          '-${d.day.toString().padLeft(2, '0')}';
+    }
+
+    testWidgets('私密未授权：今日分钟显示占位，累计按剔除后口径', (tester) async {
+      final api = PrivacyMockBookApi(
+        books: [_buildBook(name: _secretName, isPrivate: true)],
+        readRecords: [_buildRecord(bookName: _secretName)],
+        // 今日已读 42 分钟（若泄漏则表盘显示 42）
+        daily: [
+          {'date': todayKey(), 'seconds': 42 * 60},
+        ],
+      );
+      final container = await _bootContainer(api: api);
+      await _pumpHome(tester, container);
+
+      expect(
+        find.text('42 / 30'),
+        findsNothing,
+        reason: 'P1-8：存在私密未授权记录时今日分钟数不得展示（聚合值不可信）',
+      );
+      expect(
+        find.text('— / 30'),
+        findsOneWidget,
+        reason: '今日分钟数必须显示中性占位',
+      );
+      expect(
+        find.text('0 本'),
+        findsOneWidget,
+        reason: '本数按剔除后口径为 0（私密记录被剔除，非 pending）',
+      );
+      expect(
+        find.text('0.0 小时'),
+        findsOneWidget,
+        reason: '累计时长按剔除后口径为 0（私密记录被剔除）',
+      );
+    });
+
+    testWidgets('非私密记录：今日分钟/本数/时长正常显示（防过度脱敏）', (tester) async {
+      final api = PrivacyMockBookApi(
+        books: [
+          _buildBook(
+            name: '公开书',
+            isPrivate: false,
+            author: '公开作者',
+            chapterTitle: '公开章节',
+          ),
+        ],
+        readRecords: [_buildRecord(bookName: '公开书', author: '公开作者')],
+        daily: [
+          {'date': todayKey(), 'seconds': 15 * 60},
+        ],
+      );
+      final container = await _bootContainer(api: api);
+      await _pumpHome(tester, container);
+
+      expect(find.text('15 / 30'), findsOneWidget, reason: '非私密时今日分钟正常显示');
+      expect(find.text('1 本'), findsOneWidget, reason: '非私密时本数正常显示');
+      expect(find.text('0.0 小时'), findsOneWidget, reason: '61 秒 < 0.1 小时 → 0.0');
+      expect(find.text('— / 30'), findsNothing);
+      expect(find.text('— 本'), findsNothing);
+    });
+
+    testWidgets('隐私未启用：即使记录被标记为私密也正常显示（策略关闭即放行）', (tester) async {
+      // 关闭总开关后 readStatsPrivacyReady 直接返回 true（无需等标记），
+      // 私密判定恒不成立 → 统计照常展示。锁住「不过度脱敏」语义。
+      final api = PrivacyMockBookApi(
+        books: [_buildBook(name: _secretName, isPrivate: true)],
+        readRecords: [_buildRecord(bookName: _secretName)],
+        daily: [
+          {'date': todayKey(), 'seconds': 20 * 60},
+        ],
+      );
+      final container = await _bootContainer(api: api);
+      await container.read(privacyNotifierProvider.notifier).setEnabled(false);
+      await _pumpHome(tester, container);
+
+      expect(find.text('20 / 30'), findsOneWidget);
+      expect(find.text('1 本'), findsOneWidget);
+    });
+  });
 }
