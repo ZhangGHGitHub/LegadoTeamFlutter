@@ -1383,6 +1383,11 @@ class AppStrings {
   static String get webdavRestoreBypassList => _get('恢复忽略列表', 'Bypass List');
   static String get webdavRestoreBypassListDesc => _get('恢复时忽略一些内容不恢复，方便不同手机配置不同', 'Skip some content when restoring, so different phones can keep different settings');
   static String get webdavBackupBypassList => _get('备份忽略列表', 'Backup Bypass List');
+  // C1：逐表备份忽略（对齐参考版 BackupConfig.dbIsNotIgnored）
+  static String get backupContentTitle => _get('备份内容', 'Backup Content');
+  static String get backupContentSaved => _get('已保存备份内容', 'Backup content saved');
+  static String get backupContentSaveFailed => _get('保存备份内容失败', 'Failed to save backup content');
+  static String get backupContentLoadFailed => _get('读取备份内容失败', 'Failed to load backup content');
   static String get webdavKeepLatestOnly => _get('仅保留最新备份', 'Keep Only the Latest Backup');
   static String get webdavKeepLatestOnlyDesc => _get('本地备份仅保留最新备份文件', 'Local backup keeps only the latest backup file');
   static String get webdavAutoBackup => _get('自动备份', 'Auto backup');

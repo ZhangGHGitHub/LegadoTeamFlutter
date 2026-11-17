@@ -20,12 +20,14 @@ import '../providers/providers.dart';
 import '../providers/sync/sync_notifier.dart';
 import '../routes.dart';
 import '../services/crash_log_service.dart';
+import '../services/backup_content_service.dart';
 import '../services/local_backup_service.dart';
 import '../services/settings_service.dart';
 import '../services/webdav_backup_candidates.dart';
 import '../services/webdav_backup_service.dart';
 import '../services/webdav_restore_service.dart';
 import '../utils/error_message.dart';
+import '../widgets/backup_content_dialog.dart';
 import '../widgets/backup_restore_option_sheet.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/ios_widgets.dart';
@@ -143,6 +145,10 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   /// 备份忽略配置（与恢复忽略独立；默认全 false）
   Map<String, bool> _backupIgnore = const {};
 
+  /// C1 逐表备份忽略（参考版 `BackupConfig.dbIsNotIgnored(key, true)`；
+  /// 存 caches `config:backupIgnoreTables`，设备级不随备份往返）
+  Set<String> _backupContentIgnored = const {};
+
   /// 导入后自动上传本地书（默认关）
   bool _bookAutoUpload = false;
 
@@ -195,6 +201,16 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       final autoBackupWebDav = await _settings.getAutoBackupWebDav();
       final autoBackupDays = await _settings.getAutoBackupIntervalDays();
       final backupIgnore = await _settings.getBackupIgnoreConfig();
+      // C1：逐表备份忽略（caches config:backupIgnoreTables）。读取失败
+      // 不阻断页面加载——按「不忽略任何表」显示，保存时再写。
+      Set<String> backupContentIgnored = const {};
+      try {
+        backupContentIgnored = await BackupContentService(
+          api: ref.read(bookApiProvider),
+        ).load();
+      } catch (e) {
+        debugPrint('[WebDavSettings] 读取备份内容忽略配置失败：$e');
+      }
       if (!mounted) return;
       setState(() {
         _url = state.webDavUrl;
@@ -211,6 +227,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
         _autoBackupWebDav = autoBackupWebDav;
         _autoBackupIntervalDays = autoBackupDays;
         _backupIgnore = backupIgnore;
+        _backupContentIgnored = backupContentIgnored;
       });
     } catch (e) {
       if (!mounted) return;
@@ -1274,6 +1291,48 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     return count == 0 ? AppStrings.notSetLabel : AppStrings.checkedCount(count);
   }
 
+  /// 「备份内容」：逐表备份忽略（C1，对齐参考版 `dbIsNotIgnored(key, true)`）
+  Future<void> _showBackupContent() async {
+    final service = BackupContentService(api: ref.read(bookApiProvider));
+    Set<String> initial;
+    try {
+      initial = await service.load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(AppStrings.backupContentLoadFailed)));
+      debugPrint('[WebDavSettings] 读取备份内容配置失败：$e');
+      return;
+    }
+    if (!mounted) return;
+    final result = await showDialog<Set<String>>(
+      context: context,
+      builder: (ctx) => BackupContentDialog(initial: initial),
+    );
+    if (result == null || !mounted) return;
+    try {
+      await service.save(result);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(AppStrings.backupContentSaveFailed)));
+      debugPrint('[WebDavSettings] 保存备份内容配置失败：$e');
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _backupContentIgnored = result);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(AppStrings.backupContentSaved)));
+  }
+
+  String _backupContentSummary() {
+    final count = _backupContentIgnored.length;
+    return count == 0 ? AppStrings.notSetLabel : AppStrings.checkedCount(count);
+  }
+
   Future<void> _doImportOldData() async {
     await _runWithProgress(AppStrings.webdavImporting, () async {
       final dirPath = await FilePicker.platform.getDirectoryPath(
@@ -1709,6 +1768,12 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                   title: AppStrings.webdavBackupBypassList,
                   subtitle: _backupIgnoreSummary(),
                   onTap: _busy ? null : _showBackupIgnore,
+                ),
+                // C1：逐表备份忽略（参考版 BackupConfig.dbIsNotIgnored）
+                IosListTile(
+                  title: AppStrings.backupContentTitle,
+                  subtitle: _backupContentSummary(),
+                  onTap: _busy ? null : _showBackupContent,
                 ),
                 SettingSwitchRow(
                   // [LAYOUT_PLAN P3] 开关行规范：组内行 vertical12/horizontal8，无 Chevron

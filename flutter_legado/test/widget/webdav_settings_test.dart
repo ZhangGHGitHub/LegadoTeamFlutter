@@ -28,6 +28,11 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     mockApi = FakeServersRustApi();
+    // C1：页面加载会读 caches `config:backupIgnoreTables`；未 stub 时
+    // mocktail 返回 null 会触发「读取备份内容失败」告警（虽被兜底捕获），
+    // 默认给空配置使页面加载路径保持干净。
+    when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
+    when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
     container = ProviderContainer(
       overrides: [bookApiProvider.overrideWithValue(mockApi)],
     );
@@ -68,7 +73,10 @@ void main() {
     expect(find.text('恢复'), findsOneWidget);
     expect(find.text('恢复忽略列表'), findsOneWidget);
     expect(find.text('备份忽略列表'), findsOneWidget);
-    expect(find.text('未设置'), findsOneWidget);
+    // C1：逐表备份忽略入口（参考版 BackupConfig.dbIsNotIgnored）
+    expect(find.text('备份内容'), findsOneWidget);
+    // 「备份忽略列表」与「备份内容」均未设置 → 两处「未设置」
+    expect(find.text('未设置'), findsNWidgets(2));
     expect(find.text('仅保留最新备份'), findsOneWidget);
   });
 
@@ -260,6 +268,61 @@ void main() {
 
     expect(find.text('保存备份忽略项失败'), findsOneWidget);
     expect(find.text('已保存备份忽略项'), findsNothing);
-    expect(find.text('未设置'), findsOneWidget, reason: '保存失败不更新页面状态');
+    // 备份忽略失败不更新页面状态；「未设置」还出现在「备份内容」行
+    expect(find.text('未设置'), findsNWidgets(2), reason: '保存失败不更新页面状态');
+  });
+
+  // C1：逐表备份忽略（参考版 BackupConfig.dbIsNotIgnored）
+  testWidgets('备份内容：勾选后写入 config:backupIgnoreTables 并更新摘要', (tester) async {
+    String? saved;
+    when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
+    when(() => mockApi.setConfig(any(), any())).thenAnswer((invocation) async {
+      saved = invocation.positionalArguments[1] as String;
+    });
+
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(find.text('备份内容'), 80);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('备份内容'));
+    await tester.pumpAndSettle();
+
+    // 对话框列出参考版表名（我方 schema 有对应表的 15 项）
+    expect(find.text('书签与划线笔记'), findsOneWidget);
+    expect(find.text('书源'), findsOneWidget);
+    expect(find.text('服务器配置'), findsOneWidget);
+
+    await tester.tap(find.text('书源'));
+    await tester.pump();
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
+
+    expect(saved, '["bookSource"]', reason: '按 entries 顺序序列化已知键');
+    expect(find.text('已保存备份内容'), findsOneWidget);
+    expect(find.text('已勾选 1 项'), findsOneWidget);
+  });
+
+  testWidgets('备份内容：读取已有配置时回填勾选', (tester) async {
+    when(
+      () => mockApi.getConfig('backupIgnoreTables'),
+    ).thenAnswer((_) async => '["bookmark","dictRule"]');
+
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(find.text('备份内容'), 80);
+    await tester.pumpAndSettle();
+    expect(find.text('已勾选 2 项'), findsOneWidget);
+
+    await tester.tap(find.text('备份内容'));
+    await tester.pumpAndSettle();
+    final checkbox = tester.widget<CheckboxListTile>(
+      find.ancestor(
+        of: find.text('书签与划线笔记'),
+        matching: find.byType(CheckboxListTile),
+      ),
+    );
+    expect(checkbox.value, isTrue, reason: '已忽略项应回填为勾选');
   });
 }

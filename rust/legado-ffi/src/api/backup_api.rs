@@ -526,6 +526,185 @@ fn direct_link_upload_rule_cache_key() -> String {
     format!("{CONFIG_PREFIX}{DIRECT_LINK_UPLOAD_RULE_CONFIG_KEY}")
 }
 
+// ─── C1：逐表备份忽略（对齐参考版 `BackupConfig.dbIsNotIgnored`）──────────
+
+/// 「备份忽略表」配置的短键（caches 表 `config:backupIgnoreTables`）
+///
+/// 值为 JSON **字符串数组**，元素为参考版 `BackupConfig.dbIgnoreKeys` 的键名
+/// （`bookmark`/`bookGroup`/`bookSource`/...，见
+/// [`BACKUP_IGNORE_IDENTIFIERS`]）。缺失 / 空串 / 空数组 / 非法 JSON →
+/// **不过滤任何表**（fail-open：配置坏了照常全量备份，不静默丢数据）。
+///
+/// 与参考版一致，本配置是**设备级**的：它落 caches 表（不进 `appPrefs`、
+/// 不进备份 JSON），不会随备份往返覆盖目标机策略（参考版对应文件
+/// `filesDir/backupDbIgnore.json` 同样不在 zip 内）。
+pub const BACKUP_IGNORE_TABLES_CONFIG_KEY: &str = "backupIgnoreTables";
+
+/// 可被「备份忽略」关闭的备份段
+///
+/// **只收录参考版 `dbIsNotIgnored(key, true)` 实际把守的写出项**
+/// （`Backup.kt:156-222`）。参考版对这些表**没有**该开关控制，故本实现同样
+/// 不提供忽略：
+/// - `books`（`bookshelf.json`，只受 `backupIgnoreLocalBook` 控制）；
+/// - `highlights`（`highlight.json`）、`bookMemos`（`bookMemo.json`）、
+///   `autoTasks`（`autoTask.json`）、`coverRules`（`coverRule.json`）、
+///   `directLinkUploadRule`（`directLinkUploadRule.json`）；
+/// - 我方独有段 `readRecordDaily` / `chapterReviews`（参考版无对应文件）。
+///
+/// 这一取舍同时守住本批的硬约束：**不影响 v7 其它段的既有形状**。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum BackupSection {
+    /// 书签（参考版 `bookmark.json`）
+    Bookmarks,
+    /// 划线/笔记（参考版 `bookMarking.json`）
+    BookMarks,
+    ReplaceRules,
+    BookSources,
+    RssSources,
+    ReadRecords,
+    BookGroups,
+    RssStars,
+    HighlightRules,
+    SearchHistory,
+    RuleSubs,
+    TxtTocRules,
+    HttpTts,
+    DictRules,
+    KeyboardAssists,
+    Servers,
+}
+
+impl BackupSection {
+    /// 该段在备份 JSON 中的键名（与 `BackupData` 的 `serde(rename)` 一致）
+    fn json_key(self) -> &'static str {
+        match self {
+            Self::Bookmarks => "bookmarks",
+            Self::BookMarks => "bookMarks",
+            Self::ReplaceRules => "replaceRules",
+            Self::BookSources => "bookSources",
+            Self::RssSources => "rssSources",
+            Self::ReadRecords => "readRecords",
+            Self::BookGroups => "bookGroups",
+            Self::RssStars => "rssStars",
+            Self::HighlightRules => "highlightRules",
+            Self::SearchHistory => "searchHistory",
+            Self::RuleSubs => "ruleSubs",
+            Self::TxtTocRules => "txtTocRules",
+            Self::HttpTts => "httpTTS",
+            Self::DictRules => "dictRules",
+            Self::KeyboardAssists => "keyboardAssists",
+            Self::Servers => "servers",
+        }
+    }
+}
+
+/// 忽略标识 → 备份段映射
+///
+/// **首列是参考版键名**（`BackupConfig.dbIgnoreKeys`，`BackupConfig.kt:96-102`），
+/// Dart UI 与契约只用这一组；同表其余标识是**兼容别名**（我方 JSON 段名 /
+/// 数据库表名），便于手改配置或按表名直指单段。
+///
+/// 参考版把书签与划线/笔记视为一体（`Backup.kt:155-159` 注释「统一受既有
+/// bookmark 忽略项控制」），故 `bookmark` 同时关闭两段；要只关划线/笔记可用
+/// 别名 `book_marks` / `bookMarks`。
+///
+/// 参考版有而**我方 schema 无对应表**的 4 个键（`homepageModules` /
+/// `homepageCustomSets` / `highlightTagRule` / `tagGroupRule`）不出现在此表：
+/// 未知标识按「无匹配段」处理（只记 warn，不报错），保证跨版本配置不炸。
+const BACKUP_IGNORE_IDENTIFIERS: &[(&str, &[BackupSection])] = &[
+    (
+        "bookmark",
+        &[BackupSection::Bookmarks, BackupSection::BookMarks],
+    ),
+    ("bookmarks", &[BackupSection::Bookmarks]),
+    ("bookMarks", &[BackupSection::BookMarks]),
+    ("book_marks", &[BackupSection::BookMarks]),
+    ("bookGroup", &[BackupSection::BookGroups]),
+    ("bookGroups", &[BackupSection::BookGroups]),
+    ("bookSource", &[BackupSection::BookSources]),
+    ("bookSources", &[BackupSection::BookSources]),
+    ("rssSource", &[BackupSection::RssSources]),
+    ("rssSources", &[BackupSection::RssSources]),
+    ("rssStar", &[BackupSection::RssStars]),
+    ("rssStars", &[BackupSection::RssStars]),
+    ("replaceRule", &[BackupSection::ReplaceRules]),
+    ("replaceRules", &[BackupSection::ReplaceRules]),
+    ("readRecord", &[BackupSection::ReadRecords]),
+    ("readRecords", &[BackupSection::ReadRecords]),
+    ("searchHistory", &[BackupSection::SearchHistory]),
+    ("sourceSub", &[BackupSection::RuleSubs]),
+    ("ruleSubs", &[BackupSection::RuleSubs]),
+    ("txtTocRule", &[BackupSection::TxtTocRules]),
+    ("txtTocRules", &[BackupSection::TxtTocRules]),
+    ("httpTTS", &[BackupSection::HttpTts]),
+    ("dictRule", &[BackupSection::DictRules]),
+    ("dictRules", &[BackupSection::DictRules]),
+    ("keyboardAssists", &[BackupSection::KeyboardAssists]),
+    ("highlightRule", &[BackupSection::HighlightRules]),
+    ("highlightRules", &[BackupSection::HighlightRules]),
+    ("server", &[BackupSection::Servers]),
+    ("servers", &[BackupSection::Servers]),
+];
+
+/// 解析 `config:backupIgnoreTables` 的原始值
+///
+/// 容错口径（fail-open，绝不因配置坏而丢备份）：
+/// - 空/纯空白 → 空集合（不过滤）；
+/// - 合法 JSON 字符串数组 → 逐项匹配 [`BACKUP_IGNORE_IDENTIFIERS`]；
+///   未知名/非字符串元素只 warn 跳过；
+/// - 非数组或 JSON 语法错误 → warn + 空集合。
+///
+/// 标识匹配**大小写敏感**（与参考版 `dbIgnoreConfig[key]` 的键名逐字比较一致），
+/// 但容忍首尾空白。
+fn parse_ignored_backup_sections(raw: &str) -> std::collections::HashSet<BackupSection> {
+    use std::collections::HashSet;
+
+    let mut ignored: HashSet<BackupSection> = HashSet::new();
+    let text = raw.trim_start_matches('\u{feff}').trim();
+    if text.is_empty() {
+        return ignored;
+    }
+    let parsed: serde_json::Value = match serde_json::from_str(text) {
+        Ok(value) => value,
+        Err(e) => {
+            log::warn!("备份忽略表配置不是合法 JSON（按「不过滤」处理）: {e}");
+            return ignored;
+        }
+    };
+    let Some(items) = parsed.as_array() else {
+        log::warn!("备份忽略表配置不是数组（按「不过滤」处理）");
+        return ignored;
+    };
+    for item in items {
+        let Some(name) = item.as_str() else {
+            log::warn!("备份忽略表配置含非字符串元素（已跳过）: {item}");
+            continue;
+        };
+        let name = name.trim();
+        match BACKUP_IGNORE_IDENTIFIERS.iter().find(|(id, _)| *id == name) {
+            Some((_, sections)) => ignored.extend(sections.iter().copied()),
+            None => log::warn!("备份忽略表配置含未知标识（已跳过）: {name}"),
+        }
+    }
+    ignored
+}
+
+/// 读取当前设备的「备份忽略表」集合（caches `config:backupIgnoreTables`）
+///
+/// 读库失败按「不过滤」处理（与 [`parse_ignored_backup_sections`] 的 fail-open
+/// 口径一致），只记 warn。
+fn load_ignored_backup_sections(conn: &Connection) -> std::collections::HashSet<BackupSection> {
+    let full_key = format!("{CONFIG_PREFIX}{BACKUP_IGNORE_TABLES_CONFIG_KEY}");
+    match CacheRepository::new(conn).get(&full_key) {
+        Ok(Some(raw)) => parse_ignored_backup_sections(&raw),
+        Ok(None) => std::collections::HashSet::new(),
+        Err(e) => {
+            log::warn!("读取备份忽略表配置失败（按「不过滤」处理）: {e}");
+            std::collections::HashSet::new()
+        }
+    }
+}
+
 /// 校验并归一待落库的直链上传规则文本
 ///
 /// 口径对齐原版 `DirectLinkUpload.getConfig()`：只有 GSON 能解析成**对象**才算
@@ -632,6 +811,13 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
 /// 批44（`password` 非空时）：**仅**加密 `servers[].config` 与
 /// `directLinkUploadRule`（见 [`encrypt_json_backup_fields`]），并写
 /// `encryption: "aes-ecb-md5"`。`None`/空串 = 明文（不写该键）。
+///
+/// C1（逐表备份忽略，对齐参考版 `BackupConfig.dbIsNotIgnored(key, true)`）：
+/// 先读 caches `config:backupIgnoreTables`（JSON 字符串数组，见
+/// [`BACKUP_IGNORE_TABLES_CONFIG_KEY`]），被忽略的段**既不读库也不写键**。
+/// 未配置/配置损坏时行为与改造前完全一致（无忽略 → 原路径直序列化，
+/// 输出字节不变）。恢复侧按「缺键 = 零写入」处理，因此被忽略的表在恢复时
+/// 保留本机值。
 pub fn backup_create_with_password(path: &str, password: Option<&str>) -> LegadoResult<String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -643,10 +829,16 @@ pub fn backup_create_with_password(path: &str, password: Option<&str>) -> Legado
     // 「归一为 null」，不收集媒体字节。
     let cover_scope = LocalMediaCoverScope::new();
 
-    let backup_data = with_database(|db| {
+    let (backup_data, ignored_sections) = with_database(|db| {
         let conn = db.connection();
 
-        // 收集书籍
+        // C1：本机「备份忽略表」清单（caches `config:backupIgnoreTables`）。
+        // 被忽略的段**不读库、不写键**——与参考版「不写该文件」等价：
+        // 恢复侧按「缺键 = 空列表 = 零写入」处理，故这些表在本机保持原值。
+        let ignored_sections = load_ignored_backup_sections(conn);
+        let wanted = |section: BackupSection| !ignored_sections.contains(&section);
+
+        // 收集书籍（参考版无该表的忽略开关，只受 backupIgnoreLocalBook 控制）
         let book_repo = BookRepository::new(conn);
         let books: Vec<serde_json::Value> = book_repo
             .find_all()?
@@ -655,55 +847,75 @@ pub fn backup_create_with_password(path: &str, password: Option<&str>) -> Legado
             .map(|v| strip_local_media_cover(v, "customCoverUrl", &cover_scope))
             .collect();
 
-        // 收集书签
-        let bookmark_repo = BookmarkRepository::new(conn);
-        let bookmarks: Vec<serde_json::Value> = bookmark_repo
-            .find_all()?
-            .into_iter()
-            .filter_map(|b| serde_json::to_value(&b).ok())
-            .collect();
+        // 收集书签（参考版 `bookmark` 忽略项同时把守书签与划线/笔记）
+        let bookmarks: Vec<serde_json::Value> = if wanted(BackupSection::Bookmarks) {
+            BookmarkRepository::new(conn)
+                .find_all()?
+                .into_iter()
+                .filter_map(|b| serde_json::to_value(&b).ok())
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         // 收集划线/笔记（v6：参考版 `Backup.kt:71,158` 的 `bookMarking.json`；
         // 空表也写空数组，对齐固定写出项）
-        let book_marks: Vec<serde_json::Value> = BookMarkingRepository::new(conn)
-            .find_all()?
-            .into_iter()
-            .filter_map(|m| serde_json::to_value(&m).ok())
-            .collect();
+        let book_marks: Vec<serde_json::Value> = if wanted(BackupSection::BookMarks) {
+            BookMarkingRepository::new(conn)
+                .find_all()?
+                .into_iter()
+                .filter_map(|m| serde_json::to_value(&m).ok())
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         // 收集替换规则
-        let rule_repo = ReplaceRuleRepository::new(conn);
-        let replace_rules: Vec<serde_json::Value> = rule_repo
-            .find_all()?
-            .into_iter()
-            .filter_map(|r| serde_json::to_value(&r).ok())
-            .collect();
+        let replace_rules: Vec<serde_json::Value> = if wanted(BackupSection::ReplaceRules) {
+            ReplaceRuleRepository::new(conn)
+                .find_all()?
+                .into_iter()
+                .filter_map(|r| serde_json::to_value(&r).ok())
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         // 收集书源
-        let source_repo = BookSourceRepository::new(conn);
-        let book_sources: Vec<serde_json::Value> = source_repo
-            .find_all()?
-            .into_iter()
-            .filter_map(|s| serde_json::to_value(&s).ok())
-            .collect();
+        let book_sources: Vec<serde_json::Value> = if wanted(BackupSection::BookSources) {
+            BookSourceRepository::new(conn)
+                .find_all()?
+                .into_iter()
+                .filter_map(|s| serde_json::to_value(&s).ok())
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         // 收集 RSS 源（v2：走 repository 全列模型，布尔为真 bool）
-        let rss_sources: Vec<serde_json::Value> = RssSourceRepository::new(conn)
-            .find_all()
-            .map_err(|e| LegadoError::Database(format!("收集 RSS 源失败: {e}")))?
-            .into_iter()
-            .filter_map(|s| serde_json::to_value(&s).ok())
-            .collect();
+        let rss_sources: Vec<serde_json::Value> = if wanted(BackupSection::RssSources) {
+            RssSourceRepository::new(conn)
+                .find_all()
+                .map_err(|e| LegadoError::Database(format!("收集 RSS 源失败: {e}")))?
+                .into_iter()
+                .filter_map(|s| serde_json::to_value(&s).ok())
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         // 收集阅读记录（v113：13 字段全列，含作者主键/章节快照/显示元数据）
         // 批41 回修 P2-1：封面路径同书架口径归一（异机悬空）
-        let record_repo = ReadRecordRepository::new(conn);
-        let read_records: Vec<serde_json::Value> = record_repo
-            .find_all()?
-            .into_iter()
-            .filter_map(|r| serde_json::to_value(&r).ok())
-            .map(|v| strip_local_media_cover(v, "coverUrl", &cover_scope))
-            .collect();
+        let read_records: Vec<serde_json::Value> = if wanted(BackupSection::ReadRecords) {
+            ReadRecordRepository::new(conn)
+                .find_all()?
+                .into_iter()
+                .filter_map(|r| serde_json::to_value(&r).ok())
+                .map(|v| strip_local_media_cover(v, "coverUrl", &cover_scope))
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         // 收集书备忘（v5：仅书架内书籍，对齐原版 `bookMemoDao.all()` 的 inner join）；
         // 空表也写出空数组（对齐原版 `writeEmpty = true`）
@@ -717,21 +929,29 @@ pub fn backup_create_with_password(path: &str, password: Option<&str>) -> Legado
 
         // 书籍分组
         // 批41 回修 P2-1：分组封面同书架口径归一（异机悬空）
-        let book_groups: Vec<serde_json::Value> = BookGroupRepository::new(conn)
-            .find_all()?
-            .iter()
-            .filter_map(|g| serde_json::to_value(to_core_book_group(g)).ok())
-            .map(|v| strip_local_media_cover(v, "cover", &cover_scope))
-            .collect();
+        let book_groups: Vec<serde_json::Value> = if wanted(BackupSection::BookGroups) {
+            BookGroupRepository::new(conn)
+                .find_all()?
+                .iter()
+                .filter_map(|g| serde_json::to_value(to_core_book_group(g)).ok())
+                .map(|v| strip_local_media_cover(v, "cover", &cover_scope))
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         // RSS 收藏
-        let rss_stars: Vec<serde_json::Value> = RssStarRepository::new(conn)
-            .find_all()?
-            .iter()
-            .filter_map(|s| serde_json::to_value(to_core_rss_star(s)).ok())
-            .collect();
+        let rss_stars: Vec<serde_json::Value> = if wanted(BackupSection::RssStars) {
+            RssStarRepository::new(conn)
+                .find_all()?
+                .iter()
+                .filter_map(|s| serde_json::to_value(to_core_rss_star(s)).ok())
+                .collect()
+        } else {
+            Vec::new()
+        };
 
-        // 高亮记录
+        // 高亮记录（参考版 highlight.json 无 dbIsNotIgnored 门控 → 不可忽略）
         let highlights: Vec<serde_json::Value> = HighlightRepository::new(conn)
             .find_all()?
             .into_iter()
@@ -741,60 +961,92 @@ pub fn backup_create_with_password(path: &str, password: Option<&str>) -> Legado
         // 高亮规则（P2-11：uuid/applyToBody 随 HighlightRule serde 全字段往返，
         // 旧备份 JSON 缺 uuid/applyToBody 时 serde 默认值兜底——uuid 随机生成、
         // applyToBody=true 对齐原版实体默认）
-        let highlight_rules: Vec<serde_json::Value> = HighlightRuleRepository::new(conn)
-            .find_all()?
-            .into_iter()
-            .filter_map(|r| serde_json::to_value(&r).ok())
-            .collect();
+        let highlight_rules: Vec<serde_json::Value> = if wanted(BackupSection::HighlightRules) {
+            HighlightRuleRepository::new(conn)
+                .find_all()?
+                .into_iter()
+                .filter_map(|r| serde_json::to_value(&r).ok())
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         // 搜索历史
-        let search_history: Vec<serde_json::Value> = SearchKeywordRepository::new(conn)
-            .find_all()?
-            .into_iter()
-            .filter_map(|k| serde_json::to_value(&k).ok())
-            .collect();
+        let search_history: Vec<serde_json::Value> = if wanted(BackupSection::SearchHistory) {
+            SearchKeywordRepository::new(conn)
+                .find_all()?
+                .into_iter()
+                .filter_map(|k| serde_json::to_value(&k).ok())
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         // 规则订阅
-        let rule_subs: Vec<serde_json::Value> = RuleSubRepository::new(conn)
-            .find_all()?
-            .into_iter()
-            .filter_map(|s| serde_json::to_value(&s).ok())
-            .collect();
+        let rule_subs: Vec<serde_json::Value> = if wanted(BackupSection::RuleSubs) {
+            RuleSubRepository::new(conn)
+                .find_all()?
+                .into_iter()
+                .filter_map(|s| serde_json::to_value(&s).ok())
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         // TXT 目录规则
-        let txt_toc_rules: Vec<serde_json::Value> = TxtTocRuleRepository::new(conn)
-            .find_all()?
-            .iter()
-            .filter_map(|r| serde_json::to_value(to_core_txt_toc_rule(r)).ok())
-            .collect();
+        let txt_toc_rules: Vec<serde_json::Value> = if wanted(BackupSection::TxtTocRules) {
+            TxtTocRuleRepository::new(conn)
+                .find_all()?
+                .iter()
+                .filter_map(|r| serde_json::to_value(to_core_txt_toc_rule(r)).ok())
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         // 在线朗读引擎（全 14 列）
-        let http_tts: Vec<serde_json::Value> = HttpTtsRepository::new(conn)
-            .find_all()?
-            .into_iter()
-            .filter_map(|t| serde_json::to_value(&t).ok())
-            .collect();
+        let http_tts: Vec<serde_json::Value> = if wanted(BackupSection::HttpTts) {
+            HttpTtsRepository::new(conn)
+                .find_all()?
+                .into_iter()
+                .filter_map(|t| serde_json::to_value(&t).ok())
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         // 词典规则
-        let dict_rules: Vec<serde_json::Value> = DictRuleRepository::new(conn)
-            .find_all()?
-            .iter()
-            .filter_map(|r| serde_json::to_value(to_core_dict_rule(r)).ok())
-            .collect();
+        let dict_rules: Vec<serde_json::Value> = if wanted(BackupSection::DictRules) {
+            DictRuleRepository::new(conn)
+                .find_all()?
+                .iter()
+                .filter_map(|r| serde_json::to_value(to_core_dict_rule(r)).ok())
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         // 键盘辅助规则
-        let keyboard_assists: Vec<serde_json::Value> = KeyboardAssistRepository::new(conn)
-            .find_all()?
-            .into_iter()
-            .filter_map(|k| serde_json::to_value(&k).ok())
-            .collect();
+        let keyboard_assists: Vec<serde_json::Value> = if wanted(BackupSection::KeyboardAssists) {
+            KeyboardAssistRepository::new(conn)
+                .find_all()?
+                .into_iter()
+                .filter_map(|k| serde_json::to_value(&k).ok())
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         // 服务器配置（v3：servers 表全量，形态对齐原版 servers.json）
-        let servers: Vec<serde_json::Value> = ServerRepository::new(conn)
-            .find_all()?
-            .into_iter()
-            .filter_map(|s| serde_json::to_value(&s).ok())
-            .collect();
+        let servers: Vec<serde_json::Value> = if wanted(BackupSection::Servers) {
+            ServerRepository::new(conn)
+                .find_all()?
+                .into_iter()
+                .filter_map(|s| serde_json::to_value(&s).ok())
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         // 每日阅读时长（v7 B1：readRecordDaily 表全量；空表也写空数组）。
         // 此前不在任何备份链 → 换机后 readRecord.readTime 有值、每日统计为空，
@@ -841,39 +1093,42 @@ pub fn backup_create_with_password(path: &str, password: Option<&str>) -> Legado
             .get(&direct_link_upload_rule_cache_key())?
             .filter(|raw| !raw.trim().is_empty());
 
-        Ok(BackupData {
-            version: BACKUP_VERSION,
-            backup_time: now,
-            books,
-            bookmarks,
-            book_marks,
-            replace_rules,
-            book_sources,
-            rss_sources,
-            read_records,
-            book_memos,
-            book_groups,
-            rss_stars,
-            highlights,
-            highlight_rules,
-            search_history,
-            rule_subs,
-            txt_toc_rules,
-            http_tts,
-            dict_rules,
-            keyboard_assists,
-            servers,
-            auto_tasks,
-            read_record_daily,
-            cover_rules,
-            chapter_reviews,
-            direct_link_upload_rule,
-            // 批44：加密标记在写出前由 [`encrypt_json_backup_fields`] 决定
-            encryption: None,
-            // 批17a：cookies / 运行时变量只走原版 zip 恢复，自有 JSON 备份不收集
-            cookies: Vec::new(),
-            runtime_source_caches: Vec::new(),
-        })
+        Ok((
+            BackupData {
+                version: BACKUP_VERSION,
+                backup_time: now,
+                books,
+                bookmarks,
+                book_marks,
+                replace_rules,
+                book_sources,
+                rss_sources,
+                read_records,
+                book_memos,
+                book_groups,
+                rss_stars,
+                highlights,
+                highlight_rules,
+                search_history,
+                rule_subs,
+                txt_toc_rules,
+                http_tts,
+                dict_rules,
+                keyboard_assists,
+                servers,
+                auto_tasks,
+                read_record_daily,
+                cover_rules,
+                chapter_reviews,
+                direct_link_upload_rule,
+                // 批44：加密标记在写出前由 [`encrypt_json_backup_fields`] 决定
+                encryption: None,
+                // 批17a：cookies / 运行时变量只走原版 zip 恢复，自有 JSON 备份不收集
+                cookies: Vec::new(),
+                runtime_source_caches: Vec::new(),
+            },
+            ignored_sections,
+        ))
     })?;
 
     // 确保目录存在
@@ -891,9 +1146,38 @@ pub fn backup_create_with_password(path: &str, password: Option<&str>) -> Legado
         encrypt_json_backup_fields(&mut backup_data, password)?;
     }
 
-    // 写入文件
-    let json = serde_json::to_string_pretty(&backup_data)
-        .map_err(|e| LegadoError::Internal(format!("备份序列化失败: {e}")))?;
+    // C1：被忽略的段**整段摘除键**（不是写空数组）。
+    //
+    // 理由：恢复侧的 `highlightRules` / `keyboardAssists` 走「键存在即先清空再
+    // 写入」（[`ReplaceTablePolicy`]），若写空数组会被解读为「备份里确实没有
+    // 任何行」→ 把本机整表清空，正好与本开关的语义相反。摘除键后恢复侧按
+    // 「缺键 = 不触碰」处理，这些表在本机保持原值；对其余段而言「缺键」与
+    // 「空数组」都是零写入，因此整段摘除是唯一对全部段都安全的口径。
+    // 参考版是「不写该文件」，恢复侧同样跳过——两者语义等价。
+    //
+    // 无忽略项时保持原有「结构体直序列化」路径，**输出字节与改造前完全一致**
+    // （含字段顺序）；仅在启用忽略时经 `Value` 中转（键按字典序排列，已登记）。
+    let json = if ignored_sections.is_empty() {
+        serde_json::to_string_pretty(&backup_data)
+            .map_err(|e| LegadoError::Internal(format!("备份序列化失败: {e}")))?
+    } else {
+        let mut removed: Vec<&str> = ignored_sections
+            .iter()
+            .map(|section| section.json_key())
+            .collect();
+        removed.sort_unstable();
+        let mut value = serde_json::to_value(&backup_data)
+            .map_err(|e| LegadoError::Internal(format!("备份序列化失败: {e}")))?;
+        if let serde_json::Value::Object(map) = &mut value {
+            for key in &removed {
+                map.remove(*key);
+            }
+        }
+        log::info!("备份已忽略以下数据段（不写入备份）: {}", removed.join(", "));
+        serde_json::to_string_pretty(&value)
+            .map_err(|e| LegadoError::Internal(format!("备份序列化失败: {e}")))?
+    };
+
     fs::write(path, &json)
         .map_err(|e| LegadoError::Io(std::io::Error::other(format!("写入备份文件失败: {e}"))))?;
 
@@ -5907,6 +6191,343 @@ mod tests {
         assert!(backup_restore(no_version_path.to_str().unwrap()).is_ok());
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    // ─── C1：逐表备份忽略（对齐参考版 BackupConfig.dbIsNotIgnored）──────────
+
+    /// 写入「备份忽略表」配置（caches `config:backupIgnoreTables`）
+    fn set_backup_ignore_tables(raw: &str) {
+        crate::api::config_api::set_config(BACKUP_IGNORE_TABLES_CONFIG_KEY, raw).unwrap();
+    }
+
+    /// 清除「备份忽略表」配置（测试收尾；防止串到后续用例）
+    fn clear_backup_ignore_tables() {
+        crate::api::config_api::set_config(BACKUP_IGNORE_TABLES_CONFIG_KEY, "").unwrap();
+    }
+
+    /// 种子：一条书签 + 一条划线/笔记 + 一条替换规则 + 一条书源
+    fn seed_c1_tables() {
+        use legado_core::models::ReplaceRule;
+
+        with_database(|db| {
+            let conn = db.connection();
+            BookmarkRepository::new(conn).restore_upsert_preserving_id(&Bookmark {
+                id: 9_101,
+                time: 1_700_000_000_101,
+                book_name: "C1 书".to_string(),
+                book_author: "作者".to_string(),
+                chapter_index: 1,
+                chapter_pos: 10,
+                chapter_name: "第一章".to_string(),
+                book_text: "书签文本".to_string(),
+                content: "备注".to_string(),
+            })?;
+            BookMarkingRepository::new(conn).upsert(&BookMarking {
+                id: "c1-mark".to_string(),
+                book_url: "https://c1.example/book".to_string(),
+                book_name: "C1 书".to_string(),
+                book_author: "作者".to_string(),
+                chapter_index: Some(1),
+                anchor_json: r#"{"start":1,"end":5}"#.to_string(),
+                style_json: Some(r##"{"color":"#ff0000"}"##.to_string()),
+                note: "划线笔记".to_string(),
+                chapter_name: "第一章".to_string(),
+                enabled: true,
+                created_at: 1_700_000_000_102,
+                updated_at: 1_700_000_000_103,
+            })?;
+            ReplaceRuleRepository::new(conn).restore_upsert_preserving_id(&ReplaceRule {
+                id: 9_102,
+                name: "C1 替换规则".to_string(),
+                pattern: "旧".to_string(),
+                replacement: "新".to_string(),
+                order: 1,
+                ..ReplaceRule::default()
+            })?;
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    /// 统计库内书签 / 划线 / 替换规则条数
+    fn c1_counts() -> (usize, usize, usize) {
+        with_database(|db| {
+            let conn = db.connection();
+            let count = |table: &str| -> usize {
+                conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap_or(0) as usize
+            };
+            Ok((
+                count("bookmarks"),
+                count("book_marks"),
+                count("replace_rules"),
+            ))
+        })
+        .unwrap()
+    }
+
+    /// C1 单表忽略：设 `["book_marks"]` → 备份不含 `bookMarks`，其余段照常
+    ///
+    /// 用别名 `book_marks`（只关划线/笔记）而非参考版键 `bookmark`（两者同关），
+    /// 以便同时断言「书签段仍在」。
+    #[test]
+    fn test_backup_ignore_single_table_drops_that_section_only() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        seed_c1_tables();
+        set_backup_ignore_tables(r#"["book_marks"]"#);
+
+        let dir = std::env::temp_dir().join("legado_backup_c1_single");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("c1_single.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        let created = backup_create(path_str);
+        clear_backup_ignore_tables();
+        created.unwrap();
+
+        let raw: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&backup_path).unwrap()).unwrap();
+        assert!(
+            raw.get("bookMarks").is_none(),
+            "被忽略的 bookMarks 段必须整段不写入备份: {raw}"
+        );
+        assert_eq!(
+            raw["bookmarks"].as_array().map(Vec::len),
+            Some(1),
+            "未忽略的书签段必须照常写出: {raw}"
+        );
+        assert_eq!(
+            raw["replaceRules"].as_array().map(Vec::len),
+            Some(1),
+            "未忽略的替换规则段必须照常写出: {raw}"
+        );
+        assert_eq!(raw["version"], serde_json::json!(BACKUP_VERSION));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// C1 多表忽略 + 恢复不清库：被忽略表在本机保留，未被忽略表按备份恢复
+    #[test]
+    fn test_backup_ignore_multiple_tables_and_restore_keeps_local_rows() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        seed_c1_tables();
+        // 参考版键 `bookmark` 同时把守书签与划线/笔记；再加替换规则
+        set_backup_ignore_tables(r#"["bookmark","replaceRule"]"#);
+
+        let dir = std::env::temp_dir().join("legado_backup_c1_multi");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("c1_multi.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        let created = backup_create(path_str);
+        clear_backup_ignore_tables();
+        created.unwrap();
+
+        let raw: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&backup_path).unwrap()).unwrap();
+        for key in ["bookmarks", "bookMarks", "replaceRules"] {
+            assert!(
+                raw.get(key).is_none(),
+                "多表忽略下 {key} 段必须整段不写入备份: {raw}"
+            );
+        }
+
+        // 恢复：被忽略表缺键 → 零写入 → 本机行保留
+        let before = c1_counts();
+        assert_eq!(before, (1, 1, 1), "种子应各 1 条");
+        backup_restore(path_str).unwrap();
+        assert_eq!(
+            c1_counts(),
+            before,
+            "被忽略表在恢复时必须保留本机行（缺键 = 不清库）"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// C1 全表忽略：备份只剩版本号/时间等骨架键 + 不可忽略段（books 等）
+    #[test]
+    fn test_backup_ignore_all_supported_tables_leaves_only_skeleton() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        seed_c1_tables();
+
+        // 参考版 dbIgnoreKeys 中我方有对应段的全集
+        let all = serde_json::json!([
+            "bookmark",
+            "bookGroup",
+            "bookSource",
+            "rssSource",
+            "rssStar",
+            "replaceRule",
+            "readRecord",
+            "searchHistory",
+            "sourceSub",
+            "txtTocRule",
+            "httpTTS",
+            "keyboardAssists",
+            "dictRule",
+            "highlightRule",
+            "server"
+        ])
+        .to_string();
+        set_backup_ignore_tables(&all);
+
+        let dir = std::env::temp_dir().join("legado_backup_c1_all");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("c1_all.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        let created = backup_create(path_str);
+        clear_backup_ignore_tables();
+        created.unwrap();
+
+        let raw: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&backup_path).unwrap()).unwrap();
+        let object = raw.as_object().expect("备份顶层应为对象");
+
+        for key in [
+            "bookmarks",
+            "bookMarks",
+            "bookGroups",
+            "bookSources",
+            "rssSources",
+            "rssStars",
+            "replaceRules",
+            "readRecords",
+            "searchHistory",
+            "ruleSubs",
+            "txtTocRules",
+            "httpTTS",
+            "keyboardAssists",
+            "dictRules",
+            "highlightRules",
+            "servers",
+        ] {
+            assert!(
+                !object.contains_key(key),
+                "全表忽略后 {key} 段不应出现在备份中: {raw}"
+            );
+        }
+        // 骨架键仍在：版本号 + 时间戳
+        assert_eq!(raw["version"], serde_json::json!(BACKUP_VERSION));
+        assert!(raw["backupTime"].as_i64().unwrap_or(0) > 0);
+        // 参考版无忽略门控的段仍照常写出（books / highlights / bookMemos ...）
+        for key in ["books", "highlights", "bookMemos", "readRecordDaily"] {
+            assert!(
+                object.contains_key(key),
+                "不可忽略段 {key} 必须仍在备份中: {raw}"
+            );
+        }
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// C1 配置容错：非法 JSON / 非数组 / 未知标识 → 不过滤（fail-open）
+    #[test]
+    fn test_backup_ignore_tables_config_tolerates_garbage() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        seed_c1_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_c1_garbage");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        for (index, raw_config) in ["not-json", r#"{"bookmark":true}"#, r#"["noSuchTable"]"#]
+            .into_iter()
+            .enumerate()
+        {
+            set_backup_ignore_tables(raw_config);
+            let backup_path = dir.join(format!("c1_garbage_{index}.json"));
+            let path_str = backup_path.to_str().unwrap();
+            let created = backup_create(path_str);
+            clear_backup_ignore_tables();
+            created.unwrap();
+
+            let raw: serde_json::Value =
+                serde_json::from_str(&fs::read_to_string(&backup_path).unwrap()).unwrap();
+            assert_eq!(
+                raw["bookmarks"].as_array().map(Vec::len),
+                Some(1),
+                "配置为 {raw_config} 时应按「不过滤」处理，书签段照常写出: {raw}"
+            );
+        }
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// C1 回归：恢复「含被忽略表」的旧备份时，该表仍按既有语义写入/合并，
+    /// 不被本开关改变；而「缺键」的备份不清库（与旧备份兼容语义一致）。
+    #[test]
+    fn test_restore_ignored_table_semantics_unchanged() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        seed_c1_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_c1_restore_semantics");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("c1_restore.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        // 备份（不忽略）→ 含 bookMarks
+        backup_create(path_str).unwrap();
+        let raw: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&backup_path).unwrap()).unwrap();
+        assert_eq!(raw["bookMarks"].as_array().map(Vec::len), Some(1));
+
+        // 清库后恢复「含该表」的备份 → 行回来（既有 upsert 语义，本开关不改变）
+        clear_backup_tables();
+        assert_eq!(c1_counts(), (0, 0, 0));
+        backup_restore(path_str).unwrap();
+        assert_eq!(
+            c1_counts().1,
+            1,
+            "含 bookMarks 的备份恢复后应写回 1 条（既有语义不变）"
+        );
+
+        // 手工删掉该段后再恢复 → 缺键 = 零写入 → 本机行保留（不回归）
+        let mut stripped = raw.clone();
+        stripped.as_object_mut().unwrap().remove("bookMarks");
+        fs::write(path_str, serde_json::to_string(&stripped).unwrap()).unwrap();
+        backup_restore(path_str).unwrap();
+        assert_eq!(
+            c1_counts().1,
+            1,
+            "缺 bookMarks 键的备份恢复时不得清空本机划线/笔记"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// C1 解析单元：参考版键 `bookmark` 同时映射书签与划线/笔记
+    #[test]
+    fn test_parse_ignored_backup_sections_maps_reference_keys() {
+        let ignored = parse_ignored_backup_sections(r#"["bookmark"]"#);
+        assert!(ignored.contains(&BackupSection::Bookmarks));
+        assert!(ignored.contains(&BackupSection::BookMarks));
+
+        let ignored = parse_ignored_backup_sections(r#"["bookmark"," server ","unknown"]"#);
+        assert!(ignored.contains(&BackupSection::Bookmarks));
+        assert!(ignored.contains(&BackupSection::Servers));
+        assert_eq!(
+            ignored.len(),
+            3,
+            "未知标识应被跳过、空白应被容忍: {ignored:?}"
+        );
+
+        assert!(parse_ignored_backup_sections("").is_empty());
+        assert!(parse_ignored_backup_sections("   ").is_empty());
+        assert!(parse_ignored_backup_sections("null").is_empty());
+        assert!(parse_ignored_backup_sections("[1,2]").is_empty());
     }
 
     /// [P1-A 回归] 恢复体单事务——条目级错误 warn 跳过照常提交
