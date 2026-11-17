@@ -521,7 +521,10 @@ mod tests {
     #[test]
     fn test_open_video_player_book_url_blank_for_non_book_flows() {
         // 搜索：单源 `search:{bookSourceUrl}` / 多源运行级键 `search`
-        assert_eq!(book_url_under_scope(Some("search:https://src.example.com")), "");
+        assert_eq!(
+            book_url_under_scope(Some("search:https://src.example.com")),
+            ""
+        );
         assert_eq!(book_url_under_scope(Some("search")), "");
         // 发现：`explore:{bookSourceUrl}`
         assert_eq!(
