@@ -6,27 +6,54 @@
   （含数据库、SharedPreferences）会整体随系统云备份上云。本应用的私有数据面
   包含私密书标记、阅读记录、书源凭据、Web 服务密码等，不得离开本机。
 
-  排除项与依据（详见 docs/API_CONVENTIONS 契约与提交说明）：
+  排除项与依据（详见 docs/API_CONTRACT 契约与提交说明）：
   1. root/app_flutter/legado.db（含 -wal/-shm）
      DB 落在 Flutter 的 getDir("flutter") 目录（设备实测
      /data/data/<pkg>/app_flutter/legado.db），属 root 域（getDataDir()）。
      legado.db 是全量业务数据（书架、私密书、阅读记录、书源、Cookie、
      服务器凭据），必须整体排除；-wal/-shm 是 WAL 模式的伴生文件，
      单独恢复会产生「只有日志没有主库」的脏状态，一并排除。
-  2. sharedpref/FlutterSharedPreferences.xml
+  2. root/app_flutter/backup（整目录）
+     [P1-7] 自动备份默认落 `getApplicationDocumentsDirectory()/backup`
+     （`auto_backup_scheduler.dart` 的 `_backupDir`）= 设备上
+     /data/data/<pkg>/app_flutter/backup/legado_backup_*.json。该目录是
+     **业务库的全量明文 JSON dump**：含私密书书名/作者、阅读记录、
+     servers[].config 里的 WebDAV 明文密码（未设备份密码时）、书源凭据。
+     只排除 legado.db 而不排除该目录，等于把同一份私密数据以明文副本的
+     形式整体上云——本批隐私目标被完全绕过，故整目录排除。
+  3. root/app_flutter/books（整目录）
+     [P1-7 评估结论] 本地书正文落盘目录（`local_book_store.dart` 的
+     `LocalBookStore.subDir = 'books'`，设备上
+     /data/data/<pkg>/app_flutter/books/）。本地书正文可能是私密书内容
+     （TXT/EPUB/CBZ 原文），体积大且换机后可重新导入，排除收益 > 成本，
+     故一并整目录排除。
+  4. root/app_flutter/{crash_log,app_log,http_log}.txt
+     [P1-7 评估结论] `crash_log_service.dart` 在 Documents 根写这三个
+     文本日志。崩溃/消息日志可能含书名、章节名与异常上下文；http_log 逐行
+     记录 `METHOD URL -> status`，URL 可能带查询串 token。均为排障用、
+     换机无价值，故排除。
+  5. sharedpref/FlutterSharedPreferences.xml
      shared_preferences 插件把所有 Dart 侧偏好写在同一个 XML 里，
      Android 备份框架**只能按文件排除、不能按键排除**，因此本文件内的
      localPassword（Web 服务鉴权密码）、privacy_record_aliases_v1（私密书
      旧书名登记表）、private_* 策略键无法单独剔除 → 整文件排除（fail-closed）。
-  3. sharedpref/shared_text_once.xml
+  6. sharedpref/shared_text_once.xml
      外部分享文本的一次性消费标记（含分享内容哈希），设备级状态，
      换机无意义。
-  4. sharedpref/legado_file_save.xml
+  7. sharedpref/legado_file_save.xml
      记住的 SAF 保存目录（tree URI + 显示路径），设备级状态；恢复到
      另一台设备只会得到无效 URI。
 
   说明：本条口径比 Android 原版更严格（原版仅排除 js_source_api_credentials.xml，
   不排除 DB）。我方 DB 含私密书与阅读记录，属共同缺陷，故按「更严格」处理。
+
+  [P1-7 评估：本次**未**排除的目录]
+  - `files/tts_cache`（getApplicationSupportDirectory 下）：TTS 合成音频缓存，
+    无文本身份信息，仅为体积项；排除会让换机后首次朗读重新合成，收益低。
+  - `files/bottomBarSkins`：用户自选底栏皮肤图片，非敏感且体积受 32MB 上限约束。
+  - `app_flutter/fonts`：用户导入字体文件，非敏感。
+  - Documents 根下漫画/视频/导出的临时文件（文件名由用户或来源决定，无固定
+    目录可排除）；如需收紧应改为固定子目录后再排除。
 -->
 <full-backup-content>
     <!-- 业务数据库（含 WAL 伴生文件）：全量私密数据面 -->
@@ -39,6 +66,27 @@
     <exclude
         domain="root"
         path="app_flutter/legado.db-shm" />
+
+    <!-- [P1-7] 自动备份目录：业务库全量明文 JSON dump（私密书/阅读记录/WebDAV 凭据） -->
+    <exclude
+        domain="root"
+        path="app_flutter/backup" />
+
+    <!-- [P1-7] 本地书正文目录（私密书原文） -->
+    <exclude
+        domain="root"
+        path="app_flutter/books" />
+
+    <!-- [P1-7] 文本日志：可能含书名/章节名/带 token 的 URL -->
+    <exclude
+        domain="root"
+        path="app_flutter/crash_log.txt" />
+    <exclude
+        domain="root"
+        path="app_flutter/app_log.txt" />
+    <exclude
+        domain="root"
+        path="app_flutter/http_log.txt" />
 
     <!-- 偏好文件：含 Web 服务密码 / 私密策略 / 私密书旧名登记（无法按键排除） -->
     <exclude

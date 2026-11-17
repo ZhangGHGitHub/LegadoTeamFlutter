@@ -8,7 +8,8 @@
   disableIfNoEncryptionCapabilities="true"：设备不支持客户端加密时**整机
   不备份**（fail-closed），避免明文数据落进未加密的云备份。
 
-  排除项理由见 backup_rules.xml 头部注释。
+  排除项理由见 backup_rules.xml 头部注释（含 P1-7 新增的 backup/books/
+  文本日志三项及其评估结论）。
 -->
 <data-extraction-rules>
     <cloud-backup disableIfNoEncryptionCapabilities="true">
@@ -22,6 +23,27 @@
         <exclude
             domain="root"
             path="app_flutter/legado.db-shm" />
+
+        <!-- [P1-7] 自动备份目录：业务库全量明文 JSON dump -->
+        <exclude
+            domain="root"
+            path="app_flutter/backup" />
+
+        <!-- [P1-7] 本地书正文目录（私密书原文） -->
+        <exclude
+            domain="root"
+            path="app_flutter/books" />
+
+        <!-- [P1-7] 文本日志：可能含书名/章节名/带 token 的 URL -->
+        <exclude
+            domain="root"
+            path="app_flutter/crash_log.txt" />
+        <exclude
+            domain="root"
+            path="app_flutter/app_log.txt" />
+        <exclude
+            domain="root"
+            path="app_flutter/http_log.txt" />
 
         <!-- 偏好文件：含 Web 服务密码 / 私密策略 / 私密书旧名登记 -->
         <exclude
@@ -50,6 +72,22 @@
         <exclude
             domain="root"
             path="app_flutter/legado.db-shm" />
+        <!-- [P1-7] 自动备份目录 / 本地书正文 / 文本日志 -->
+        <exclude
+            domain="root"
+            path="app_flutter/backup" />
+        <exclude
+            domain="root"
+            path="app_flutter/books" />
+        <exclude
+            domain="root"
+            path="app_flutter/crash_log.txt" />
+        <exclude
+            domain="root"
+            path="app_flutter/app_log.txt" />
+        <exclude
+            domain="root"
+            path="app_flutter/http_log.txt" />
         <exclude
             domain="sharedpref"
             path="FlutterSharedPreferences.xml" />
