@@ -10,13 +10,11 @@
 // 本测试锁定补全模式：
 // 1. 三个代表场（编辑区、沉浸搜索框、搜索胶囊）经真实渲染与解析链后，
 //    enabled/focused/disabled/error 全态有效 border 均为 InputBorder.none；
-// 2. 真实 SearchBarWidget（沉浸搜索胶囊）已显式三态无边框；
-// 3. 对照组证明渗入面真实存在：仅写 border 的旧写法会回退主题底线式。
+// 2. 对照组证明渗入面真实存在：仅写 border 的旧写法会回退主题底线式。
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flutter_legado/src/theme/app_theme.dart';
-import 'package:flutter_legado/src/widgets/search_bar_widget.dart';
 
 /// 补全后的三态无边框装饰器（10 处沉浸场的统一补法）。
 const InputDecoration _sealedNone = InputDecoration(
@@ -128,22 +126,6 @@ void main() {
             );
           }
         }
-      });
-
-      testWidgets('真实 SearchBarWidget：胶囊输入三态显式无边框', (tester) async {
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: theme,
-            home: Scaffold(body: SearchBarWidget(onChanged: (_) {})),
-          ),
-        );
-        final decorator =
-            tester.widget<InputDecorator>(find.byType(InputDecorator));
-        final resolved =
-            decorator.decoration.applyDefaults(theme.inputDecorationTheme);
-        expect(resolved.border, InputBorder.none);
-        expect(resolved.enabledBorder, InputBorder.none);
-        expect(resolved.focusedBorder, InputBorder.none);
       });
 
       test('渗入面对照：仅写 border 的旧写法会回退主题底线式', () {

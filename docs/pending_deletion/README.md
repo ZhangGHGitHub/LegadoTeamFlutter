@@ -16,22 +16,29 @@
   - 用户裁决（2026-10-06）：Web 服务书架页面必须与原版一致；自制页不再作为 `/` 的响应内容
   - 后续处置：观察期无问题后，下一批清理时 `git rm` 本目录整体删除；详见 `web_dist_custom_index/README.md`
 
-## 已核实零引用、待移入（2026-11-17 登记，尚未移动）
+- `lib/src/widgets/`：7 个零引用死代码组件（`search_bar_widget.dart`、`swipe_action.dart`、`source_card.dart`、`tag_chip.dart`、`badge_widget.dart`、`chapter_tile.dart`、`custom_progress.dart`）
+  - 移出日期：2026-11-17
+  - 依据：全 `lib/` 逐类名 grep（`SearchBarWidget` / `SwipeAction` / `SwipeActionItem` / `SourceCard` / `TagChip` / `BadgeWidget` / `ChapterTile` / `CustomProgress`）排除定义文件后命中 0；另核实无 barrel 汇总导出、无 `part`/`part of` 关联、无字符串引用
+  - 同步改动：删除 7 个同名专属测试文件；`test/widget/input_none_seal_test.dart` 移除依赖 `SearchBarWidget` 的单个用例（其余 4 个用例保留）
+  - 后续处置：观察期无问题后，下一批清理时 `git rm` 本目录整体删除；删除前建议再跑一次全仓 grep 终核
 
-以下 7 个组件（均在 `flutter_legado/lib/src/widgets/`）经全 `lib/` 逐类名 grep 核实**生产引用为零**，仅被同名测试文件引用。按项目约定应移入本目录后观察，再整体删除。
+## 已核实零引用、待移入（2026-11-17 登记，同日已移入）
 
-| 文件 | 主类 | 生产引用 | 仅存引用方 |
+以下 7 个组件（原在 `flutter_legado/lib/src/widgets/`）经全 `lib/` 逐类名 grep 核实**生产引用为零**，仅被同名测试文件引用。按项目约定已移入本目录 `lib/src/widgets/` 观察，再整体删除。
+
+| 文件（已移入 `lib/src/widgets/`） | 主类 | 生产引用 | 原引用方（已处理） |
 |---|---|---|---|
-| `search_bar_widget.dart` | `SearchBarWidget` | 0 | `test/widget/search_bar_widget_test.dart`、`test/widget/input_none_seal_test.dart` |
-| `swipe_action.dart` | `SwipeAction` / `SwipeActionItem` | 0 | `test/widget/swipe_action_test.dart` |
-| `source_card.dart` | `SourceCard` | 0 | `test/widget/source_card_test.dart` |
-| `tag_chip.dart` | `TagChip` | 0 | `test/widget/tag_chip_test.dart` |
-| `badge_widget.dart` | `BadgeWidget` | 0 | `test/widget/badge_widget_test.dart` |
-| `chapter_tile.dart` | `ChapterTile` | 0 | `test/widget/chapter_tile_test.dart` |
-| `custom_progress.dart` | `CustomProgress` | 0 | `test/widget/custom_progress_test.dart` |
+| `search_bar_widget.dart` | `SearchBarWidget` | 0 | `test/widget/search_bar_widget_test.dart`（已删）、`test/widget/input_none_seal_test.dart`（已删该用例） |
+| `swipe_action.dart` | `SwipeAction` / `SwipeActionItem` | 0 | `test/widget/swipe_action_test.dart`（已删） |
+| `source_card.dart` | `SourceCard` | 0 | `test/widget/source_card_test.dart`（已删） |
+| `tag_chip.dart` | `TagChip` | 0 | `test/widget/tag_chip_test.dart`（已删） |
+| `badge_widget.dart` | `BadgeWidget` | 0 | `test/widget/badge_widget_test.dart`（已删） |
+| `chapter_tile.dart` | `ChapterTile` | 0 | `test/widget/chapter_tile_test.dart`（已删） |
+| `custom_progress.dart` | `CustomProgress` | 0 | `test/widget/custom_progress_test.dart`（已删） |
 
-- 核实方法：`grep -rn "\b<类名>\b" flutter_legado/lib --include="*.dart"`，排除定义文件自身后结果为 0；另确认无 barrel/part 间接导出（`lib/` 内无 `widgets.dart` 汇总导出）。
-- **为何尚未移动（2026-11-17）**：① 当批任务边界禁止触碰 `flutter_legado/lib/**`（其他并行线正在改动该目录）；② 移动会同时破坏上述 8 个测试文件的 import，属代码改动，超出当批「仅文档改动」门禁。
-- **后续处置**：待并行线交付后，下一批清理时把 7 个文件 `git mv` 入本目录，并同步删除/迁移对应 8 个测试文件，然后跑 `flutter analyze && flutter test` 验证；观察期无问题后整体 `git rm`。
+- 核实方法：`grep -rn "\b<类名>\b" flutter_legado/lib --include="*.dart"`，排除定义文件自身后结果为 0；另确认无 barrel/part 间接导出（`lib/` 内无 `widgets.dart` 汇总导出）、无 `part of` 关联、无字符串引用。
+- 移动前复核实测（2026-11-17，基线 `7a1c4b5554`）：8 个类名在 `lib/` 内除各自定义文件外命中 0；文件名 import 仅出现在上述 8 个测试文件中。
+- **已完成动作（2026-11-17）**：`git mv` 7 个文件入本目录；`git rm` 7 个专属测试；裁剪 `input_none_seal_test.dart` 中依赖 `SearchBarWidget` 的用例；`flutter analyze --no-fatal-infos` 0 warning、`flutter test` 全绿。
+- **后续处置**：观察期无问题后整体 `git rm`。
 
 > 注意：本目录位于 `docs/` 下、不在 pubspec assets 声明内，不会打进应用包。
