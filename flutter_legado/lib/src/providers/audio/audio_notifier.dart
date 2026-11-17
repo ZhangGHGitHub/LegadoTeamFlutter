@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:video_player/video_player.dart' show VideoFormat;
 
 import '../../constants/pref_keys.dart';
 import '../../models/book.dart';
@@ -911,6 +912,24 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     await _playTtsParagraphs(paragraphIndex: paragraphIndex);
   }
 
+  /// 解析 `getAudioChapterMedia` 返回的 `headers` 字段（契约 §2.26）
+  ///
+  /// Rust 侧为 `Map<String, String>`；JSON 解码后是 `Map<String, dynamic>`，
+  /// 值理论上恒为 String，但防御式过滤非 String 值（旧实现/异常数据不阻断
+  /// 播放）。空 Map / 缺键 / 类型不符 → `null`（不传 headers）。
+  ///
+  /// [批1 | 2026-11-18]
+  static Map<String, String>? _parsePlaybackHeaders(Object? raw) {
+    if (raw is! Map) return null;
+    final headers = <String, String>{};
+    raw.forEach((key, value) {
+      if (key is String && value is String && value.trim().isNotEmpty) {
+        headers[key] = value;
+      }
+    });
+    return headers.isEmpty ? null : headers;
+  }
+
   /// 查询某章音频缓存的本地文件路径（播放链读取面，契约 §2.47）
   ///
   /// [P0 | 2026-11-18] 对齐原版 `AudioPlay.kt:388-423` 播放第一步
@@ -950,6 +969,10 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
         if (token != _playToken || _disposed) return;
         final isVolume = media?['isVolume'] == true;
         final mediaUrl = (media?['mediaUrl'] as String?)?.trim() ?? '';
+        // [批1 | 2026-11-18] 播放请求头（契约 §2.26 `headers`）：HLS 主清单与
+        // 分片需防盗链 Referer/UA，否则 403（真机批 47 结论 ③）。仅网络播放
+        // 地址需要——命中 §2.47 本地缓存时 media 为 null，天然无头。
+        final playbackHeaders = _parsePlaybackHeaders(media?['headers']);
         if (isVolume || (mediaUrl.isEmpty && cachedPath == null)) {
           if (index + 1 >= state.chapters.length) {
             state = state.copyWith(
@@ -998,12 +1021,15 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
           // 未命中缓存（mediaUrl 已就绪）直接用；命中缓存但本地播放失败
           // （文件被清理/损坏）→ 现场补取网络地址，缓存是加速器不是数据源。
           var fallbackUrl = mediaUrl;
+          var fallbackHeaders = playbackHeaders;
           if (fallbackUrl.isEmpty) {
             try {
               final fallbackMedia =
                   await _api.getAudioChapterMedia(state.bookUrl, index);
               fallbackUrl =
                   (fallbackMedia['mediaUrl'] as String?)?.trim() ?? '';
+              // 回落取址同样带该次返回的请求头（与地址同源）
+              fallbackHeaders = _parsePlaybackHeaders(fallbackMedia['headers']);
             } catch (e) {
               debugPrint('[audio-cache] 第 $index 章回落取址失败: $e');
             }
@@ -1020,10 +1046,14 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
           if (mediaUrl.isEmpty) {
             state = state.copyWith(mediaUrl: fallbackUrl);
           }
+          // [批1] formatHint 按 URL 后缀判定（不能无条件传，见 isHlsPlayUrl）；
+          // 本地文件路径永远走 playLocalFile，不经过这里。
           await _streamPlayer.playUrl(
             fallbackUrl,
             speed: state.config.speed,
             tag: tag,
+            httpHeaders: fallbackHeaders,
+            formatHint: isHlsPlayUrl(fallbackUrl) ? VideoFormat.hls : null,
           );
         }
         if (token != _playToken || _disposed) return;

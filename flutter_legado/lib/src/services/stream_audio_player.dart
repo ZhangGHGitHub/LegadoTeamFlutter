@@ -56,7 +56,22 @@ class StreamAudioPlayer {
   /// 不做任何解释，仅在 [onProgress]/[onCompleted] 中原样回传；调用方据此校验
   /// 事件归属——切章后旧播放器 stop 前迟到的回调不会再被误认为新章事件
   /// （P1 竞态修复：旧章最终位置不得写入新章进度键）。
-  Future<void> playUrl(String url, {double speed = 1.0, Object? tag}) async {
+  ///
+  /// [httpHeaders] 为请求头（防盗链 Referer/UA 等，来自书源 header；契约
+  /// §2.26 `headers`）。空/null 时不传，保持 video_player 默认行为。
+  ///
+  /// [formatHint] 为 Android 平台的容器格式提示（仅 HLS 场景需要）。调用方
+  /// **必须按 URL 后缀判定**后传入（见 [isHlsPlayUrl]）：无条件传
+  /// `VideoFormat.hls` 会把普通 MP3 也当 HLS 解析，同样失败。
+  ///
+  /// [批1 | 2026-11-18] HLS 播放支持（真机批 47 结论）。
+  Future<void> playUrl(
+    String url, {
+    double speed = 1.0,
+    Object? tag,
+    Map<String, String>? httpHeaders,
+    VideoFormat? formatHint,
+  }) async {
     final trimmed = url.trim();
     if (trimmed.isEmpty) {
       throw ArgumentError('播放地址为空');
@@ -64,9 +79,14 @@ class StreamAudioPlayer {
     await stop();
     _currentUrl = trimmed;
     _completionFired = false;
+    final hasHeaders = httpHeaders != null && httpHeaders.isNotEmpty;
     final c = VideoPlayerController.networkUrl(
       Uri.parse(trimmed),
       videoPlayerOptions: playbackOptions,
+      // video_player 的该参数非空（默认 const {}）：无头时传空 Map，
+      // 与「不传」在平台侧等价（Android 侧判 isEmpty 后不设请求头）
+      httpHeaders: hasHeaders ? httpHeaders : const <String, String>{},
+      formatHint: formatHint,
     );
     await _start(c, speed, tag);
   }
@@ -161,4 +181,28 @@ class StreamAudioPlayer {
   }
 
   Future<void> dispose() => stop();
+}
+
+/// 播放地址是否 HLS（`.m3u8` / `.m3u` 后缀）
+///
+/// 语义与 Rust `audio_cache_api::is_hls_url` 完全一致：截 `?` / `#` 后取路径
+/// 部分，判断是否以 `.m3u8` / `.m3u` 结尾（大小写不敏感）。
+///
+/// 用途：决定是否给 `VideoPlayerController.networkUrl` 传
+/// `formatHint: VideoFormat.hls`。
+///
+/// **必须按后缀判定，不能无条件传**（真机批 47 结论 ④）：`formatHint` 会
+/// 覆盖 Android ExoPlayer 的格式自动探测，把普通 MP3 也当 HLS 解析同样
+/// 抛 `UnrecognizedInputFormatException`。无扩展名的 m3u8 地址（靠
+/// `Content-Type` 识别）正是本判定覆盖不到的场景——`Content-Type` 被
+/// ExoPlayer 忽略，故此类源需地址带 `.m3u8` 后缀才能播。
+///
+/// [批1 | 2026-11-18]
+bool isHlsPlayUrl(String url) {
+  final trimmed = url.trim();
+  if (trimmed.isEmpty) return false;
+  var path = trimmed.split('?').first;
+  path = path.split('#').first;
+  final lower = path.toLowerCase();
+  return lower.endsWith('.m3u8') || lower.endsWith('.m3u');
 }

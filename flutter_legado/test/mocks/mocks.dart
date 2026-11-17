@@ -14,6 +14,7 @@ import 'package:flutter_legado/src/services/rust_api.dart';
 import 'package:flutter_legado/src/services/audio_service.dart';
 import 'package:flutter_legado/src/services/stream_audio_player.dart';
 import 'package:flutter_legado/src/models/models.dart';
+import 'package:video_player/video_player.dart' show VideoFormat;
 
 /// RustApi 的 mock 实现
 ///
@@ -149,6 +150,13 @@ void stubEmptyWebdavServers(MockRustApi api) {
 class FakeStreamAudioPlayer implements StreamAudioPlayer {
   final List<String> playedUrls = [];
   final List<({String path, double speed})> playedLocalFiles = [];
+
+  /// 每次 [playUrl] 携带的请求头（null = 未传），与 [playedUrls] 同序
+  final List<Map<String, String>?> playedUrlHeaders = [];
+
+  /// 每次 [playUrl] 携带的格式提示（null = 未传），与 [playedUrls] 同序
+  final List<VideoFormat?> playedUrlFormatHints = [];
+
   int stopCount = 0;
   int pauseCount = 0;
   int resumeCount = 0;
@@ -187,10 +195,18 @@ class FakeStreamAudioPlayer implements StreamAudioPlayer {
   Object? playUrlError;
 
   @override
-  Future<void> playUrl(String url, {double speed = 1.0, Object? tag}) async {
+  Future<void> playUrl(
+    String url, {
+    double speed = 1.0,
+    Object? tag,
+    Map<String, String>? httpHeaders,
+    VideoFormat? formatHint,
+  }) async {
     final err = playUrlError;
     if (err != null) throw err;
     playedUrls.add(url);
+    playedUrlHeaders.add(httpHeaders);
+    playedUrlFormatHints.add(formatHint);
     playedTags.add(tag);
     currentTag = tag;
     duration = loadedDuration;
