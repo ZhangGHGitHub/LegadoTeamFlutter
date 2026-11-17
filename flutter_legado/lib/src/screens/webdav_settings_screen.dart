@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../constants/pref_keys.dart';
 import '../l10n/app_strings.dart';
 import '../models/backup_inspect_info.dart';
+import '../models/restore_summary.dart';
 import '../providers/backup_restore_refresh.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/providers.dart';
@@ -69,17 +70,24 @@ class _ProgressResult {
 /// 与异常区分：任务抛出的异常由 [_ProgressResult.error] 承载并按密码错误码
 /// 判定；本类型只表达「互斥拒绝」与「业务失败」两种正常返回。
 class _PasswordRestoreAttempt {
-  const _PasswordRestoreAttempt.success() : busy = false, error = null;
+  const _PasswordRestoreAttempt.success([this.summary])
+    : busy = false,
+      error = null;
 
-  const _PasswordRestoreAttempt.busy() : busy = true, error = null;
+  const _PasswordRestoreAttempt.busy() : busy = true, error = null, summary = null;
 
-  const _PasswordRestoreAttempt.failed(this.error) : busy = false;
+  const _PasswordRestoreAttempt.failed(this.error)
+    : busy = false,
+      summary = null;
 
   /// 备份/恢复互斥拒绝（本次未执行，调用方提示稍候）
   final bool busy;
 
   /// 业务失败异常（null = 成功）
   final Object? error;
+
+  /// 恢复统计（P1-5；成功时携带，用于「部分配置未恢复」提示）
+  final RestoreSummary? summary;
 }
 
 /// 网络恢复密码连续错误的最大尝试次数
@@ -725,9 +733,9 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       }
     }
 
-    var restoreBusy = false;
+    RestoreSummary? restoreSummary;
     final restoreResult = await _runWithProgress(AppStrings.webdavRestoring, () async {
-      restoreBusy = !await _performLocalRestore(
+      restoreSummary = await _performLocalRestore(
         backupPath,
         password: null,
         isZipContainer: isZip,
@@ -737,12 +745,12 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     // 忙（另一操作进行中）：不提示成功、不改任何状态
     if (!restoreResult.ran) return;
     // 备份/恢复互斥拒绝（批40 回修 P2-2）：提示稍候，不提示成功
-    if (restoreBusy) {
+    if (restoreSummary == null && restoreResult.error == null) {
       _showSnack(AppStrings.webdavBusyHint);
       return;
     }
     if (restoreResult.error == null) {
-      _showSnack(AppStrings.restoreSuccess);
+      _showRestoreOutcome(restoreSummary);
       return;
     }
     final error = restoreResult.error!;
@@ -769,23 +777,28 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
 
   /// 执行本地恢复全链（偏好回填 + 业务表恢复 + 页面刷新）
   ///
-  /// [password] 仅对原版 zip 备份生效；JSON 备份传 null。
+  /// [password] 对两类容器都生效（P1-6）：zip 备份解密
+  /// `servers.json`/`cookies.json`/`runtimeSourceCache.json`；自有 JSON 备份
+  /// 解密带 `ENC:` 前缀的 `servers[].config` / `directLinkUploadRule`。
   /// [isZipContainer] 容器判定结果（调用方已按文件魔数算好）；缺省时由
   /// [WebDavRestoreService] 现算。zip 容器**不做** JSON 偏好/账号回读。
   ///
   /// 批10：实际恢复步骤（applyPrefs → restore → 服务器迁移 → 刷新）已
   /// 抽取到 [WebDavRestoreService]，与启动自动检查共用同一实现。
   /// 批40 回修 P2-2：整条恢复链跑在 `LocalBackupService.runExclusiveRestore`
-  /// 内（与手动/自动备份共用互斥）；返回 false = 已有备份/恢复执行中，
+  /// 内（与手动/自动备份共用互斥）；返回 null = 已有备份/恢复执行中，
   /// 本次未执行（调用方提示稍候，不得提示成功）。
-  Future<bool> _performLocalRestore(
+  ///
+  /// 返回 [RestoreSummary]（P1-5）：调用方据 `skippedServerConfigs` 决定提示
+  /// 「恢复成功」还是「部分配置未恢复」。
+  Future<RestoreSummary?> _performLocalRestore(
     String backupPath, {
     String? password,
     bool? isZipContainer,
   }) async {
-    final acquired = await LocalBackupService.instance.runExclusiveRestore(
+    return LocalBackupService.instance.runExclusiveRestore(
       () async {
-        await WebDavRestoreService(
+        final summary = await WebDavRestoreService(
           api: ref.read(bookApiProvider),
           settings: _settings,
         ).restoreBackupFile(
@@ -812,10 +825,9 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
             nowMillis,
           );
         }
-        return true;
+        return summary;
       },
     );
-    return acquired ?? false;
   }
 
   /// 拉取远端备份列表（网络恢复 / 远端最新共用，批11）
@@ -986,7 +998,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       case WebDavRestoreStatus.success:
         await _markRemoteBackupSeen(candidate);
         if (!mounted) return;
-        _showSnack(AppStrings.restoreSuccess);
+        _showRestoreOutcome(run.summary);
       case WebDavRestoreStatus.busy:
         _showSnack(kBackupRestoreBusyHint);
       case WebDavRestoreStatus.failed:
@@ -1035,7 +1047,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     switch (result.status) {
       case WebDavRestoreStatus.success:
         await _markRemoteBackupSeen(candidate);
-        return const _PasswordRestoreAttempt.success();
+        return _PasswordRestoreAttempt.success(result.summary);
       case WebDavRestoreStatus.busy:
         return const _PasswordRestoreAttempt.busy();
       case WebDavRestoreStatus.passwordRequired:
@@ -1125,7 +1137,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
         failure = outcome.error;
       }
       if (failure == null) {
-        _showSnack(AppStrings.restoreSuccess);
+        _showRestoreOutcome(outcome.summary);
         return;
       }
       if (_hasBackupErrorPrefix(failure, _kBackupPasswordInvalid)) {
@@ -1153,14 +1165,26 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     required String password,
     bool? isZipContainer,
   }) async {
-    final busy = !await _performLocalRestore(
+    final summary = await _performLocalRestore(
       backupPath,
       password: password,
       isZipContainer: isZipContainer,
     );
-    return busy
-        ? const _PasswordRestoreAttempt.busy()
-        : const _PasswordRestoreAttempt.success();
+    if (summary == null) return const _PasswordRestoreAttempt.busy();
+    return _PasswordRestoreAttempt.success(summary);
+  }
+
+  /// 恢复成功提示：区分「完全恢复」与「部分服务器配置未恢复」（P1-5）
+  ///
+  /// 后者不是失败——其余数据已落库，服务器配置保留本机既有值；但不能只说
+  /// 「恢复成功」，否则用户会误以为备份里的凭据已生效（或以为本机配置被清空）。
+  void _showRestoreOutcome(RestoreSummary? summary) {
+    final skipped = summary?.skippedServerConfigs ?? 0;
+    _showSnack(
+      skipped > 0
+          ? AppStrings.restorePartialSkippedServerConfigs(skipped)
+          : AppStrings.restoreSuccess,
+    );
   }
 
   Future<String?> _showBackupPasswordDialog({

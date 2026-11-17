@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/models/backup_inspect_info.dart';
+import 'package:flutter_legado/src/models/restore_summary.dart';
 import 'package:flutter_legado/src/services/local_backup_service.dart';
 import 'package:flutter_legado/src/services/mock_book_api.dart';
 import 'package:flutter_legado/src/services/settings_service.dart';
@@ -64,8 +65,14 @@ class _RestoreApi extends MockBookApi {
     return inspectResult;
   }
 
+  /// 恢复返回的统计（P1-5：模拟「部分服务器配置未恢复」）
+  RestoreSummary restoreSummary = RestoreSummary.empty;
+
   @override
-  Future<void> restore(String backupPath, {String? password}) async {
+  Future<RestoreSummary> restore(
+    String backupPath, {
+    String? password,
+  }) async {
     restoreCalls++;
     restoredPath = backupPath;
     restoredPassword = password;
@@ -77,6 +84,7 @@ class _RestoreApi extends MockBookApi {
     }
     final error = restoreError;
     if (error != null) throw error;
+    return restoreSummary;
   }
 }
 
@@ -124,7 +132,11 @@ void main() {
 
       expect(result.status, WebDavRestoreStatus.success);
       expect(api.downloadedPath, endsWith(remoteName));
-      expect(api.inspectCalls, 0, reason: '非 zip 不探测密码');
+      expect(
+        api.inspectCalls,
+        1,
+        reason: 'P1-6：JSON 容器同样必须探测（自有备份可字段级加密）',
+      );
       expect(api.restoreCalls, 1);
       expect(api.restoredPath, endsWith(remoteName));
       expect(api.restoredPassword, isNull);
@@ -298,7 +310,6 @@ void main() {
         passwordRequired: false,
         passwordProtectedFiles: [],
       );
-
       final result = await build().restoreRemoteBackupExclusive(
         remoteName: remoteName,
         configJson: '{"url":"x"}',
@@ -309,6 +320,119 @@ void main() {
       expect(api.restoreCalls, 1);
       expect(api.restoredPath, endsWith('.zip'));
       expect(File(api.downloadedPath!).existsSync(), isFalse);
+    });
+
+    // ─── P1-6：远端加密 JSON 探测链（审查 2026-11-17） ───────────────
+
+    test('远端加密 JSON：探测 passwordRequired → 不自动恢复', () async {
+      final remoteName = 'backup_20261110_120000_123.json';
+      api.downloadText = jsonEncode({
+        'encryption': 'aes-ecb-md5',
+        'servers': [
+          {'id': 1, 'name': 's', 'type': 'WEBDAV', 'config': 'ENC:xxx'},
+        ],
+      });
+      api.inspectResult = const BackupInspectInfo(
+        format: BackupFormat.json,
+        passwordRequired: true,
+        passwordProtectedFiles: [
+          'servers.json',
+          'directLinkUploadRule.json',
+        ],
+        encryption: 'aes-ecb-md5',
+      );
+
+      final result = await build().restoreRemoteBackupExclusive(
+        remoteName: remoteName,
+        configJson: '{"url":"x"}',
+      );
+
+      expect(
+        result.status,
+        WebDavRestoreStatus.passwordRequired,
+        reason: 'P1-6：加密 JSON 必须弹密码框（旧实现 isZip ? 探测 : null → 恒免密）',
+      );
+      expect(api.inspectCalls, 1, reason: 'JSON 容器同样要探测');
+      expect(api.restoreCalls, 0, reason: '未提供密码不得进入 restore');
+      expect(result.inspect?.format, BackupFormat.json);
+      expect(result.inspect?.encryption, 'aes-ecb-md5');
+      expect(File(api.downloadedPath!).existsSync(), isFalse);
+      expect(tempBase.listSync(), isEmpty);
+    });
+
+    test('远端加密 JSON + 提供密码：密码透传且 servers.config 不被清空', () async {
+      final remoteName = 'backup_20261110_120000_123.json';
+      // 原始备份内容（模拟「解密后逐字节一致」的落盘载荷）
+      final originalConfig = jsonEncode({
+        'url': 'https://secret.example/dav/',
+        'username': 'alice',
+        'password': 'P@ssw0rd!',
+      });
+      api.downloadText = jsonEncode({
+        'encryption': 'aes-ecb-md5',
+        'servers': [
+          {
+            'id': 1,
+            'name': 's',
+            'type': 'WEBDAV',
+            'config': 'ENC:whatever',
+          },
+        ],
+      });
+      api.inspectResult = const BackupInspectInfo(
+        format: BackupFormat.json,
+        passwordRequired: true,
+        passwordProtectedFiles: ['servers.json'],
+        encryption: 'aes-ecb-md5',
+      );
+
+      final result = await build().restoreRemoteBackupExclusive(
+        remoteName: remoteName,
+        configJson: '{"url":"x"}',
+        password: 'secret-pw',
+      );
+
+      expect(result.status, WebDavRestoreStatus.success);
+      expect(api.inspectCalls, 1);
+      expect(api.restoreCalls, 1);
+      expect(
+        api.restoredPassword,
+        'secret-pw',
+        reason: 'P1-6：旧实现 prepared.isZip ? password : null 会把 JSON 密码丢掉',
+      );
+      expect(api.restoredPath, endsWith('.json'));
+      // 下载内容原样保留（Rust 侧负责解密，Dart 不得改写密文为 null）
+      final restored = jsonDecode(api.restoredContent!) as Map;
+      final servers = restored['servers'] as List;
+      expect(
+        (servers.single as Map)['config'],
+        'ENC:whatever',
+        reason: 'Dart 侧不得把加密 config 改写为 null（清空本机凭据的根因）',
+      );
+      expect(
+        originalConfig,
+        contains('P@ssw0rd!'),
+        reason: '原始明文仅作断言基准，不参与写入',
+      );
+      expect(File(api.downloadedPath!).existsSync(), isFalse);
+    });
+
+    test('恢复返回 skippedServerConfigs：summary 透传到运行结果', () async {
+      final remoteName = 'backup_20261110_120000_123.json';
+      api.downloadText = jsonEncode({'appPrefs': {}});
+      api.restoreSummary = const RestoreSummary(skippedServerConfigs: 2);
+
+      final result = await build().restoreRemoteBackupExclusive(
+        remoteName: remoteName,
+        configJson: '{"url":"x"}',
+      );
+
+      expect(result.status, WebDavRestoreStatus.success);
+      expect(
+        result.summary.skippedServerConfigs,
+        2,
+        reason: 'P1-5：UI 需要该计数才能提示「部分配置未恢复」',
+      );
     });
 
     test('恢复失败：返回 failed 并携带原始异常，临时文件仍清理', () async {

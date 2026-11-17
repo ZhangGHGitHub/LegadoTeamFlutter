@@ -1316,6 +1316,15 @@ class AppStrings {
   static String get webdavZipBypassUnsupported => _get('zip 备份暂不支持忽略项过滤（将按备份内容恢复）', 'Bypass list filtering is not supported for zip backups (everything in the backup is restored)');
   static String get webdavCheckingBackup => _get('检查备份…', 'Checking backup…');
   static String get webdavRestoring => _get('恢复中…', 'Restoring…');
+  /// [P1-5] 部分服务器配置因备份密码缺失/错误而未恢复（已保留本机值）
+  ///
+  /// 恢复本身成功（其余数据已落库），但 `servers[].config` 解不开时保留
+  /// 本机既有配置而非清空——必须如实提示，不能让用户以为凭据已恢复。
+  static String restorePartialSkippedServerConfigs(int count) => _get(
+    '恢复完成，但有 $count 个服务器配置因备份密码未提供或错误而未恢复（已保留本机配置）',
+    'Restore finished, but $count server configuration(s) could not be restored '
+        'because the backup password was missing or wrong (local settings kept)',
+  );
   static String get webdavBusyHint => _get('正在备份或恢复，请稍候', 'A backup or restore is running; please wait');
   static String get webdavFetchingRemoteList => _get('获取远端备份列表…', 'Fetching remote backup list…');
   static String get webdavNoRemoteBackup => _get('未找到远端备份', 'No remote backup found');

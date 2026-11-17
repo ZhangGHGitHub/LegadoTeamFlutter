@@ -124,7 +124,7 @@ void main() {
     when(() => api.setConfig(any(), any())).thenAnswer((_) async {});
     when(
       () => api.restore(any(), password: any(named: 'password')),
-    ).thenAnswer((_) async {});
+    ).thenAnswer((_) async => RestoreSummary.empty);
     when(() => api.backupInspect(any())).thenAnswer(
       (_) async => const BackupInspectInfo(
         format: BackupFormat.zip,
@@ -293,7 +293,7 @@ void main() {
       });
       when(
         () => api.webdavUploadFile(any(), any(), any()),
-      ).thenAnswer((_) async {});
+      ).thenAnswer((_) async => RestoreSummary.empty);
       final before = _tempArtifacts('legado_webdav_only_');
       final settings = SettingsService();
 
@@ -342,7 +342,7 @@ void main() {
       stubBackupWritingFile();
       when(
         () => api.webdavUploadFile(any(), any(), any()),
-      ).thenAnswer((_) async {});
+      ).thenAnswer((_) async => RestoreSummary.empty);
 
       await pumpScreen(tester);
       await tester.scrollUntilVisible(find.text('备份'), 100);
@@ -387,7 +387,7 @@ void main() {
       stubBackupWritingFile();
       when(
         () => api.webdavUploadFile(any(), any(), any()),
-      ).thenAnswer((_) async {});
+      ).thenAnswer((_) async => RestoreSummary.empty);
 
       await pumpScreen(tester);
       await openBackupSheet(tester);
@@ -872,6 +872,7 @@ void main() {
         () => api.restore(any(), password: any(named: 'password')),
       ).thenAnswer((_) async {
         restoreCalls++;
+        return RestoreSummary.empty;
       });
       final before = _tempArtifacts('legado_webdav_restore_');
 
@@ -969,7 +970,7 @@ void main() {
       ]);
       when(
         () => api.webdavDownloadFile(any(), any(), any()),
-      ).thenAnswer((_) async {});
+      ).thenAnswer((_) async => RestoreSummary.empty);
 
       await pumpScreen(tester);
       await openRemoteBackupList(tester);

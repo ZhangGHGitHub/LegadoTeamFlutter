@@ -306,7 +306,13 @@ class AutoCheckNewBackupScheduler {
       );
       switch (result.status) {
         case WebDavRestoreStatus.success:
-          await _notify('恢复成功');
+          // P1-5：部分服务器配置因密码缺失/错误而未恢复时如实提示
+          final skipped = result.summary.skippedServerConfigs;
+          await _notify(
+            skipped > 0
+                ? '恢复完成，但有 $skipped 个服务器配置未恢复（已保留本机配置）'
+                : '恢复成功',
+          );
           return _finish(AutoCheckNewBackupDecision.restored);
         case WebDavRestoreStatus.passwordRequired:
           // 已写 seen：同一远端备份本进程/下次启动不再重复弹窗；用户需

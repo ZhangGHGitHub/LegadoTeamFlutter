@@ -724,8 +724,12 @@ mixin MockBookApiReaderData on MockBookApiStore implements BookApi {
     return '$dirPath/legado_backup_mock.json';
   }
 
+  /// Mock 恢复：返回可注入的 [mockRestoreSummary]（默认无跳过配置）
   @override
-  Future<void> restore(String backupPath, {String? password}) async {}
+  Future<RestoreSummary> restore(
+    String backupPath, {
+    String? password,
+  }) async => mockRestoreSummary;
 
   /// Mock 探测：返回可注入的 [mockBackupInspect]（默认 JSON / 无需密码）
   @override

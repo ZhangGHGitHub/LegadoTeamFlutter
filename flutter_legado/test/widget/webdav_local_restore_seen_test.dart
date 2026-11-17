@@ -76,7 +76,7 @@ void main() {
     when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
     when(
       () => mockApi.restore(any(), password: any(named: 'password')),
-    ).thenAnswer((_) async {});
+    ).thenAnswer((_) async => RestoreSummary.empty);
     when(() => mockApi.backupInspect(any())).thenAnswer(
       (_) async => const BackupInspectInfo(
         format: BackupFormat.zip,

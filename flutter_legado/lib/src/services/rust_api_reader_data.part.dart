@@ -598,9 +598,13 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
   /// [password] 同时用于两类备份（契约 §2.11 批17a/批44）：原版 zip 的
   /// `servers.json`/`cookies.json`/`runtimeSourceCache.json`，以及我方 JSON
   /// 备份中带 `ENC:` 前缀的 `servers[].config` / `directLinkUploadRule`。
-  /// `null`/空串 = 未提供（JSON 备份中的加密字段按条目 warn 跳过）。
+  /// `null`/空串 = 未提供（JSON 备份中的加密字段按条目跳过，**保留本机值**）。
+  ///
+  /// 返回 [RestoreSummary]（P1-5）：`skippedServerConfigs` 由 Rust
+  /// `RestoreStats` 带出，供 UI 提示「部分配置未恢复」。解析失败不影响
+  /// 恢复结果（纯提示信息）。
   @override
-  Future<void> restore(String backupPath, {String? password}) async {
+  Future<RestoreSummary> restore(String backupPath, {String? password}) async {
     final file = File(backupPath);
     if (!await file.exists()) {
       throw RustApiException(
@@ -608,7 +612,11 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
         operation: 'restore',
       );
     }
-    await bridge.backupRestore(path: backupPath, password: password);
+    final raw = await bridge.backupRestore(
+      path: backupPath,
+      password: password,
+    );
+    return RestoreSummary.decode(raw);
   }
 
   /// 探测备份是否需要密码（委托 Rust backup_inspect，只读）

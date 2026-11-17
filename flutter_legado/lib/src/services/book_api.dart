@@ -964,7 +964,12 @@ abstract class BookApi {
   ///   `directLinkUploadRule`（无前缀的旧备份不受影响）。
   ///
   /// `null`/空串等价空密码/未提供。
-  Future<void> restore(String backupPath, {String? password});
+  ///
+  /// 返回 [RestoreSummary]（P1-5）：其中 `skippedServerConfigs` 为「因未提供
+  /// 密码/密码错误而未解密、已**保留本机既有值**的服务器配置条数」。调用方
+  /// 据此把提示从「恢复成功」改为「部分配置未恢复」——否则用户会以为配置
+  /// 已随备份恢复（实际是本机旧值），或以为凭据被清空。
+  Future<RestoreSummary> restore(String backupPath, {String? password});
 
   /// 探测备份是否需要密码（契约 §2.11 批17a，只读）
   ///

@@ -93,7 +93,7 @@ void main() {
     // 批17b：恢复调用显式携带 password（无密码为 null）
     when(
       () => mockApi.restore(any(), password: any(named: 'password')),
-    ).thenAnswer((_) async {});
+    ).thenAnswer((_) async => RestoreSummary.empty);
     // 批17b：zip 恢复前先探测密码；默认无需密码
     when(() => mockApi.backupInspect(any())).thenAnswer(
       (_) async => const BackupInspectInfo(

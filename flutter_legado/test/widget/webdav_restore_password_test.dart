@@ -100,7 +100,7 @@ void main() {
     when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
     when(
       () => mockApi.restore(any(), password: any(named: 'password')),
-    ).thenAnswer((_) async {});
+    ).thenAnswer((_) async => RestoreSummary.empty);
   });
 
   /// 探测结果：原版 zip、需要密码、三个受保护条目
@@ -318,6 +318,7 @@ void main() {
       await prefs.setInt(PrefKeys.colorTemperature, 30);
       await prefs.setString(PrefKeys.eyeProtectionStartTime, '23:00');
       restoreWrotePrefs = true;
+      return RestoreSummary.empty;
     });
 
     final container = ProviderContainer(
@@ -395,6 +396,7 @@ void main() {
         'theme_backgrounds/large_light/restored.png',
       );
       restoreWrotePrefs = true;
+      return RestoreSummary.empty;
     });
 
     final container = ProviderContainer(
@@ -461,6 +463,7 @@ void main() {
       await prefs.setInt(PrefKeys.readMenuIconItemsPerRow, 3);
       await prefs.setString(PrefKeys.titleBarMode, '2');
       restoreWrotePrefs = true;
+      return RestoreSummary.empty;
     });
 
     final container = ProviderContainer(
@@ -698,7 +701,7 @@ void main() {
     );
     when(
       () => mockApi.restore(any(), password: 'late-pwd'),
-    ).thenAnswer((_) async {});
+    ).thenAnswer((_) async => RestoreSummary.empty);
 
     await startLocalRestore(tester, backupPath: backupPath);
 

@@ -59,6 +59,13 @@ mixin MockBookApiStore {
     passwordProtectedFiles: [],
   );
 
+  /// 恢复统计摘要（Mock 默认：无跳过配置）
+  ///
+  /// 可通过 `api.mockRestoreSummary = ...` 注入以模拟「部分服务器配置因
+  /// 密码缺失/错误而未恢复」的提示链路（契约 §2.11 P1-5
+  /// `skippedServerConfigs`）。
+  RestoreSummary mockRestoreSummary = RestoreSummary.empty;
+
   // [书源作用域 | 2026-09-13] applyReplaceRulesToSource 调用计数（测试断言用）
   int _applyReplaceRulesToSourceCalls = 0;
 

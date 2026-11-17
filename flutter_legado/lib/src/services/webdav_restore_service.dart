@@ -20,6 +20,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/backup_inspect_info.dart';
 import '../models/book.dart';
+import '../models/restore_summary.dart';
 import 'book_api.dart';
 import 'local_backup_service.dart';
 import 'restore_ignore_prefs.dart';
@@ -56,21 +57,38 @@ enum WebDavRestoreStatus {
 /// 自动恢复整链结果
 @immutable
 class WebDavRestoreRunResult {
-  const WebDavRestoreRunResult._(this.status, this.error, this.inspect);
+  const WebDavRestoreRunResult._(
+    this.status,
+    this.error,
+    this.inspect,
+    this.summary,
+  );
 
-  const WebDavRestoreRunResult.success()
-    : this._(WebDavRestoreStatus.success, null, null);
+  /// [summary] 为恢复统计（P1-5）：`skippedServerConfigs > 0` 时调用方应提示
+  /// 「部分配置未恢复」而不是单纯「恢复成功」。
+  const WebDavRestoreRunResult.success([RestoreSummary? summary])
+    : this._(
+        WebDavRestoreStatus.success,
+        null,
+        null,
+        summary ?? RestoreSummary.empty,
+      );
 
   const WebDavRestoreRunResult.busy()
-    : this._(WebDavRestoreStatus.busy, null, null);
+    : this._(WebDavRestoreStatus.busy, null, null, RestoreSummary.empty);
 
   /// [inspect] 为探测结果，调用方弹密码框时需要受保护条目清单；旧调用方
   /// 可不传（仅用于测试构造）。
   const WebDavRestoreRunResult.passwordRequired([BackupInspectInfo? inspect])
-    : this._(WebDavRestoreStatus.passwordRequired, null, inspect);
+    : this._(
+        WebDavRestoreStatus.passwordRequired,
+        null,
+        inspect,
+        RestoreSummary.empty,
+      );
 
   const WebDavRestoreRunResult.failed(Object error)
-    : this._(WebDavRestoreStatus.failed, error, null);
+    : this._(WebDavRestoreStatus.failed, error, null, RestoreSummary.empty);
 
   /// 结果状态
   final WebDavRestoreStatus status;
@@ -78,8 +96,11 @@ class WebDavRestoreRunResult {
   /// 失败异常（仅 [WebDavRestoreStatus.failed]）
   final Object? error;
 
-  /// zip 密码探测结果（仅 [WebDavRestoreStatus.passwordRequired]）
+  /// 备份密码探测结果（仅 [WebDavRestoreStatus.passwordRequired]）
   final BackupInspectInfo? inspect;
+
+  /// 恢复统计（仅 [WebDavRestoreStatus.success]；P1-5 部分恢复提示）
+  final RestoreSummary summary;
 }
 
 /// 已下载并探测完成的远端备份句柄（密码重试期间复用，避免重复下载整包）
@@ -100,13 +121,13 @@ class WebDavPreparedRemoteBackup {
   /// 是否 zip 容器（按扩展名 + 文件魔数判定）
   final bool isZip;
 
-  /// zip 密码探测结果（非 zip 为 null）
+  /// 备份密码探测结果（**P1-6 起两类容器都非 null**：zip 看条目密文，
+  /// JSON 看顶层 `encryption` 标记；仅探测失败时为 null）
   final BackupInspectInfo? inspect;
 
   /// 是否需要备份密码
   bool get passwordRequired => inspect?.passwordRequired ?? false;
 }
-
 /// 本地恢复链（无 UI，调用方负责提示与页面刷新）
 class WebDavRestoreService {
   WebDavRestoreService({
@@ -199,6 +220,14 @@ class WebDavRestoreService {
   /// 下载 + 探测整段在备份/恢复互斥锁内执行；返回 null = 已有备份/恢复执行
   /// 中（未发起下载）。失败向上抛，并删除刚创建的临时目录。
   /// 调用方在恢复流程结束后必须调用 [disposePreparedBackup]。
+  ///
+  /// **P1-6（2026-11-17 审查）：两类容器都探测**。旧实现只在 zip 时调
+  /// `backupInspect`（`isZip ? await ... : null`），而 `b244dc3b33` 起自有
+  /// JSON 备份也会对 `servers[].config` / `directLinkUploadRule` 做字段级
+  /// 加密——远端路径不探测 → `passwordRequired` 恒 false → 用 `password: null`
+  /// 恢复 → 所有 `ENC:` 字段解不开 → 叠加 P1-5 前的实现会清空本机 WebDAV
+  /// 配置，UI 还报「恢复成功」。现与本地恢复（`webdav_settings_screen.dart`
+  /// 的 `_restoreLocalBackup`）口径一致：**无条件探测**。
   Future<WebDavPreparedRemoteBackup?> prepareRemoteBackup({
     required String remoteName,
     String? configJson,
@@ -215,7 +244,8 @@ class WebDavRestoreService {
         );
         try {
           final isZip = isZipBackupFile(path);
-          final inspect = isZip ? await _api.backupInspect(path) : null;
+          // P1-6：无条件探测（zip 看条目密文，JSON 看顶层 encryption 标记）
+          final inspect = await _api.backupInspect(path);
           return WebDavPreparedRemoteBackup._(
             localPath: path,
             isZip: isZip,
@@ -233,6 +263,9 @@ class WebDavRestoreService {
   ///
   /// 不负责删除临时目录（由 [disposePreparedBackup] 在密码循环结束后统一
   /// 清理）；恢复失败返回 [WebDavRestoreStatus.failed]，互斥拒绝返回 busy。
+  ///
+  /// **P1-6**：密码对两类容器都透传（旧实现 `prepared.isZip ? password : null`
+  /// 会把 JSON 备份的密码丢掉，导致加密 JSON 无法解密）。
   Future<WebDavRestoreRunResult> restorePreparedBackup(
     WebDavPreparedRemoteBackup prepared, {
     String? password,
@@ -241,14 +274,14 @@ class WebDavRestoreService {
     final result = await _backupService
         .runExclusiveRestore<WebDavRestoreRunResult>(() async {
           try {
-            await restoreBackupFile(
+            final summary = await restoreBackupFile(
               prepared.localPath,
-              // JSON 备份没有密码语义；仅 zip 容器透传（防御误传）。
-              password: prepared.isZip ? password : null,
+              // P1-6：zip 与 JSON 都可能加密，密码一律透传
+              password: password,
               isZipContainer: prepared.isZip,
               refresh: refresh,
             );
-            return const WebDavRestoreRunResult.success();
+            return WebDavRestoreRunResult.success(summary);
           } catch (e, stack) {
             // 静默失败：只记录异常类型与栈，不打印 URL/凭据等敏感信息
             debugPrint(
@@ -319,11 +352,16 @@ class WebDavRestoreService {
   /// 经 `runExclusiveRestore`；自动检查经
   /// [restoreRemoteBackupExclusive]）。异常原样上抛，调用方负责提示。
   ///
-  /// [password] 仅对原版 zip 备份生效；JSON 备份传 null。
+  /// [password] 对**两类容器都生效**（P1-6）：zip 备份用它解密
+  /// `servers.json`/`cookies.json`/`runtimeSourceCache.json`；自有 JSON 备份
+  /// 用它解密带 `ENC:` 前缀的 `servers[].config` / `directLinkUploadRule`。
   /// [isZipContainer] 容器判定结果（调用方已按文件魔数算好）；缺省时此处
   /// 现算。zip 容器**不做** JSON 偏好/账号回读（zip 备份没有 `appPrefs`
   /// 段，按 `.json` 扩展名硬读会把压缩字节当 JSON 解析）。
-  Future<void> restoreBackupFile(
+  ///
+  /// 返回 [RestoreSummary]（P1-5）：`skippedServerConfigs > 0` 表示部分服务器
+  /// 配置因密码缺失/错误而**保留了本机既有值**，调用方应提示「部分配置未恢复」。
+  Future<RestoreSummary> restoreBackupFile(
     String backupPath, {
     String? password,
     bool? isZipContainer,
@@ -332,6 +370,8 @@ class WebDavRestoreService {
     final isZip = isZipContainer ?? isZipBackupFile(backupPath);
     var pathToRestore = backupPath;
     File? filteredFile;
+    // P1-5：恢复统计（部分服务器配置因密码缺失/错误而保留本机值）
+    var summary = RestoreSummary.empty;
     final accountSource = isZip
         ? WebDavBackupAccountSource.none
         : await WebDavServerService.backupAccountSource(backupPath);
@@ -362,7 +402,14 @@ class WebDavRestoreService {
           localPasswordsByEndpoint: localPasswords?.byEndpoint,
         );
       }
-      await _api.restore(pathToRestore, password: password);
+      summary = await _api.restore(pathToRestore, password: password);
+      if (summary.hasSkippedServerConfigs) {
+        // 只记条数，不打印配置内容（含明文密码）
+        debugPrint(
+          '[WebDavRestoreService] 恢复完成：${summary.skippedServerConfigs} 个'
+          '服务器配置因密码缺失/错误未解密，已保留本机既有值',
+        );
+      }
       // 偏好已由上面写回本地；v1/v2 备份把恢复所得账号显式覆盖到 DB
       // （v3 交由恢复器写入的 servers 行，不回读偏好）
       if (accountSource == WebDavBackupAccountSource.legacyPrefs) {
@@ -403,6 +450,7 @@ class WebDavRestoreService {
         }
       }
     }
+    return summary;
   }
 
   /// 写出剔除「本地书籍」的临时 JSON（恢复忽略 `localBook` 时）
