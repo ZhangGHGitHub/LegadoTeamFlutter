@@ -8,7 +8,7 @@ use legado_core::audio::{
     with_audio_play_mode as core_with_audio_play_mode,
 };
 use legado_core::cache_book::CachedChapter;
-use legado_core::models::{Book, BookChapter};
+use legado_core::models::{Book, BookChapter, BookSource};
 use legado_core::web_book::WebChapter;
 use legado_core::{LegadoError, LegadoResult};
 #[cfg(test)]
@@ -19,6 +19,7 @@ use legado_db::{
     CacheRepository,
 };
 use serde::Serialize;
+use std::collections::HashMap;
 
 use crate::db_state::with_database;
 use crate::runtime;
@@ -44,6 +45,13 @@ pub struct AudioChapterMedia {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lyric: Option<String>,
     pub source_url: String,
+    /// 播放请求头（书源 `header` + 同站登录头合并；见 §2.26）
+    ///
+    /// 播放器（Dart `VideoPlayerController.networkUrl` 的 `httpHeaders`）需
+    /// 携带防盗链 Referer/UA 才能拉到 segment。`None` = 无可用头（本地/直链
+    /// 回退路径），`skip_serializing_if` 保持旧返回 JSON 形状不变。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headers: Option<HashMap<String, String>>,
 }
 
 /// 获取音频播放进度（毫秒），无记录返回 0
@@ -141,6 +149,66 @@ fn lyric_for_chapter(book_url: &str, chapter: &BookChapter) -> Option<String> {
     }
 }
 
+/// 解析播放请求头（书源 `header` ⊕ 同站登录头）
+///
+/// 播放器（ExoPlayer/video_player）取 HLS 主清单与分片时需带防盗链
+/// Referer/UA：原版 `AudioPlay` 用 `WebBook.getContent` 返回的 `AnalyzeUrl`
+/// 携带 headerMap 起播，我方 `mediaUrl` 只回传裸地址，故此处把书源请求头
+/// 随 `AudioChapterMedia.headers` 一并返回。
+///
+/// 合并语义与书源抓取链同源（`SourceHeaderSet::for_request`，见
+/// `image_api::fetch_image_with_decode` 同款先例）：
+/// - 静态头 = `BookSource.header` JSON；
+/// - 登录头**仅当播放地址与书源同站（eTLD+1）时**附加（原版 #1099
+///   `AnalyzeUrl.isLoginHeaderSite`：媒体常托管第三方 CDN，跨域不送认证头；
+///   无法判定域名时保持旧行为附加）；
+/// - `proxy` 键是代理配置而非 HTTP 头，合并后剔除（同 `strip_proxy_header`）；
+/// - 内部 CookieJar 写侧标记头**不**回传（`legado-net` 发送前剥离；交给
+///   Dart 播放器只会把内部头泄漏出去）。
+///
+/// 空结果返回 `None`（保持旧 JSON 形状）。
+fn playback_headers(source: &BookSource, play_url: &str) -> Option<HashMap<String, String>> {
+    let mut headers: HashMap<String, String> = source
+        .header
+        .as_deref()
+        .and_then(|h| serde_json::from_str(h).ok())
+        .unwrap_or_default();
+
+    if legado_fetcher::web_book::is_login_header_site(&source.book_source_url, play_url, None) {
+        if let Some(login_header_json) =
+            crate::api::source_login_cache::get_login_header(&source.book_source_url)
+        {
+            if let Ok(map) = serde_json::from_str::<HashMap<String, String>>(&login_header_json) {
+                headers.extend(map);
+            }
+        }
+    }
+
+    legado_fetcher::web_book::strip_proxy_header(&mut headers);
+    headers.retain(|key, _| !key.eq_ignore_ascii_case(legado_net::COOKIE_JAR_HEADER));
+
+    if headers.is_empty() {
+        None
+    } else {
+        Some(headers)
+    }
+}
+
+/// 按书源 URL 解析播放请求头（源缺失/DB 异常 → 无头，播放不受阻断）
+fn playback_headers_for_source(
+    source_url: &str,
+    play_url: &str,
+) -> Option<HashMap<String, String>> {
+    if source_url.trim().is_empty() {
+        return None;
+    }
+    let source =
+        with_database(|db| BookSourceRepository::new(db.connection()).find_by_url(source_url))
+            .ok()
+            .flatten()?;
+    playback_headers(&source, play_url)
+}
+
 /// 音频章节取址（对齐 `AudioPlay.loadRemotePlayUrl` + `contentLoadFinish`）
 ///
 /// 1. 查章节；卷章返回 `isVolume=true`、空 `mediaUrl`
@@ -171,6 +239,7 @@ pub fn get_audio_chapter_media(
             from_cache: false,
             lyric,
             source_url: String::new(),
+            headers: None,
         });
     }
 
@@ -190,6 +259,8 @@ pub fn get_audio_chapter_media(
     if let Some(cached_chapter) = cached {
         let media_url = cached_chapter.content.trim().to_string();
         if !media_url.is_empty() {
+            // 缓存正文是**远程播放地址**（不是本地文件），防盗链头同样需要
+            let headers = playback_headers_for_source(&source_url, &media_url);
             return Ok(AudioChapterMedia {
                 chapter_index: chapter.index,
                 title: chapter.title.clone(),
@@ -200,6 +271,7 @@ pub fn get_audio_chapter_media(
                 from_cache: true,
                 lyric,
                 source_url,
+                headers,
             });
         }
     }
@@ -221,6 +293,7 @@ pub fn get_audio_chapter_media(
             from_cache: false,
             lyric,
             source_url,
+            headers: None,
         });
     }
 
@@ -271,6 +344,8 @@ pub fn get_audio_chapter_media(
         &media_url,
     );
 
+    let headers = playback_headers(&source, &media_url);
+
     Ok(AudioChapterMedia {
         chapter_index: chapter.index,
         title: chapter.title,
@@ -281,6 +356,7 @@ pub fn get_audio_chapter_media(
         from_cache: false,
         lyric,
         source_url,
+        headers,
     })
 }
 
@@ -561,5 +637,241 @@ mod tests {
             Some(big_lyric.as_str()),
             "variable 未命中时应回退大数据文件读回长歌词"
         );
+    }
+
+    // ─── 播放请求头（§2.26 headers 字段，批 1）──────────────────────────────
+
+    /// 播种「音频书 + 单章 + 内容缓存命中」的最小数据集
+    ///
+    /// 走缓存命中路径（不触网），`play_url` 即缓存正文（远程播放地址）。
+    fn seed_cached_audio_book(book_url: &str, source_url: &str, chapter_url: &str, play_url: &str) {
+        with_database(|db| {
+            BookRepository::new(db.connection()).insert(&Book {
+                book_url: book_url.to_string(),
+                name: "听书头测试".into(),
+                origin: source_url.to_string(),
+                ..Default::default()
+            })?;
+            BookChapterRepository::new(db.connection()).insert(&BookChapter {
+                book_url: book_url.to_string(),
+                index: 0,
+                title: "第1集".into(),
+                url: chapter_url.to_string(),
+                ..Default::default()
+            })?;
+            CacheBookRepository::new(db.connection()).insert(&CachedChapter {
+                id: 0,
+                book_url: book_url.to_string(),
+                chapter_index: 0,
+                chapter_title: "第1集".into(),
+                chapter_url: chapter_url.to_string(),
+                content: play_url.to_string(),
+                cached_at: 1,
+                size_bytes: play_url.len() as i64,
+            })?;
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    fn seed_source(source_url: &str, header_json: Option<&str>) {
+        with_database(|db| {
+            BookSourceRepository::new(db.connection()).insert(&BookSource {
+                book_source_url: source_url.to_string(),
+                book_source_name: "听书源".into(),
+                header: header_json.map(str::to_string),
+                ..Default::default()
+            })
+        })
+        .unwrap();
+    }
+
+    /// 书源 header 必须随返回 JSON 一并回传（播放器靠它过防盗链）
+    #[test]
+    fn test_audio_chapter_media_returns_source_headers() {
+        let _store = crate::test_support::lock_global_store();
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "http://test.audio/headers-book";
+        let source_url = "http://test.audio/headers-source";
+        let chapter_url = "http://test.audio/headers-ch/0";
+        let play_url = "http://test.audio/headers-cdn/ep0.m3u8?token=t";
+
+        seed_source(
+            source_url,
+            Some(r#"{"Referer":"http://test.audio/","X-Token":"abc"}"#),
+        );
+        seed_cached_audio_book(book_url, source_url, chapter_url, play_url);
+
+        let media = get_audio_chapter_media(book_url, 0).unwrap();
+        let headers = media
+            .headers
+            .as_ref()
+            .expect("书源 header 应随返回 JSON 回传");
+        assert_eq!(
+            headers.get("Referer").map(String::as_str),
+            Some("http://test.audio/")
+        );
+        assert_eq!(headers.get("X-Token").map(String::as_str), Some("abc"));
+
+        // 序列化形态：JSON 键名 `headers`，且旧字段不受影响
+        let json = serde_json::to_value(&media).unwrap();
+        assert_eq!(json["headers"]["X-Token"], "abc");
+        assert_eq!(json["mediaUrl"], play_url);
+    }
+
+    /// 同站登录头合并进播放头（覆盖同名键，对齐 loginHeader 在后）
+    #[test]
+    fn test_audio_chapter_media_merges_same_site_login_header() {
+        let _store = crate::test_support::lock_global_store();
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "http://test.audio/login-book";
+        let source_url = "http://test.audio/login-source";
+        let chapter_url = "http://test.audio/login-ch/0";
+        // 播放地址与书源同站（test.audio）
+        let play_url = "http://test.audio/login-cdn/ep0.m3u8";
+
+        seed_source(
+            source_url,
+            Some(r#"{"X-Token":"static","Referer":"http://test.audio/"}"#),
+        );
+        seed_cached_audio_book(book_url, source_url, chapter_url, play_url);
+        crate::api::source_login_cache::put_login_header(
+            source_url,
+            r#"{"X-Token":"login","Authorization":"Bearer t"}"#,
+        )
+        .unwrap();
+
+        let media = get_audio_chapter_media(book_url, 0).unwrap();
+        let headers = media.headers.expect("同站播放应合并登录头");
+        assert_eq!(
+            headers.get("X-Token").map(String::as_str),
+            Some("login"),
+            "登录头应在书源静态头之后合并（同名覆盖）"
+        );
+        assert_eq!(
+            headers.get("Authorization").map(String::as_str),
+            Some("Bearer t")
+        );
+        assert_eq!(
+            headers.get("Referer").map(String::as_str),
+            Some("http://test.audio/"),
+            "静态头未被登录头覆盖的键应保留"
+        );
+
+        crate::api::source_login_cache::remove_login_header(source_url).unwrap();
+    }
+
+    /// 跨站播放地址（第三方 CDN）不得携带登录头（原版 #1099 同站门控）
+    #[test]
+    fn test_audio_chapter_media_omits_login_header_for_cross_site_url() {
+        let _store = crate::test_support::lock_global_store();
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "http://test.audio/cross-book";
+        let source_url = "http://test.audio/cross-source";
+        let chapter_url = "http://test.audio/cross-ch/0";
+        // 播放地址在第三方 CDN（不同 eTLD+1）
+        let play_url = "http://cdn.other-domain.net/cross/ep0.m3u8";
+
+        seed_source(source_url, Some(r#"{"Referer":"http://test.audio/"}"#));
+        seed_cached_audio_book(book_url, source_url, chapter_url, play_url);
+        crate::api::source_login_cache::put_login_header(
+            source_url,
+            r#"{"Authorization":"Bearer secret"}"#,
+        )
+        .unwrap();
+
+        let media = get_audio_chapter_media(book_url, 0).unwrap();
+        let headers = media.headers.expect("静态头仍应回传");
+        assert!(
+            !headers.contains_key("Authorization"),
+            "跨站播放地址不得携带登录认证头: {headers:?}"
+        );
+        assert_eq!(
+            headers.get("Referer").map(String::as_str),
+            Some("http://test.audio/")
+        );
+
+        crate::api::source_login_cache::remove_login_header(source_url).unwrap();
+    }
+
+    /// `proxy`（代理配置伪头）与内部 CookieJar 标记头都不得进播放头
+    #[test]
+    fn test_audio_chapter_media_strips_proxy_and_cookie_jar_marker() {
+        let _store = crate::test_support::lock_global_store();
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "http://test.audio/strip-book";
+        let source_url = "http://test.audio/strip-source";
+        let chapter_url = "http://test.audio/strip-ch/0";
+        let play_url = "http://test.audio/strip-cdn/ep0.mp3";
+
+        seed_source(
+            source_url,
+            Some(r#"{"proxy":"http://u:p@h:1","CookieJar":"1","X-Keep":"v"}"#),
+        );
+        seed_cached_audio_book(book_url, source_url, chapter_url, play_url);
+
+        let media = get_audio_chapter_media(book_url, 0).unwrap();
+        let headers = media.headers.expect("其余头应回传");
+        assert!(
+            !headers.contains_key("proxy"),
+            "代理配置键不得当 HTTP 头: {headers:?}"
+        );
+        assert!(
+            !headers.keys().any(|k| k.eq_ignore_ascii_case("cookiejar")),
+            "内部 CookieJar 标记头不得泄漏给播放器: {headers:?}"
+        );
+        assert_eq!(headers.get("X-Keep").map(String::as_str), Some("v"));
+    }
+
+    /// 无书源 header 时 `headers` 键整体省略（旧 JSON 形状不变）
+    #[test]
+    fn test_audio_chapter_media_omits_headers_key_when_absent() {
+        let _store = crate::test_support::lock_global_store();
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "http://test.audio/no-headers-book";
+        let source_url = "http://test.audio/no-headers-source";
+        let chapter_url = "http://test.audio/no-headers-ch/0";
+        let play_url = "http://test.audio/no-headers-cdn/ep0.mp3";
+
+        seed_source(source_url, None);
+        seed_cached_audio_book(book_url, source_url, chapter_url, play_url);
+
+        let media = get_audio_chapter_media(book_url, 0).unwrap();
+        assert!(media.headers.is_none());
+        let json = serde_json::to_value(&media).unwrap();
+        assert!(
+            json.get("headers").is_none(),
+            "无头时不得输出 headers 键（保持旧返回形状）: {json}"
+        );
+    }
+
+    /// 无书源回退路径（origin 为空）不得编造 headers
+    #[test]
+    fn test_audio_chapter_media_no_source_has_no_headers() {
+        let _store = crate::test_support::lock_global_store();
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "http://test.audio/fallback-no-headers";
+        let chapter_url = "http://test.audio/fallback-ch/0";
+
+        with_database(|db| {
+            BookRepository::new(db.connection()).insert(&Book {
+                book_url: book_url.to_string(),
+                name: "无源听书".into(),
+                origin: String::new(),
+                ..Default::default()
+            })?;
+            BookChapterRepository::new(db.connection()).insert(&BookChapter {
+                book_url: book_url.to_string(),
+                index: 0,
+                title: "第1集".into(),
+                url: chapter_url.to_string(),
+                ..Default::default()
+            })?;
+            Ok(())
+        })
+        .unwrap();
+
+        let media = get_audio_chapter_media(book_url, 0).unwrap();
+        assert!(media.headers.is_none());
     }
 }
