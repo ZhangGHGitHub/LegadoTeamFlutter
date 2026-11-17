@@ -469,6 +469,10 @@ mod tests {
 
     #[test]
     fn test_open_video_player_bridge_payload() {
+        // flow scope 是进程级状态，须与 book_url_under_scope 系列串行且先清空
+        let _lock = super::super::variable_store::lock_variables();
+        let _guard = super::super::variable_store::StoreGuard::new();
+        super::super::variable_store::clear_flow_scope().expect("清 flow scope");
         let payload = open_video_player("http://v.com/x.mp4", "第1集", false);
         let parsed: serde_json::Value = serde_json::from_str(&payload).unwrap();
         assert_eq!(parsed["action"], "openVideoPlayer");
@@ -481,6 +485,10 @@ mod tests {
 
     #[test]
     fn test_open_video_player_float_flag() {
+        // 同上：与 book_url_under_scope 系列共享进程级 flow scope，须串行
+        let _lock = super::super::variable_store::lock_variables();
+        let _guard = super::super::variable_store::StoreGuard::new();
+        super::super::variable_store::clear_flow_scope().expect("清 flow scope");
         let payload = open_video_player("http://v.com/y.m3u8", "", true);
         let parsed: serde_json::Value = serde_json::from_str(&payload).unwrap();
         assert_eq!(parsed["isFloat"], true);
