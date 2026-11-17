@@ -189,6 +189,25 @@ void main() {
     );
   });
 
+  // 播放链读取面（P0，契约 §2.47 audioCacheGetFile）：
+  // 章节由 bookUrl+chapterIndex 定位（键由 Rust 自 DB 载入后计算），
+  // 本运行时测试无 DB 书籍上下文 → 一律降级 null（不抛异常）。
+  // 命中返回绝对路径的正向链路由 Rust 单测
+  // `get_file_returns_committed_path_or_none` 覆盖（含 DB 夹具）。
+  test('播放链读取面 FFI 可达：无 DB 章节上下文降级 null（不抛）', () async {
+    await writeCacheFile(dataName(1, _kKey16, 'mp3'), marker: true);
+    expect(
+      await api.audioCacheGetFile(bookUrl: _kBookUrl, chapterIndex: 1),
+      isNull,
+      reason: '章节不在 DB 时按未缓存降级，调用方回落在线取流',
+    );
+    expect(
+      await api.audioCacheGetFile(bookUrl: '  ', chapterIndex: 0),
+      isNull,
+      reason: '空白 bookUrl 直接降级，不得抛异常',
+    );
+  });
+
   test('清理单章：返回删除数（仅数据文件，不计 .complete）、幂等、不触碰其他章节', () async {
     final target = dataName(1, _kKey16, 'mp3');
     final otherKey = _kTitleKey16;

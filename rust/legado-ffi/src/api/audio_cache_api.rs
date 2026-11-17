@@ -287,7 +287,10 @@ fn is_committed(names: &HashSet<&str>, name: &str, meta: &fs::Metadata) -> bool 
 /// 该书目录下指定 key 的最新已提交缓存数据文件（文件名 + 元数据）
 /// （对齐原版 `findCachedFile` L201-203：`maxByOrNull { it.lastModified }`；
 /// `lastModified` 不可得时按 UNIX_EPOCH 参与比较，不 panic）
-fn latest_committed_file(dir: &Path, key16: &str) -> Option<(String, fs::Metadata)> {
+///
+/// 播放链读取面（[`audio_cache_get_file`]）与本模块其余读面共用此命中判定；
+/// 可见性提到 `pub(crate)` 供后续批次的播放链复用，语义不变。
+pub(crate) fn latest_committed_file(dir: &Path, key16: &str) -> Option<(String, fs::Metadata)> {
     let files = read_dir_entries(dir);
     let names: HashSet<&str> = files.iter().map(|(n, _)| n.as_str()).collect();
     let mut best: Option<(String, SystemTime, fs::Metadata)> = None;
@@ -318,6 +321,37 @@ pub fn audio_cache_query(
 ) -> bool {
     let key16 = cache_key16(chapter_url, chapter_title);
     latest_committed_file(&book_dir(book_url), &key16).is_some()
+}
+
+/// 取某章已缓存音频文件的本地绝对路径（契约 §2.47 `audioCacheGetFile`，只读、幂等）
+///
+/// **播放链读取面（P0，2026-11-18）**：对齐原版 `AudioPlay.kt:388-423` 播放第一步
+/// `AudioCacheManager.getCachedAudio(...)`——命中即完全跳网络。此前本仓播放链
+/// 只走「DB 文本缓存 → 网络取址」，预下载产物永远不会被播放使用。
+///
+/// 入参只给 `book_url + chapter_index`（Dart `AudioChapter` 不含 `chapterUrl`）：
+/// 键所需的 `chapter.url / chapter.title` 由本函数自 DB 载入章节后按既有
+/// [`cache_key16`] 规则计算，与 `audioCacheQuery` / `audioCacheDownload` 完全同源。
+///
+/// 命中判定与 [`audio_cache_query`] 完全一致（key 匹配 + `.complete` 存在 +
+/// `size > 0`，同名多条取 `lastModified` 最新），命中返回数据文件**绝对路径**。
+///
+/// 失败一律降级 `None`（书/章不在 DB、目录不存在、无权限、解析异常）——
+/// **不抛异常**：缓存是加速器不是数据源，调用方回落在线取流（同 §2.47 口径）。
+/// **只读**：不改文件、不写 `.complete`（写入仍唯一发生于 §2.48 预下载）。
+pub fn audio_cache_get_file(book_url: &str, chapter_index: i32) -> Option<String> {
+    if kotlin_is_blank(book_url) {
+        return None;
+    }
+    let chapter = with_database(|db| {
+        BookChapterRepository::new(db.connection())
+            .find_by_book_url_and_index(book_url, chapter_index)
+    })
+    .ok()??;
+    let key16 = cache_key16(&chapter.url, &chapter.title);
+    let dir = book_dir(book_url);
+    let (name, _meta) = latest_committed_file(&dir, &key16)?;
+    Some(dir.join(name).to_string_lossy().into_owned())
 }
 
 /// 列出该书已缓存章节下标（契约 §2.47 `audioCacheList`，只读、幂等）
@@ -1304,6 +1338,54 @@ mod tests {
             "hello",
             "第一章"
         ));
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // 播放链读取面（P0）：命中返回本地绝对路径；无 .complete / 被清理 / 章节不在 DB → None
+    #[test]
+    fn get_file_returns_committed_path_or_none() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("get-file");
+        set_test_root(&root);
+        let book_url = "https://a.com/book/get-file";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let dir = book_dir(book_url);
+        let name = valid_name(0, KEY_HELLO, "mp3");
+
+        // 目录不存在 / 无缓存文件 → None
+        assert_eq!(audio_cache_get_file(book_url, 0), None);
+
+        // 无 `.complete` 标记 → None（原版眼中即不存在）
+        write_cache_file(&dir, &name, 16, false);
+        assert_eq!(audio_cache_get_file(book_url, 0), None);
+
+        // 补标记后 → 命中，返回绝对路径且指向该文件
+        write_cache_file(&dir, &name, 16, true);
+        let path = audio_cache_get_file(book_url, 0).expect("已提交缓存应命中");
+        assert!(path.ends_with(&name), "返回路径应以文件名结尾: {path}");
+        assert!(
+            Path::new(&path).is_absolute(),
+            "返回路径应为绝对路径: {path}"
+        );
+        assert!(Path::new(&path).is_file(), "返回路径应真实存在: {path}");
+
+        // 清理后 → None（与 audio_cache_query 同步转假）
+        audio_cache_clear_book(book_url);
+        assert_eq!(audio_cache_get_file(book_url, 0), None);
+
+        // 章节不在 DB → None（不 panic、不抛错）
+        assert_eq!(audio_cache_get_file(book_url, 99), None);
+        // 空白 bookUrl → None
+        assert_eq!(audio_cache_get_file("  ", 0), None);
+
         clear_test_root();
         let _ = fs::remove_dir_all(&root);
     }

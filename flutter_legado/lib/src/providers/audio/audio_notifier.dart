@@ -911,17 +911,46 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     await _playTtsParagraphs(paragraphIndex: paragraphIndex);
   }
 
+  /// 查询某章音频缓存的本地文件路径（播放链读取面，契约 §2.47）
+  ///
+  /// [P0 | 2026-11-18] 对齐原版 `AudioPlay.kt:388-423` 播放第一步
+  /// `AudioCacheManager.getCachedAudio(...)`：命中即播本地文件、完全跳网络。
+  /// 未命中 / 实现抛异常一律按「未缓存」处理返回 `null`（缓存是加速器
+  /// 不是数据源，回落在线取流）。
+  Future<String?> _getCachedAudioPath(String bookUrl, int chapterIndex) async {
+    try {
+      final path = await _api.audioCacheGetFile(
+        bookUrl: bookUrl,
+        chapterIndex: chapterIndex,
+      );
+      final trimmed = path?.trim();
+      return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
+    } catch (e) {
+      debugPrint('[audio-cache] 查询第 $chapterIndex 章缓存失败（按未缓存处理）：$e');
+      return null;
+    }
+  }
+
   Future<void> _playAudioBookStream() async {
     state = state.copyWith(state: PlayerState.loading, errorMessage: null);
     final token = ++_playToken;
     try {
       var index = state.currentIndex;
       while (index < state.chapters.length) {
-        final media = await _api.getAudioChapterMedia(state.bookUrl, index);
+        // [P0 | 2026-11-18] 播放链优先读音频缓存（契约 §2.47
+        // `audioCacheGetFile`）：预下载产物此前永不被播放使用——原版
+        // `AudioPlay.kt:388-423` 播放第一步查缓存、**命中即完全跳网络**
+        // （连取址都不发；歌词来自章节 variable，见原版同段）。
+        final cachedPath = await _getCachedAudioPath(state.bookUrl, index);
         if (token != _playToken || _disposed) return;
-        final isVolume = media['isVolume'] == true;
-        final mediaUrl = (media['mediaUrl'] as String?)?.trim() ?? '';
-        if (isVolume || mediaUrl.isEmpty) {
+        // 命中缓存 → media 为 null（跳过取址）；未命中 → 走原网络取址链
+        final media = cachedPath == null
+            ? await _api.getAudioChapterMedia(state.bookUrl, index)
+            : null;
+        if (token != _playToken || _disposed) return;
+        final isVolume = media?['isVolume'] == true;
+        final mediaUrl = (media?['mediaUrl'] as String?)?.trim() ?? '';
+        if (isVolume || (mediaUrl.isEmpty && cachedPath == null)) {
           if (index + 1 >= state.chapters.length) {
             state = state.copyWith(
               errorMessage: (!isVolume && mediaUrl.isEmpty)
@@ -935,7 +964,10 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
           state = state.copyWith(currentIndex: index);
           continue;
         }
-        final lyric = (media['lyric'] as String?)?.trim();
+        // 命中缓存时不发取址请求，media 为 null：歌词暂缺（原版歌词来自章节
+        // variable，属另一条链）、mediaUrl 保持空串。空 mediaUrl 的「复制播放
+        // 地址」入口自身会回落 getAudioChapterMedia（audio_screen 既有逻辑）。
+        final lyric = (media?['lyric'] as String?)?.trim();
         state = state.copyWith(
           currentIndex: index,
           mediaUrl: mediaUrl,
@@ -946,11 +978,54 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
         );
         // [P1] 绑定本章归属：播放器在进度/完成回调中原样回传，切章后旧播放器
         // 迟到的回调据此被丢弃，不会写进新章进度键
-        await _streamPlayer.playUrl(
-          mediaUrl,
-          speed: state.config.speed,
-          tag: (bookUrl: state.bookUrl, chapterIndex: index),
-        );
+        final tag = (bookUrl: state.bookUrl, chapterIndex: index);
+        var playedLocally = false;
+        if (cachedPath != null) {
+          try {
+            // 缓存文件是完整音频（.complete + size>0 已校验），语速仍由播放器应用
+            await _streamPlayer.playLocalFile(
+              cachedPath,
+              speed: state.config.speed,
+              tag: tag,
+            );
+            playedLocally = true;
+          } catch (e) {
+            // 文件在查询与播放之间被清理/损坏：回落在线取流（缓存是加速器）
+            debugPrint('[audio-cache] 第 $index 章本地缓存播放失败，回落在线: $e');
+          }
+        }
+        if (!playedLocally) {
+          // 未命中缓存（mediaUrl 已就绪）直接用；命中缓存但本地播放失败
+          // （文件被清理/损坏）→ 现场补取网络地址，缓存是加速器不是数据源。
+          var fallbackUrl = mediaUrl;
+          if (fallbackUrl.isEmpty) {
+            try {
+              final fallbackMedia =
+                  await _api.getAudioChapterMedia(state.bookUrl, index);
+              fallbackUrl =
+                  (fallbackMedia['mediaUrl'] as String?)?.trim() ?? '';
+            } catch (e) {
+              debugPrint('[audio-cache] 第 $index 章回落取址失败: $e');
+            }
+            if (token != _playToken || _disposed) return;
+          }
+          if (fallbackUrl.isEmpty) {
+            // 本地播放失败且没有网络地址可回落：与「未获取到资源链接」同语义
+            state = state.copyWith(
+              errorMessage: '未获取到资源链接',
+              state: PlayerState.error,
+            );
+            return;
+          }
+          if (mediaUrl.isEmpty) {
+            state = state.copyWith(mediaUrl: fallbackUrl);
+          }
+          await _streamPlayer.playUrl(
+            fallbackUrl,
+            speed: state.config.speed,
+            tag: tag,
+          );
+        }
         if (token != _playToken || _disposed) return;
         await _syncMediaSession();
         _introSkipEvaluated = false;

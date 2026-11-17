@@ -1293,6 +1293,23 @@ abstract class BookApi {
   /// [B1 | 2026-10-04] 加法式新增（契约 §2.47 audio_cache FFI）。
   Future<int> audioCacheClearBook({required String bookUrl});
 
+  /// 取某章已缓存音频文件的本地绝对路径（只读、幂等，契约 §2.47 `audioCacheGetFile`）
+  ///
+  /// **播放链读取面**（对齐原版 `AudioPlay.kt:388-423` 播放第一步
+  /// `AudioCacheManager.getCachedAudio`）：命中即完全跳网络、直接播本地文件。
+  /// 命中判定与 [audioCacheQuery] 完全同源（`key16` 匹配 + `.complete` 存在 +
+  /// size>0，同名多条取 `lastModified` 最新），键所需的章节 URL/标题由 Rust
+  /// 自 DB 载入章节后计算（Dart 侧无需传 `chapterUrl`）。
+  ///
+  /// 未命中 / 书或章不在 DB / 目录不可读一律返回 `null`（**不抛异常**，
+  /// 调用方回落在线取流）。**只读**：不写缓存（写入仍唯一发生于
+  /// [audioCacheDownload]）。
+  /// [P0 | 2026-11-18] 加法式新增（契约 §2.47 播放链读取面）。
+  Future<String?> audioCacheGetFile({
+    required String bookUrl,
+    required int chapterIndex,
+  });
+
   // ========== 音频章节预下载写入面（对齐原版 AudioCacheService + AudioCacheManager，契约 §2.48） ==========
 
   /// 单章音频预下载安装（幂等，契约 §2.48 `audioCacheDownload`）

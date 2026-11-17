@@ -1979,6 +1979,26 @@ Future<bool> audioCacheQuery({
   chapterTitle: chapterTitle,
 );
 
+/// 取某章已缓存音频文件的本地绝对路径（P0，API_CONTRACT §2.47）
+///
+/// **播放链读取面**：对齐原版 `AudioPlay.kt:388-423` 播放第一步
+/// `AudioCacheManager.getCachedAudio(...)`——命中即完全跳网络。键所需的
+/// `chapter.url / chapter.title` 由 Rust 自 DB 载入章节后按 `cache_key16`
+/// 计算（Dart `AudioChapter` 不含 chapterUrl），与 `audio_cache_query` 同源。
+/// 命中判定同 `audio_cache_query`（key 匹配 + `.complete` + size>0，同名
+/// 多条取 lastModified 最新），命中返回数据文件绝对路径。
+///
+/// 只读、幂等；书/章不在 DB、目录不可读、解析异常一律降级 `Ok(None)`，
+/// **不抛异常**（缓存是加速器不是数据源，调用方回落在线取流）。
+/// **不写缓存**：写入仍唯一发生于 `audio_cache_download`（§2.48）。
+Future<String?> audioCacheGetFile({
+  required String bookUrl,
+  required int chapterIndex,
+}) => RustLib.instance.api.crateFfiFfiAudioCacheGetFile(
+  bookUrl: bookUrl,
+  chapterIndex: chapterIndex,
+);
+
 /// 列出音频书已缓存章节下标（B1，API_CONTRACT §2.47）
 ///
 /// 扫描书目录五段式文件名，仅收录通过 `.complete` + size>0 校验的条目，
@@ -2264,6 +2284,13 @@ Future<String> backupCreate({required String path, String? password}) => RustLib
 /// 契约 §2.11（批17a）：`password` 仅对原版 zip 备份生效，`None`/空串
 /// 等价空密码；我方单文件 JSON 备份忽略该参数。密码缺失/错误时返回带
 /// `BACKUP_PASSWORD_REQUIRED:` / `BACKUP_PASSWORD_INVALID:` 前缀的错误文本。
+///
+/// [P1-3 批10 审查] 恢复成功后显式重载运行时变量/登录缓存内存：恢复体
+/// 写完 `caches` 行后会 `clear_source_variables()`（对齐上游
+/// `Restore.kt:415`），此前内存清空后要等进程重启才由
+/// `backfill_from_sink` 补回——期间 `source.get()` / `getLoginHeader()`
+/// 全部读空（且登录头继续用旧值）。此处「先清登录缓存层、再回填五族」
+/// 使恢复值**立即**对引擎与请求路径可见。
 Future<String> backupRestore({required String path, String? password}) =>
     RustLib.instance.api.crateFfiFfiBackupRestore(
       path: path,

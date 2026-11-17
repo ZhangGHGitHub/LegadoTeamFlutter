@@ -29,6 +29,32 @@ class MockRustApi extends Mock implements RustApi {
         await (this as dynamic).getChapters(bookUrl) as List<BookChapter>;
     return (chapters: chapters, usedCustomRule: false);
   }
+
+  /// [P0 | 2026-11-18] 音频缓存读取面默认「未命中」（返回 null）
+  ///
+  /// 播放链 `_playAudioBookStream` 起播前必调本方法；未覆写时 mocktail 会抛
+  /// 「missing stub」，使所有流媒体用例（含既有回归）假失败。默认 null =
+  /// 走原网络路径，与改造前行为一致。
+  ///
+  /// 注意必须**委托 `super.noSuchMethod`**（不能写死 `=> null`）：mocktail 的
+  /// `when()` 依赖该路径登记桩，写死实现会让测试无法覆写（`when` 报
+  /// 「No method stub was called」）。
+  @override
+  Future<String?> audioCacheGetFile({
+    required String bookUrl,
+    required int chapterIndex,
+  }) {
+    final result = super.noSuchMethod(
+      Invocation.method(#audioCacheGetFile, const [], {
+        #bookUrl: bookUrl,
+        #chapterIndex: chapterIndex,
+      }),
+    );
+    if (result is Future) {
+      return result.then((value) => value as String?);
+    }
+    return Future<String?>.value(null);
+  }
 }
 
 /// 带 servers 表内存实现的 RustApi Mock（批8）

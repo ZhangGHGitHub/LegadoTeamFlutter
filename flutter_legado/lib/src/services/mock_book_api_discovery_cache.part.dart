@@ -443,6 +443,20 @@ mixin MockBookApiDiscoveryCache on MockBookApiStore implements BookApi {
     return count;
   }
 
+  /// [P0 | 2026-11-18] mock 播放链读取面：命中返回伪本地路径
+  /// （`/mock/audio_cache/{bookUrl 去协议}/{chapterIndex}.mp3`），未命中 `null`。
+  /// 与 [audioCacheQuery] 同一内存态，保证「查询命中 ⇔ 取文件非空」。
+  @override
+  Future<String?> audioCacheGetFile({
+    required String bookUrl,
+    required int chapterIndex,
+  }) async {
+    final cached = _audioCacheIndexes[bookUrl]?.contains(chapterIndex) ?? false;
+    if (!cached) return null;
+    final safeBook = bookUrl.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    return '/mock/audio_cache/$safeBook/$chapterIndex.mp3';
+  }
+
   /// [B2 | 2026-10-03] mock 单章预下载：内存态记录（已缓存 → already_cached；
   /// 否则 installed），JSON 形状与 Rust 侧一致。mock 无网络/无字节。
   @override

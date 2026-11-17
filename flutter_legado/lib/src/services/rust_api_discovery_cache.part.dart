@@ -520,6 +520,25 @@ mixin RustApiDiscoveryCache on RustApiDecode implements BookApi {
     }
   }
 
+  /// [P0 | 2026-11-18] 接通 audio_cache_get_file FFI（契约 §2.47 播放链读取面）：
+  /// 命中返回本地音频文件绝对路径，未命中/异常统一降级 `null`
+  /// （调用方回落在线取流，缓存是加速器不是数据源）。
+  @override
+  Future<String?> audioCacheGetFile({
+    required String bookUrl,
+    required int chapterIndex,
+  }) async {
+    try {
+      return await bridge.audioCacheGetFile(
+        bookUrl: bookUrl,
+        chapterIndex: chapterIndex,
+      );
+    } catch (e) {
+      debugPrint('[RustApi] audioCacheGetFile 失败（降级在线播放）：$e');
+      return null;
+    }
+  }
+
   // ========== 音频章节预下载写入面（契约 §2.48） ==========
 
   /// [B2 | 2026-10-03] 接通 audio_cache_download FFI（契约 §2.48）：

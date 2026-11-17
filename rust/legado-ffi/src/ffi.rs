@@ -2504,6 +2504,28 @@ pub mod ffi {
         ))
     }
 
+    /// 取某章已缓存音频文件的本地绝对路径（P0，API_CONTRACT §2.47）
+    ///
+    /// **播放链读取面**：对齐原版 `AudioPlay.kt:388-423` 播放第一步
+    /// `AudioCacheManager.getCachedAudio(...)`——命中即完全跳网络。键所需的
+    /// `chapter.url / chapter.title` 由 Rust 自 DB 载入章节后按 `cache_key16`
+    /// 计算（Dart `AudioChapter` 不含 chapterUrl），与 `audio_cache_query` 同源。
+    /// 命中判定同 `audio_cache_query`（key 匹配 + `.complete` + size>0，同名
+    /// 多条取 lastModified 最新），命中返回数据文件绝对路径。
+    ///
+    /// 只读、幂等；书/章不在 DB、目录不可读、解析异常一律降级 `Ok(None)`，
+    /// **不抛异常**（缓存是加速器不是数据源，调用方回落在线取流）。
+    /// **不写缓存**：写入仍唯一发生于 `audio_cache_download`（§2.48）。
+    pub fn audio_cache_get_file(
+        book_url: String,
+        chapter_index: i32,
+    ) -> Result<Option<String>, BridgeError> {
+        Ok(crate::api::audio_cache_api::audio_cache_get_file(
+            &book_url,
+            chapter_index,
+        ))
+    }
+
     /// 列出音频书已缓存章节下标（B1，API_CONTRACT §2.47）
     ///
     /// 扫描书目录五段式文件名，仅收录通过 `.complete` + size>0 校验的条目，
