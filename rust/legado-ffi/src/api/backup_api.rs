@@ -586,8 +586,13 @@ fn json_parse_kind(parsed: &Result<serde_json::Value, serde_json::Error>) -> &'s
 
 /// 恢复统计
 ///
-/// 说明：字段集合为 v1 既有六类计数，保持 FFI 返回 JSON 形状不变
-/// （v2 扩表恢复不新增计数，失败明细走 warn 日志，规避对外结构变更）。
+/// 说明：前六个字段为 v1 既有计数，保持既有 JSON 形状不变（v2 扩表恢复不
+/// 新增计数，失败明细走 warn 日志，规避对外结构变更）。
+///
+/// **P1-5（2026-11-17 审查）追加 `skippedServerConfigs`**（加法式）：自有 JSON
+/// 备份中 `servers[].config` 因「未提供备份密码 / 密码错误」而未能解密时，
+/// 恢复侧**保留库内既有配置**（不清空），并在此计数。Dart 侧据此把「恢复
+/// 成功」改判为「部分配置未恢复」，避免用户以为凭据已丢失/已恢复。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RestoreStats {
     pub books: usize,
@@ -596,6 +601,9 @@ pub struct RestoreStats {
     pub book_sources: usize,
     pub rss_sources: usize,
     pub read_records: usize,
+    /// 因密码缺失/错误而保留库内既有值的服务器配置条数（P1-5）
+    #[serde(default, rename = "skippedServerConfigs")]
+    pub skipped_server_configs: usize,
 }
 
 /// 创建备份到指定路径（无密码旧入口）
@@ -930,22 +938,54 @@ fn encrypt_json_backup_fields(backup: &mut BackupData, password: &str) -> Legado
     Ok(())
 }
 
+/// 自有 JSON 备份字段级解密的统计（批44；P1-5 回修追加跳过计数）
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct JsonDecryptOutcome {
+    /// 成功解密的字段数
+    decrypted: usize,
+    /// 因「无密码 / 解密失败」而**摘除 `config` 键**的服务器条目数
+    ///
+    /// 摘除键（而非写 null）是 P1-5 的核心：恢复侧据「键缺失」保留库内
+    /// 既有值，绝不清空本机 WebDAV 凭据。
+    skipped_server_configs: usize,
+    /// 直链上传规则是否因「无密码 / 解密失败」被跳过
+    skipped_direct_link_rule: bool,
+}
+
+/// 从服务器条目中摘除 `config` 键（P1-5）
+///
+/// **必须删键而不是写 `Value::Null`**：`Server::config` 是
+/// `Option<String>`，null 与缺键都反序列化成 `None`；但恢复侧按**原始
+/// JSON 键存在性**区分「备份没带这个字段」（→ 保留库内既有值）与
+/// 「备份明确给了值」（→ 覆盖）。写 null 会让 `INSERT OR REPLACE` 把
+/// 本机 WebDAV 明文密码整行抹成 NULL（数据丢失）。
+fn drop_server_config_key(server: &mut serde_json::Value) {
+    if let Some(map) = server.as_object_mut() {
+        map.remove("config");
+    }
+}
+
 /// 解密自有 JSON 备份中带 `ENC:` 前缀的字段（批44，恢复侧）
 ///
 /// **fail-closed**：带前缀但无密码/解密失败/解出非 UTF-8 → 该条目只记 warn
-/// 并**清空该字段**（不把密文当明文写库）：
-/// - `servers[].config` 置 null（服务器条目其余列照常恢复）；
-/// - `direct_link_upload_rule` 置 `None`（库内既有配置保持不变）。
+/// 并**摘除该字段**（不把密文当明文写库，也不清空库内既有值）：
+/// - `servers[].config` 删除该键（服务器条目其余列照常恢复；恢复侧见
+///   「键缺失 → 保留库内既有 config」，P1-5）；
+/// - `direct_link_upload_rule` 置 `None`（恢复侧对 `None` 零写入，库内
+///   既有配置保持不变）。
 ///
 /// 不带前缀的字段原样保留——这保证「新版本读旧备份」零变化。
-/// 返回值仅用于日志（成功解密的条目数）。
-fn decrypt_json_backup_fields(backup: &mut BackupData, password: Option<&str>) -> usize {
+/// 返回值为统计（成功解密数 + 跳过数），供恢复结果告知用户「部分配置未恢复」。
+fn decrypt_json_backup_fields(
+    backup: &mut BackupData,
+    password: Option<&str>,
+) -> JsonDecryptOutcome {
     let Some(password) = password.filter(|p| !p.is_empty()) else {
         // 无密码：把所有带前缀的字段按「解不开」处理（fail-closed）
         return drop_undecryptable_json_fields(backup);
     };
     let cipher = BackupCipher::new(Some(password));
-    let mut decrypted = 0usize;
+    let mut outcome = JsonDecryptOutcome::default();
 
     for server in &mut backup.servers {
         let Some(config) = server.get("config").and_then(|v| v.as_str()) else {
@@ -957,12 +997,13 @@ fn decrypt_json_backup_fields(backup: &mut BackupData, password: Option<&str>) -
         match cipher.decrypt_text(payload) {
             Ok(plain) => {
                 server["config"] = serde_json::Value::String(plain);
-                decrypted += 1;
+                outcome.decrypted += 1;
             }
             Err(e) => {
                 // 只记条目名与错误类型，不打印密文/明文（服务器名可能含敏感信息）
-                log::warn!("服务器配置解密失败（已跳过该条目的 config）: {e}");
-                server["config"] = serde_json::Value::Null;
+                log::warn!("服务器配置解密失败（已跳过该条目的 config，保留库内既有值）: {e}");
+                drop_server_config_key(server);
+                outcome.skipped_server_configs += 1;
             }
         }
     }
@@ -972,24 +1013,25 @@ fn decrypt_json_backup_fields(backup: &mut BackupData, password: Option<&str>) -
             match cipher.decrypt_text(payload) {
                 Ok(plain) => {
                     backup.direct_link_upload_rule = Some(plain);
-                    decrypted += 1;
+                    outcome.decrypted += 1;
                 }
                 Err(e) => {
                     log::warn!("直链上传规则解密失败（已跳过，库内既有配置保持不变）: {e}");
                     backup.direct_link_upload_rule = None;
+                    outcome.skipped_direct_link_rule = true;
                 }
             }
         }
     }
 
-    decrypted
+    outcome
 }
 
 /// 无密码时把所有带 `ENC:` 前缀的字段按「解不开」处理（fail-closed）
 ///
 /// 与 [`decrypt_json_backup_fields`] 的失败分支同语义，抽出避免重复。
-fn drop_undecryptable_json_fields(backup: &mut BackupData) -> usize {
-    let mut dropped = 0usize;
+fn drop_undecryptable_json_fields(backup: &mut BackupData) -> JsonDecryptOutcome {
+    let mut outcome = JsonDecryptOutcome::default();
 
     for server in &mut backup.servers {
         let is_encrypted = server
@@ -997,9 +1039,9 @@ fn drop_undecryptable_json_fields(backup: &mut BackupData) -> usize {
             .and_then(|v| v.as_str())
             .is_some_and(|s| s.starts_with(BACKUP_ENC_PREFIX));
         if is_encrypted {
-            log::warn!("服务器配置已加密但未提供备份密码（已跳过该条目的 config）");
-            server["config"] = serde_json::Value::Null;
-            dropped += 1;
+            log::warn!("服务器配置已加密但未提供备份密码（已跳过该条目的 config，保留库内既有值）");
+            drop_server_config_key(server);
+            outcome.skipped_server_configs += 1;
         }
     }
 
@@ -1010,10 +1052,10 @@ fn drop_undecryptable_json_fields(backup: &mut BackupData) -> usize {
     {
         log::warn!("直链上传规则已加密但未提供备份密码（已跳过，库内既有配置保持不变）");
         backup.direct_link_upload_rule = None;
-        dropped += 1;
+        outcome.skipped_direct_link_rule = true;
     }
 
-    dropped
+    outcome
 }
 
 /// 从备份文件恢复（无密码旧入口）
@@ -1102,12 +1144,24 @@ pub fn backup_restore_with_password(path: &str, password: Option<&str>) -> Legad
     // 批44：字段级解密（仅带 `ENC:` 前缀的 servers[].config 与
     // directLinkUploadRule）。无密码/解密失败按条目 warn 跳过（fail-closed，
     // 不把密文当明文写库）；不带前缀的值原样使用（旧备份零变化）。
-    let decrypted = decrypt_json_backup_fields(&mut backup, password);
-    if decrypted > 0 {
-        log::info!("备份恢复：已解密 {decrypted} 个加密字段");
+    // [P1-5] 解不开的 `servers[].config` 摘除键（不是写 null），恢复侧据此
+    // 保留库内既有值，并把条数带进统计供 UI 提示「部分配置未恢复」。
+    let decrypt_outcome = decrypt_json_backup_fields(&mut backup, password);
+    if decrypt_outcome.decrypted > 0 {
+        log::info!("备份恢复：已解密 {} 个加密字段", decrypt_outcome.decrypted);
+    }
+    if decrypt_outcome.skipped_server_configs > 0 {
+        log::warn!(
+            "备份恢复：{} 个服务器配置因密码缺失/错误未解密，已保留本机既有值",
+            decrypt_outcome.skipped_server_configs
+        );
     }
 
-    restore_backup_data(&backup, replace_policy)
+    restore_backup_data(
+        &backup,
+        replace_policy,
+        decrypt_outcome.skipped_server_configs,
+    )
 }
 
 /// 备份探测（批17a，契约 §2.11 `backupInspect`）
@@ -1263,11 +1317,12 @@ struct ReplaceTablePolicy {
 fn restore_backup_data(
     backup: &BackupData,
     replace_policy: ReplaceTablePolicy,
+    skipped_server_configs: usize,
 ) -> LegadoResult<String> {
     let stats = with_database(|db| {
         let conn = db.connection();
         legado_db::connection::in_transaction(conn, "备份恢复", |conn| {
-            restore_backup_in_tx(conn, backup, replace_policy)
+            restore_backup_in_tx(conn, backup, replace_policy, skipped_server_configs)
         })
     })?;
 
@@ -2289,7 +2344,10 @@ fn restore_from_zip(bytes: &[u8], password: Option<&str>) -> LegadoResult<String
     let _ = report_unmapped_zip_entries(&archive);
     let (backup, replace_policy) = backup_data_from_zip(&archive, &cipher, credentials, &media);
     let runtime_restored = !backup.runtime_source_caches.is_empty();
-    let stats = restore_backup_data(&backup, replace_policy)?;
+    // zip 侧 servers.json 解密失败时整段跳过（`credentials.servers = None`
+    // → `servers` 段为空 → 恢复体零写入，本机配置天然保留），故无需逐条
+    // 计数（P1-5 的 `skippedServerConfigs` 只适用于自有 JSON 的字段级加密）。
+    let stats = restore_backup_data(&backup, replace_policy, 0)?;
     // 批17c P2-1：Cookie 在**主事务提交后**落库并同步进程内存
     //（内存同步必须看到已提交行；且须在 `COOKIE_PERSIST_RW_LOCK` 保护域内
     // 完成「读-合并-写」，与 jar/JS 合并写串行）
@@ -3434,6 +3492,7 @@ fn restore_backup_in_tx(
     conn: &Connection,
     backup: &BackupData,
     replace_policy: ReplaceTablePolicy,
+    skipped_server_configs: usize,
 ) -> LegadoResult<RestoreStats> {
     // [审查 20261113 P3] `book_marks`（划线/笔记）恢复成功数**不计入**
     // `RestoreStats`：该结构是 `backup_restore` 的 FFI 返回契约（`books`/
@@ -3447,6 +3506,9 @@ fn restore_backup_in_tx(
         book_sources: 0,
         rss_sources: 0,
         read_records: 0,
+        // P1-5：解密阶段已统计（这些条目的 config 键已被摘除，恢复侧按
+        // 「键缺失 → 保留库内既有值」处理，不会清空本机凭据）
+        skipped_server_configs,
     };
 
     // 恢复书籍
@@ -3805,13 +3867,38 @@ fn restore_backup_in_tx(
     // 直接跳过，**不清库内 servers**）。恢复走
     // `restore_upsert_preserving_id` 保留原主键（含 id = 0），不做毫秒重分配——
     // 否则同一备份重复恢复会不断产生新行（防复发规定 5：往返逐字段一致）
+    //
+    // [P1-5（2026-11-17 审查）] **缺 `config` 键 = 保留库内既有值**：加密备份
+    // 在密码缺失/错误时由 [`decrypt_json_backup_fields`] 摘除该键（而非写
+    // null），此处据原始 JSON 键存在性区分「备份没带该字段」与「备份给了
+    // 值」——前者不得用 `INSERT OR REPLACE` 把本机 WebDAV 明文密码整行抹成
+    // NULL（旧实现写 null → `Option<String>` 反序列化为 None → 数据丢失，
+    // 与直链规则分支「保持库内既有值」的语义对齐）。
     let server_repo = ServerRepository::new(conn);
     for value in &backup.servers {
         match serde_json::from_value::<legado_core::models::Server>(value.clone()) {
-            Ok(server) => match server_repo.restore_upsert_preserving_id(&server) {
-                Ok(_) => {}
-                Err(e) => log::warn!("恢复服务器配置失败（已跳过）: {} - {e}", server.name),
-            },
+            Ok(mut server) => {
+                let config_key_present = value.get("config").is_some();
+                if !config_key_present {
+                    // 保留库内既有 config（行不存在则维持 None，与新建一致）
+                    match server_repo.find_by_id(server.id) {
+                        Ok(Some(existing)) => server.config = existing.config,
+                        Ok(None) => server.config = None,
+                        Err(e) => {
+                            // 读取失败按「无法确认本机值」处理：仍按备份值（None）
+                            // 写入，但记 warn 便于排查（不静默改写既有凭据）
+                            log::warn!(
+                                "读取本机服务器配置失败（按备份值写入）: {} - {e}",
+                                server.name
+                            );
+                        }
+                    }
+                }
+                match server_repo.restore_upsert_preserving_id(&server) {
+                    Ok(_) => {}
+                    Err(e) => log::warn!("恢复服务器配置失败（已跳过）: {} - {e}", server.name),
+                }
+            }
             Err(e) => log::warn!("恢复服务器配置解析失败（已跳过）: {e}"),
         }
     }
@@ -5845,7 +5932,7 @@ mod tests {
         with_database(|db| {
             let conn = db.connection();
             let stats = legado_db::connection::in_transaction(conn, "测试恢复", |conn| {
-                restore_backup_in_tx(conn, &backup, ReplaceTablePolicy::default())
+                restore_backup_in_tx(conn, &backup, ReplaceTablePolicy::default(), 0)
             })
             .unwrap();
             assert_eq!(
@@ -5903,7 +5990,8 @@ mod tests {
                 |conn| -> LegadoResult<RestoreStats> {
                     // 先经恢复体正常写入一批（若无事务包裹，此处已 autocommit 落库）
                     let stats =
-                        restore_backup_in_tx(conn, &backup, ReplaceTablePolicy::default()).unwrap();
+                        restore_backup_in_tx(conn, &backup, ReplaceTablePolicy::default(), 0)
+                            .unwrap();
                     assert_eq!(stats.book_sources, 1);
                     assert_eq!(stats.books, 1);
                     // 模拟恢复体后续未捕获错误（条目捕获网之外的 Err）
@@ -10524,10 +10612,14 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
-    /// [批44] 错误密码恢复：加密字段按条目 warn 跳过（fail-closed）
+    /// [批44 / P1-5] 错误密码恢复：加密字段按条目跳过（fail-closed）
     ///
-    /// 断言：服务器行照常恢复（其余列不丢），但 `config` 被清空而非写入密文；
-    /// 直链规则**不写库**（库内既有配置保持不变）。
+    /// **P1-5 修正**：旧断言要求 `config` 被清空，这等于「密码错误 → 本机
+    /// WebDAV 明文密码被整行抹掉」的数据丢失。现语义为 **保留库内既有值**：
+    /// 解密失败的 `servers[].config` 在解密阶段被**摘除键**，恢复侧按「键
+    /// 缺失 → 保留本机值」处理；其余列（name/sortNumber）照常按备份覆盖；
+    /// 统计带出 `skippedServerConfigs=1` 供 UI 提示「部分配置未恢复」。
+    /// 直链规则同样**不写库**（库内既有配置保持不变）。
     #[test]
     fn test_backup_encryption_wrong_password_fails_closed() {
         let _db_guard = crate::db_state::ensure_test_db();
@@ -10543,26 +10635,49 @@ mod tests {
 
         backup_create_with_password(path_str, Some("correct-pw")).unwrap();
 
-        // 清库：config 置 None、直链规则保留旧值以便断言「不被覆盖」
+        // 模拟「本机已有一份可用的服务器配置」：同 id 覆盖为另一份明文配置。
+        // 恢复密码错误时该值必须**原样保留**（不得被 NULL 抹掉）。
+        const LOCAL_CONFIG: &str =
+            r#"{"url":"https://local-keep.example/dav/","username":"local","password":"KEEP_ME"}"#;
         with_database(|db| {
-            db.connection()
-                .execute("DELETE FROM servers", [])
-                .map_err(|e| LegadoError::Database(format!("清空 servers 失败: {e}")))?;
-            Ok::<(), LegadoError>(())
+            ServerRepository::new(db.connection()).restore_upsert_preserving_id(
+                &legado_core::models::Server {
+                    id: 1700000000999,
+                    name: "本机既有名".to_string(),
+                    server_type: legado_core::models::ServerType::WebDav,
+                    config: Some(LOCAL_CONFIG.to_string()),
+                    sort_number: 3,
+                },
+            )
         })
         .unwrap();
         set_direct_link_rule_config(Some("{\"uploadUrl\":\"https://keep.example/\"}"));
 
-        backup_restore_with_password(path_str, Some("wrong-pw")).unwrap();
+        let stats_json = backup_restore_with_password(path_str, Some("wrong-pw")).unwrap();
 
         let restored =
             with_database(|db| ServerRepository::new(db.connection()).find_all()).unwrap();
-        assert_eq!(restored.len(), 1, "服务器行仍应恢复（仅 config 跳过）");
         assert_eq!(
-            restored[0].config, None,
-            "解密失败的 config 必须清空，不得把密文当明文写库"
+            restored.len(),
+            1,
+            "服务器行仍应恢复（仅 config 保留本机值）"
         );
-        assert_eq!(restored[0].name, "加密测试服务器", "非敏感列不受影响");
+        assert_eq!(
+            restored[0].config.as_deref(),
+            Some(LOCAL_CONFIG),
+            "解密失败的 config 必须保留库内既有值（P1-5：不得清空本机凭据）"
+        );
+        assert_eq!(
+            restored[0].name, "加密测试服务器",
+            "非敏感列照常按备份覆盖（与 config 的保留语义不冲突）"
+        );
+        assert_eq!(restored[0].sort_number, 9, "sortNumber 同样按备份覆盖");
+
+        let stats: RestoreStats = serde_json::from_str(&stats_json).unwrap();
+        assert_eq!(
+            stats.skipped_server_configs, 1,
+            "统计必须带出「因密码错误而未恢复的配置条数」供 UI 提示"
+        );
 
         let rule = with_database(|db| {
             CacheRepository::new(db.connection()).get(&direct_link_upload_rule_cache_key())
@@ -10577,7 +10692,7 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
-    /// [批44] 无密码恢复加密备份：同样 fail-closed
+    /// [批44 / P1-5] 无密码恢复加密备份：同样保留库内既有 config
     #[test]
     fn test_backup_encryption_without_password_fails_closed() {
         let _db_guard = crate::db_state::ensure_test_db();
@@ -10592,26 +10707,87 @@ mod tests {
 
         backup_create_with_password(path_str, Some("correct-pw")).unwrap();
 
+        const LOCAL_CONFIG: &str =
+            r#"{"url":"https://local-keep.example/dav/","username":"local","password":"KEEP_ME"}"#;
         with_database(|db| {
-            db.connection()
-                .execute("DELETE FROM servers", [])
-                .map_err(|e| LegadoError::Database(format!("清空 servers 失败: {e}")))?;
-            Ok::<(), LegadoError>(())
+            ServerRepository::new(db.connection()).restore_upsert_preserving_id(
+                &legado_core::models::Server {
+                    id: 1700000000999,
+                    name: "本机既有名".to_string(),
+                    server_type: legado_core::models::ServerType::WebDav,
+                    config: Some(LOCAL_CONFIG.to_string()),
+                    sort_number: 3,
+                },
+            )
         })
         .unwrap();
 
         // 不传密码（旧调用形态）
-        backup_restore(path_str).unwrap();
+        let stats_json = backup_restore(path_str).unwrap();
 
         let restored =
             with_database(|db| ServerRepository::new(db.connection()).find_all()).unwrap();
         assert_eq!(restored.len(), 1);
         assert_eq!(
-            restored[0].config, None,
-            "无密码时加密 config 必须清空（不得写密文）"
+            restored[0].config.as_deref(),
+            Some(LOCAL_CONFIG),
+            "无密码时加密 config 必须保留库内既有值（P1-5）"
+        );
+
+        let stats: RestoreStats = serde_json::from_str(&stats_json).unwrap();
+        assert_eq!(
+            stats.skipped_server_configs, 1,
+            "无密码同样计入未恢复配置条数"
         );
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [P1-5 回归] 无 `config` 键的服务器条目不得把库内既有配置抹成 NULL
+    ///
+    /// 直接构造一条**不含 config 键**的备份条目（等价于解密阶段摘除键的
+    /// 产物），断言 `INSERT OR REPLACE` 不再写 NULL——这是 P1-5 的核心
+    /// 回归点（旧实现在解密失败时写 `Value::Null`，导致整行凭据丢失）。
+    #[test]
+    fn test_restore_server_without_config_key_keeps_existing() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        const LOCAL_CONFIG: &str = r#"{"url":"https://keep-me.example/","password":"KEEP_ME"}"#;
+        with_database(|db| {
+            ServerRepository::new(db.connection()).restore_upsert_preserving_id(
+                &legado_core::models::Server {
+                    id: 42,
+                    name: "本机名".to_string(),
+                    server_type: legado_core::models::ServerType::WebDav,
+                    config: Some(LOCAL_CONFIG.to_string()),
+                    sort_number: 1,
+                },
+            )
+        })
+        .unwrap();
+
+        let mut backup = empty_backup();
+        // 刻意不带 config 键（等价于 decrypt 阶段摘除后的形态）
+        backup.servers = vec![serde_json::json!({
+            "id": 42,
+            "name": "备份名",
+            "type": "WEBDAV",
+            "sortNumber": 7,
+        })];
+
+        restore_backup_data(&backup, ReplaceTablePolicy::default(), 1).unwrap();
+
+        let restored = with_database(|db| ServerRepository::new(db.connection()).find_by_id(42))
+            .unwrap()
+            .expect("行应存在");
+        assert_eq!(
+            restored.config.as_deref(),
+            Some(LOCAL_CONFIG),
+            "缺 config 键必须保留库内既有值"
+        );
+        assert_eq!(restored.name, "备份名", "其余列照常按备份覆盖");
+        assert_eq!(restored.sort_number, 7);
     }
 
     /// [批44] 无密码备份与 v7 完全一致：不写 `encryption` 键、配置保持明文
