@@ -302,17 +302,35 @@ pub fn execute_login_check_response_with_context(
 mod tests {
     use super::*;
 
+    /// 进程级引擎缓存串行锁（所有 quickjs 用例必须持有）
+    ///
+    /// `execute_login_check_response*` 经 [`crate::executor::QuickJsExecutor::execute_js`]
+    /// → [`crate::engine_cache::get_or_create`]（key `executor:<source_tag>`）写入
+    /// **进程级** `STORE`。同二进制内并行用例（如
+    /// `engine_cache::tests::invalidate_forces_rebuild` 的
+    /// `clear_for_tests()` → `len_for_tests()==0` 窗口）会把本文件的条目计入，
+    /// 造成「失效后条目必须移除」偶发假红。持 [`crate::engine_cache::TEST_LOCK`]
+    /// 使清空与断言成为原子窗口（中毒恢复语义见 `lock_test`）。
+    #[cfg(feature = "quickjs")]
+    fn engine_cache_guard() -> std::sync::MutexGuard<'static, ()> {
+        crate::engine_cache::lock_test()
+    }
+
     // [P3-6 A | WebBook.kt:74-99] loginCheckJs 按 StrResponse 对象解析完成值
     //（quickjs 为非默认 feature：仅在本 feature 启用时运行）
     #[cfg(feature = "quickjs")]
     #[test]
     fn login_check_response_method_form_passthrough() {
+        let _engine = engine_cache_guard();
         // 方法形 result 原样直通（裸 `result` 完成值 → JSON.stringify 丢弃函数
         // 属性 → "{}"）→ 采用原始响应三元组。
         // 注意：QuickJS 顶层脚本禁 `return`（与原版 Rhino 容忍度差异，
         // 登记为端口已知差异），裸 `{...}` 在语句位置解析为块语句，
         // 故对象完成值一律用表达式形式（裸标识符/括号对象/三元）。
-        let r = execute_login_check_response("result", "orig-body", "http://x/s", 200, "lit_test");
+        // 唯一 source_tag：避免与同二进制并行用例共享缓存条目
+        //（固定 `lit_test` 会让多个用例反复覆盖同一 key）。
+        const TAG: &str = "lit_test_method_form";
+        let r = execute_login_check_response("result", "orig-body", "http://x/s", 200, TAG);
         assert_eq!(
             r,
             Ok(LoginCheckResponse {
@@ -334,8 +352,7 @@ mod tests {
         // 旧行为会误入 500 err 路径 → 二次 CastFailed → 整源失败）。
         // 现实形态（末条语句为表达式：result.body().contains(...)、裸 result、
         // ({...})）完成值不变，不受本差异影响。
-        let r2 =
-            execute_login_check_response("var x = 1;", "orig-body", "http://x/s", 200, "lit_test");
+        let r2 = execute_login_check_response("var x = 1;", "orig-body", "http://x/s", 200, TAG);
         assert_eq!(
             r2,
             Ok(LoginCheckResponse {
@@ -350,14 +367,16 @@ mod tests {
     #[cfg(feature = "quickjs")]
     #[test]
     fn login_check_response_modified_object_adopted() {
+        let _engine = engine_cache_guard();
         // 纯数据对象（QuickJS 端口扩展）→ 修改后响应被采用；缺字段回退原值。
         // 括号对象表达式避免块语句解析（顶层禁 return，见上一测试注释）。
+        const TAG: &str = "lit_test_modified_object";
         let r = execute_login_check_response(
             "({ code: 403, body: 'new-body', url: 'http://alt/s2' })",
             "orig-body",
             "http://x/s",
             200,
-            "lit_test",
+            TAG,
         );
         assert_eq!(
             r,
@@ -374,7 +393,7 @@ mod tests {
             "orig-body",
             "http://x/s",
             302,
-            "lit_test",
+            TAG,
         );
         assert_eq!(
             r2,
@@ -390,10 +409,19 @@ mod tests {
     #[cfg(feature = "quickjs")]
     #[test]
     fn login_check_response_bare_values_cast_fail() {
+        let _engine = engine_cache_guard();
         // 裸布尔/字符串/数字/null 完成值均非 StrResponse → CastFailed
         //（对齐原版 ClassCastException 错误路径）
-        for js in ["false", "true", "'ok'", "42", "null", "undefined"] {
-            let r = execute_login_check_response(js, "body", "http://x", 200, "lit_test");
+        // 每个脚本用独立 tag：完成值语义互不覆盖缓存条目。
+        for (js, tag) in [
+            ("false", "lit_test_bare_false"),
+            ("true", "lit_test_bare_true"),
+            ("'ok'", "lit_test_bare_string"),
+            ("42", "lit_test_bare_number"),
+            ("null", "lit_test_bare_null"),
+            ("undefined", "lit_test_bare_undefined"),
+        ] {
+            let r = execute_login_check_response(js, "body", "http://x", 200, tag);
             assert!(
                 matches!(r, Err(LoginCheckEvalError::CastFailed(_))),
                 "js={js} 应 CastFailed，实际: {r:?}"
@@ -404,8 +432,15 @@ mod tests {
     #[cfg(feature = "quickjs")]
     #[test]
     fn login_check_response_js_error_classify() {
+        let _engine = engine_cache_guard();
         // 语法/运行时错误归类为 JsFailed
-        let r = execute_login_check_response("function {", "body", "http://x", 200, "lit_test");
+        let r = execute_login_check_response(
+            "function {",
+            "body",
+            "http://x",
+            200,
+            "lit_test_js_error_syntax",
+        );
         assert!(
             matches!(r, Err(LoginCheckEvalError::JsFailed(_))),
             "实际: {r:?}"
@@ -415,7 +450,7 @@ mod tests {
             "body",
             "http://x",
             200,
-            "lit_test",
+            "lit_test_js_error_runtime",
         );
         assert!(
             matches!(r2, Err(LoginCheckEvalError::JsFailed(_))),
@@ -432,6 +467,13 @@ mod tests {
     #[cfg(feature = "quickjs")]
     #[test]
     fn js_lib_failure_classified_as_jslib_unavailable() {
+        let _engine = engine_cache_guard();
+        // 坏 jsLib 会经 `engine_cache::init_engine` 登记能力台账；台账的
+        // 「精确条数」断言（capability_ledger 用例）同样要求串行，锁序与
+        // legado-ffi 既有用例一致：缓存锁 → 台账锁。
+        let _ledger = crate::host_api::capability_ledger::LEDGER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         // 唯一 source_tag：避免与同二进制并行用例的引擎缓存/台账串键
         // checkJs 自身合法（`result` 直通）；仅 jsLib 语法错误
         let r = execute_login_check_response_with_context(

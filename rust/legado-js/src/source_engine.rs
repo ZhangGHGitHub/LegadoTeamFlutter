@@ -605,6 +605,10 @@ mod tests {
     /// 请求目标为回环 cookie 记录服务器（P2-17 同款 std TcpListener 模式）；
     /// 回环域名键（127.0.0.1，IP 自键）与 network.rs 回环用例共享，须持
     /// `cookie_store::COOKIE_STORE_TEST_LOCK` 串行；缓存键含随机端口，用例间不串扰。
+    ///
+    /// 同时持 [`crate::engine_cache::TEST_LOCK`]：本用例经 `get_or_create` 写入
+    /// 进程级缓存，不持锁会打破 `engine_cache::tests` 的清空→断言原子窗口。
+    /// 锁序固定为「缓存锁 → cookie 锁」（仓内无反向获取点，无死锁风险）。
     #[cfg(feature = "quickjs")]
     #[test]
     fn test_p219_new_quickjs_construction_carries_request_domain_cookie() {
@@ -612,6 +616,7 @@ mod tests {
         use std::io::{Read, Write};
         use std::sync::Mutex;
 
+        let _cache_guard = crate::engine_cache::lock_test();
         // 回环域名键（127.0.0.1）为进程级共享键，与 network.rs 回环用例串行
         let _lock = cookie_store::lock_cookie_store_test();
 

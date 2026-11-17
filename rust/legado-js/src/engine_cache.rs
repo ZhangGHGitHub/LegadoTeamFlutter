@@ -372,6 +372,12 @@ pub fn invalidate(key: &str) {
 
 /// 测试串行锁：进程级缓存被同一二进制的多个测试共享，
 /// 凡调用 [clear_for_tests]/[len_for_tests] 的测试必须先持此锁，防止并发清空串扰。
+///
+/// 注意：**任何会写入进程级缓存的测试**（`get_or_create` 的间接调用方，如
+/// `QuickJsExecutor::execute_js`、`JsSourceEngine::new_quickjs`、
+/// `login_check::execute_login_check_response*`）同样必须先持此锁——否则其
+/// 条目会落入其它用例「清空 → 断言」的原子窗口，造成偶发假红。
+/// 测试侧请优先用 [`lock_test`]（毒化恢复语义）。
 pub static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 /// 测试用：取得 [`TEST_LOCK`]，中毒时取回内部值复用。
@@ -640,13 +646,31 @@ mod tests {
     }
 
     /// P3-1 配套：`invalidate` 移除条目后，下次获取会重建全新引擎。
+    ///
+    /// 断言按 **key** 而非全局条目数：缓存是进程级共享状态，只要同二进制
+    /// 内仍有未持 [`TEST_LOCK`] 的用例（历史遗留 / 新增）写入其它 key，
+    /// `len_for_tests()==0` 就会被并行插入打破（CI 偶发假红的根因形态）。
+    /// 按 key 定位后本用例只依赖自己的条目，锁仅用于隔离 `clear_for_tests`
+    /// 与后续重建，不再与无关条目耦合。
     #[test]
     fn invalidate_forces_rebuild() {
         let _guard = lock_test();
         clear_for_tests();
         let (first, _, _) = get_or_create("invalidate-key", None, None, None).unwrap();
         invalidate("invalidate-key");
-        assert_eq!(len_for_tests(), 0, "失效后条目必须移除");
+        {
+            let guard = store()
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            assert!(
+                !guard.entries.contains_key("invalidate-key"),
+                "失效后本 key 条目必须移除"
+            );
+            assert!(
+                !guard.order.iter().any(|k| k == "invalidate-key"),
+                "失效后本 key 必须从 LRU 顺序表移除"
+            );
+        }
         let (second, _, _) = get_or_create("invalidate-key", None, None, None).unwrap();
         assert!(
             !Arc::ptr_eq(&first, &second),

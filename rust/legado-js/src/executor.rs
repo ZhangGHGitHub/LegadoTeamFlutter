@@ -282,8 +282,14 @@ mod tests {
     use super::*;
 
     /// 同一 executor 可连续执行多条脚本（每次仍为新引擎）。
+    ///
+    /// 持进程级缓存串行锁：`execute_js` 经 `engine_cache::get_or_create`
+    /// （key `executor:<tag>`）写入**进程级** `STORE`，不持锁会打破
+    /// `engine_cache::tests` 中 `clear_for_tests()` → `len_for_tests()` 的
+    /// 原子窗口（CI 偶发假红根因）。
     #[test]
     fn test_quickjs_executor_reuse() {
+        let _guard = crate::engine_cache::lock_test();
         let executor = QuickJsExecutor::new("reuse_tag");
         let r1 = executor.execute_js("10 * 10").unwrap();
         let r2 = executor.execute_js("100 + 1").unwrap();
