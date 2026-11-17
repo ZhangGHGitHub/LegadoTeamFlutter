@@ -288,16 +288,129 @@ impl TxtParser {
 /// 编码检测采样长度（B21：由 4KB 扩到 64KB）
 pub(crate) const ENCODING_SAMPLE_LEN: usize = 64 * 1024;
 
+/// 多字节编码试解时允许丢弃的尾部字节数上限
+///
+/// 采样窗口按固定字节数（[`ENCODING_SAMPLE_LEN`]）截断，必然可能落在多字节
+/// 字符中间：UTF-8 最多 4 字节、GB18030 另有 4 字节序列、GBK/Big5 为 2 字节。
+/// 试解时依次丢弃 0..=[`MAX_TAIL_DROP`] 个尾字节，任一能无损解码即视为
+/// 「样本与该编码相容」——这正是「剥掉尾部不完整序列」的通用形式，
+/// 对 2 字节编码等价于「截到偶数长度」（且同时覆盖另一种奇偶对齐）。
+const MAX_TAIL_DROP: usize = 3;
+
+/// 单字节编码采纳门槛：样本中至少要有这么多个「多字节 CJK 字符」证据
+const SINGLE_BYTE_MIN_CJK_EVIDENCE: usize = 8;
+
+/// 剥掉样本尾部不完整的 UTF-8 序列（最多 3 字节，4 字节字符需回看 4 字节）
+///
+/// **B21 回归根因**：64KB 采样若恰好落在多字节字符中间，`from_utf8` 必然
+/// 失败；随后的 gb18030/gbk/big5 试解也因同一个半字符失败；最终落到
+/// chardetng，而 `decode_without_bom_handling_and_without_replacement`
+/// 对**单字节编码永远返回 Some**，于是 `windows-1252` 被直接采纳 → 整本书
+/// 乱码（UTF-8 中 3 字节字符约 2/3 的对齐会踩中，GBK 约 1/2）。
+///
+/// 合法 UTF-8 文本的任意**字符边界前缀**仍是合法 UTF-8，因此只需剥掉尾部
+/// 那一个不完整序列即可恢复判定。
+fn strip_incomplete_utf8_tail(sample: &[u8]) -> &[u8] {
+    let n = sample.len();
+    if n == 0 {
+        return sample;
+    }
+    // 尾部最多回看 4 字节：4 字节字符被截成「3 个续字节」时首字节在第 4 位
+    let window_start = n.saturating_sub(4);
+    for i in (window_start..n).rev() {
+        let b = sample[i];
+        if b & 0xC0 == 0x80 {
+            continue; // 续字节，继续向前找字符首字节
+        }
+        let expected = if b < 0x80 {
+            1
+        } else if b & 0xE0 == 0xC0 {
+            2
+        } else if b & 0xF0 == 0xE0 {
+            3
+        } else if b & 0xF8 == 0xF0 {
+            4
+        } else {
+            // 非法 UTF-8 首字节（0xF8..=0xFF）：从该字节起剥掉，交给后续判定
+            return &sample[..i];
+        };
+        if n - i < expected {
+            return &sample[..i]; // 尾部序列不完整
+        }
+        return sample; // 尾部序列完整
+    }
+    sample
+}
+
+/// 用指定多字节编码试解，容忍采样窗口尾部的半字符
+///
+/// 依次丢弃 0..=[`MAX_TAIL_DROP`] 个尾字节，任一能无损解码即返回 true。
+fn decodes_losslessly_ignoring_tail(enc: &'static Encoding, sample: &[u8]) -> bool {
+    for drop in 0..=MAX_TAIL_DROP {
+        let end = sample.len().saturating_sub(drop);
+        let (_, _, had_errors) = enc.decode(&sample[..end]);
+        if !had_errors {
+            return true;
+        }
+    }
+    false
+}
+
+/// 样本中「多字节 CJK 字符」的证据数量
+///
+/// 用途：`windows-1252`/`ISO-8859-*` 这类单字节编码对**任意字节**都能无损
+/// 解码，所以「只接受能无损解码的猜测」对它们完全无效（B21 误判的直接
+/// 入口）。真正的 CJK 多字节文本会呈现两种可辨识结构：
+///
+/// - **GBK/Big5 汉字双字节对**：首字节 `0x81..=0xFE` + 尾字节 `0xA1..=0xFE`
+///   （GB2312 汉字区与 Big5 常用字区的尾字节都 ≥ `0xA1`）；
+/// - **UTF-8 三字节 CJK 序列**：首字节 `0xE4..=0xE9` + 两个 `0x80..=0xBF`
+///   续字节（覆盖 CJK 统一表意文字区）。
+///
+/// 西欧重音文本的高字节后通常紧跟 ASCII 字母或空格（如 `é` = `0xE9` 后接
+/// `0x20`/`0x65`），两种结构都不成立，因此不会误伤
+/// `test_detect_encoding_chardetng_fallback_for_western_text`。
+fn multibyte_cjk_evidence(sample: &[u8]) -> usize {
+    let mut count = 0usize;
+    let mut i = 0usize;
+    while i < sample.len() {
+        let lead = sample[i];
+        // GBK/Big5 汉字双字节对
+        if (0x81..=0xFE).contains(&lead) && i + 1 < sample.len() {
+            let trail = sample[i + 1];
+            if (0xA1..=0xFE).contains(&trail) {
+                count += 1;
+                i += 2;
+                continue;
+            }
+        }
+        // UTF-8 三字节 CJK 序列
+        if (0xE4..=0xE9).contains(&lead) && i + 2 < sample.len() {
+            let (b1, b2) = (sample[i + 1], sample[i + 2]);
+            if (0x80..=0xBF).contains(&b1) && (0x80..=0xBF).contains(&b2) {
+                count += 1;
+                i += 3;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    count
+}
+
 /// 编码检测（按文件头样本）
 ///
 /// 抽成纯函数供 [`crate::txt_cache`] 复用同一份样本：缓存校验已经读过
 /// 文件头时不再二次打开文件。检测顺序：
 /// 1. BOM（UTF-8 / UTF-16LE / UTF-16BE）——权威；
-/// 2. 整段样本是合法 UTF-8 → utf-8；
+/// 2. **[P1-1]** 剥掉尾部不完整 UTF-8 序列后整段是合法 UTF-8 → utf-8；
 /// 3. encoding_rs 的 BOM 表兜底；
-/// 4. 常见中文/东亚编码逐一无损试解（gb18030/gbk/big5/shift_jis/euc-kr）；
+/// 4. 常见中文/东亚编码逐一无损试解（gb18030/gbk/big5/shift_jis/euc-kr），
+///    试解时容忍采样窗口尾部的半字符（[`decodes_losslessly_ignoring_tail`]）；
 /// 5. **[B21] chardetng 统计探测兜底**——前面全部失败时用探测器给出最可能
-///    编码；只接受**能无损解码**的猜测，否则仍回退 utf-8；
+///    编码；只接受**能无损解码**的猜测，且**[P1-1]** 单字节编码
+///    （`windows-1252`/`ISO-8859-*`）仅在样本**缺少多字节 CJK 证据**时
+///    才采纳——否则回退 UTF-8（有损但只错局部，不会整本乱码）；
 /// 6. 回退 utf-8。
 pub(crate) fn detect_encoding_from_sample(sample: &[u8]) -> String {
     // UTF-8 BOM
@@ -314,7 +427,12 @@ pub(crate) fn detect_encoding_from_sample(sample: &[u8]) -> String {
     }
 
     // 尝试 UTF-8 验证
-    if std::str::from_utf8(sample).is_ok() {
+    //
+    // [P1-1] 采样窗口可能正好落在多字节字符中间：此时整段 `from_utf8` 必然
+    // 失败（即便文件本身是纯 UTF-8），必须先剥掉尾部不完整序列再判定，
+    // 否则会一路掉到 chardetng 并被 windows-1252 收走。
+    let utf8_candidate = strip_incomplete_utf8_tail(sample);
+    if std::str::from_utf8(utf8_candidate).is_ok() {
         return "utf-8".to_string();
     }
 
@@ -323,11 +441,10 @@ pub(crate) fn detect_encoding_from_sample(sample: &[u8]) -> String {
         return enc.name().to_string();
     }
 
-    // 尝试常见中文编码
+    // 尝试常见中文编码（容忍尾部半字符）
     for name in &["gb18030", "gbk", "big5", "shift_jis", "euc-kr"] {
         if let Some(enc) = Encoding::for_label(name.as_bytes()) {
-            let (_, _, had_errors) = enc.decode(sample);
-            if !had_errors {
+            if decodes_losslessly_ignoring_tail(enc, sample) {
                 return name.to_string();
             }
         }
@@ -339,11 +456,21 @@ pub(crate) fn detect_encoding_from_sample(sample: &[u8]) -> String {
     // hint 为 None、ISO-2022-JP 按 Web 内容指引 Deny、UTF-8 探测 Allow。
     // 只接受**能无损解码**的猜测——否则随机字节被猜成某个编码会让整本书
     // 乱码，不如回退 UTF-8 的有损解码（至少 ASCII 部分正确）。
+    //
+    // [P1-1] 单字节编码必须额外设防：`decode_without_bom_handling_and_without
+    // _replacement` 对 windows-1252/ISO-8859-* **永远返回 Some**（它们把每个
+    // 字节都映射到某个字符），上面那道「无损」防线对它们完全无效。样本里若
+    // 存在密集的 CJK 双字节对（真正的中文/日文多字节文本），说明探测结果与
+    // 事实矛盾，此时拒绝采纳单字节编码并回退 UTF-8——宁可局部替换字符，
+    // 也不让整本书变成西欧乱码。
     if !sample.is_empty() {
         let mut detector = chardetng::EncodingDetector::new(chardetng::Iso2022JpDetection::Deny);
         let _ = detector.feed(sample, true);
         let guessed = detector.guess(None, chardetng::Utf8Detection::Allow);
+        let single_byte_conflicts_with_cjk = guessed.is_single_byte()
+            && multibyte_cjk_evidence(sample) >= SINGLE_BYTE_MIN_CJK_EVIDENCE;
         if guessed != UTF_8
+            && !single_byte_conflicts_with_cjk
             && guessed
                 .decode_without_bom_handling_and_without_replacement(sample)
                 .is_some()
@@ -640,6 +767,19 @@ mod tests {
     // 测试内直连编译仅限内置常量 pattern（非用户可控）
     use regex::Regex;
 
+    /// 构造「把 64KB 采样边界在多字节字符内部推移 [pad] 字节」的样本
+    ///
+    /// 复现 `TxtParser::detect_encoding` 的真实行为：它读文件前
+    /// [`ENCODING_SAMPLE_LEN`] 字节，不保证落在字符边界。在文件前垫 `pad`
+    /// 个 ASCII 字节后，真实采样 = `pad` 个 `A` + 原文前 `65536 - pad` 字节
+    /// ——这正是会喂给 [`detect_encoding_from_sample`] 的字节。
+    fn sample_at_window(bytes: &[u8], pad: usize) -> Vec<u8> {
+        let take = ENCODING_SAMPLE_LEN.saturating_sub(pad).min(bytes.len());
+        let mut sample = vec![b'A'; pad];
+        sample.extend_from_slice(&bytes[..take]);
+        sample
+    }
+
     #[test]
     fn test_is_volume_title_true() {
         assert!(is_volume_title("第一卷"));
@@ -730,11 +870,173 @@ mod tests {
         );
     }
 
-    /// 大样本下 UTF-8 中文仍判 utf-8（不得因扩大样本而回归）
+    /// [P1-1] 大样本下 UTF-8 中文判 utf-8 —— 样本**必须超过** 64KB 采样窗口
+    ///
+    /// 修复前本用例只有 34000 字节（< 64KB），整段直接进 `from_utf8`，永远不会
+    /// 触发「采样窗口在字符中间截断」的路径 → 假绿。B21 的实测缺陷正是发生在
+    /// 文件 > 64KB 时，因此夹具必须 > 65536 字节，并逐一覆盖采样边界落在
+    /// 字符内部的 4 种对齐（pad=0..3）。
     #[test]
     fn test_detect_encoding_large_utf8_sample_still_utf8() {
-        let text = "第一章 起始\n".repeat(2000);
+        let text = "第一章 起始\n这是正文内容，用来填满采样窗口。\n".repeat(2000);
+        assert!(
+            text.len() > ENCODING_SAMPLE_LEN,
+            "夹具必须超过 64KB 采样窗口，实际 {} 字节",
+            text.len()
+        );
         assert_eq!(detect_encoding_from_sample(text.as_bytes()), "utf-8");
+
+        // pad 把 64KB 边界推进 0..3 字节，覆盖 3 字节 UTF-8 字符的三种内部对齐
+        for pad in 0..4usize {
+            let sample = sample_at_window(text.as_bytes(), pad);
+            assert_eq!(
+                detect_encoding_from_sample(&sample),
+                "utf-8",
+                "pad={pad} 时 64KB 采样应仍判 utf-8"
+            );
+        }
+    }
+
+    /// [P1-1] GBK 大样本：pad=0..3 四种对齐都必须判出 GBK 族
+    ///
+    /// 修复前 pad 为奇数（GBK 双字节被截半）时判 windows-1252 → 整本乱码。
+    #[test]
+    fn test_detect_encoding_large_gbk_sample_all_alignments() {
+        let text = "第一章 起始\n这是正文内容，用来填满采样窗口。\n".repeat(2000);
+        let (gbk, _, had_errors) = encoding_rs::GBK.encode(&text);
+        assert!(!had_errors);
+        let bytes = gbk.into_owned();
+        assert!(
+            bytes.len() > ENCODING_SAMPLE_LEN,
+            "夹具必须超过 64KB 采样窗口，实际 {} 字节",
+            bytes.len()
+        );
+
+        for pad in 0..4usize {
+            let sample = sample_at_window(&bytes, pad);
+            let detected = detect_encoding_from_sample(&sample);
+            assert!(
+                detected == "gb18030" || detected == "gbk",
+                "pad={pad} 时 64KB 采样应判出 GBK 族，实际: {detected}"
+            );
+        }
+    }
+
+    /// [P1-1] 真实 `TxtParser` 端到端：>64KB UTF-8 文件，四种对齐的目录与正文都不乱码
+    ///
+    /// 复现审查证据「UTF-8 200KB 端到端 chapters=65, content_head=乱码」：
+    /// 走公开 `detect_encoding` → `get_chapters` → `get_chapter_content`，
+    /// 断言正文不含 U+FFFD 且首章标题/正文正确。
+    #[test]
+    fn test_large_utf8_end_to_end_no_mojibake() {
+        // 每章 ~3KB 汉字，共 70 章 → 约 210KB，远超 64KB 采样窗口
+        let mut text = String::new();
+        for i in 1..=70 {
+            text.push_str(&format!("第{i}章 测试章节标题\n"));
+            text.push_str(&"这是正文内容。".repeat(200));
+            text.push('\n');
+        }
+        assert!(text.len() > 200 * 1024, "端到端夹具应 > 200KB");
+
+        for pad in 0..4usize {
+            // pad 通过前置 ASCII 行实现：既推进采样边界，又不影响章节解析
+            let mut content = String::new();
+            for _ in 0..pad {
+                content.push('A');
+            }
+            content.push('\n');
+            content.push_str(&text);
+            let path = write_temp_txt(&format!("utf8_e2e_pad{pad}"), content.as_bytes());
+
+            let detected = TxtParser::detect_encoding(path.to_str().unwrap()).unwrap();
+            assert_eq!(detected, "utf-8", "pad={pad} 自动检测应为 utf-8");
+
+            let chapters = TxtParser::get_chapters(path.to_str().unwrap()).unwrap();
+            assert_eq!(chapters.len(), 70, "pad={pad} 应解析出 70 章");
+            assert_eq!(chapters[0].title, "第1章 测试章节标题");
+
+            let first =
+                TxtParser::get_chapter_content(path.to_str().unwrap(), &chapters[0]).unwrap();
+            assert!(
+                !first.contains('\u{FFFD}'),
+                "pad={pad} 首章正文不得含替换字符（乱码信号）"
+            );
+            assert!(
+                first.contains("这是正文内容。"),
+                "pad={pad} 首章正文应正确解码，实际开头: {}",
+                first.chars().take(30).collect::<String>()
+            );
+            let _ = std::fs::remove_dir_all(path.parent().unwrap());
+        }
+    }
+
+    /// [P1-1] 真实 `TxtParser` 端到端：>64KB GBK 文件，四种对齐都不乱码
+    #[test]
+    fn test_large_gbk_end_to_end_no_mojibake() {
+        let mut text = String::new();
+        for i in 1..=70 {
+            text.push_str(&format!("第{i}章 测试章节标题\n"));
+            text.push_str(&"这是正文内容。".repeat(200));
+            text.push('\n');
+        }
+        let (gbk, _, had_errors) = encoding_rs::GBK.encode(&text);
+        assert!(!had_errors);
+        let gbk_bytes = gbk.into_owned();
+
+        for pad in 0..4usize {
+            // pad 通过前置独立 ASCII 行实现：ASCII 在 GBK 中是单字节，不破坏
+            // 双字节对齐，同时把 64KB 采样边界在多字节字符内部推移 pad 字节
+            let mut content = vec![b'A'; pad];
+            content.push(b'\n');
+            content.extend_from_slice(&gbk_bytes);
+            let path = write_temp_txt(&format!("gbk_e2e_pad{pad}"), &content);
+
+            let detected = TxtParser::detect_encoding(path.to_str().unwrap()).unwrap();
+            assert!(
+                detected == "gb18030" || detected == "gbk",
+                "pad={pad} 自动检测应判出 GBK 族，实际: {detected}"
+            );
+
+            let chapters = TxtParser::get_chapters(path.to_str().unwrap()).unwrap();
+            assert_eq!(chapters.len(), 70, "pad={pad} 应解析出 70 章");
+            let first =
+                TxtParser::get_chapter_content(path.to_str().unwrap(), &chapters[0]).unwrap();
+            assert!(
+                !first.contains('\u{FFFD}'),
+                "pad={pad} GBK 首章正文不得含替换字符"
+            );
+            assert!(
+                first.contains("这是正文内容。"),
+                "pad={pad} GBK 首章正文应正确解码"
+            );
+            let _ = std::fs::remove_dir_all(path.parent().unwrap());
+        }
+    }
+
+    /// [P1-1] 单字节兜底防线：样本含密集 CJK 证据时拒绝 windows-1252
+    ///
+    /// 直接构造「探测会给出 windows-1252」的输入不现实，这里验证
+    /// [`multibyte_cjk_evidence`] 的判据本身：GBK 汉字与 UTF-8 三字节 CJK
+    /// 都计入证据，西欧重音文本不计入。
+    #[test]
+    fn test_multibyte_cjk_evidence_discriminates() {
+        let (gbk, _, _) = encoding_rs::GBK.encode("这是正文内容。");
+        assert!(
+            multibyte_cjk_evidence(&gbk) >= 6,
+            "GBK 汉字应产生 CJK 证据，实际 {}",
+            multibyte_cjk_evidence(&gbk)
+        );
+        assert!(
+            multibyte_cjk_evidence("这是正文内容。".as_bytes()) >= 6,
+            "UTF-8 三字节 CJK 应产生 CJK 证据"
+        );
+        // windows-1252 西欧重音（0xE9=é 后接 ASCII），不构成 CJK 证据
+        let western: Vec<u8> = vec![b'C', b'a', b'f', 0xE9, b' ', b'c', b'r', 0xE8];
+        assert_eq!(
+            multibyte_cjk_evidence(&western),
+            0,
+            "西欧重音文本不得被误判为 CJK 证据"
+        );
     }
 
     /// 非常见编码（windows-1252 高字节区）走 chardetng 兜底

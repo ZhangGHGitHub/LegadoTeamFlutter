@@ -615,4 +615,63 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
+
+    /// [P1-1] 解码缓存路径同样复用 `detect_encoding_from_sample`：
+    /// 超过 64KB 的 UTF-8/GBK 文件在采样边界落在字符内部时（pad=0..3）也必须
+    /// 解出正确正文，不能因缓存路径绕开 `TxtParser::detect_encoding` 而漏修。
+    ///
+    /// 修复前 pad 非对齐时 `resolve_encoding` 拿到 windows-1252，正文整段乱码。
+    #[test]
+    fn test_load_decoded_text_large_sample_all_alignments() {
+        let mut text = String::new();
+        for i in 1..=40 {
+            text.push_str(&format!("第{i}章 缓存编码对齐\n"));
+            text.push_str(&"这是正文内容。".repeat(200));
+            text.push('\n');
+        }
+        assert!(text.len() > 64 * 1024, "夹具必须超过 64KB 采样窗口");
+
+        // UTF-8
+        for pad in 0..4usize {
+            let path = temp_txt_path(&format!("align_utf8_{pad}"));
+            let mut content = vec![b'A'; pad];
+            content.push(b'\n');
+            content.extend_from_slice(text.as_bytes());
+            std::fs::write(&path, &content).unwrap();
+
+            let decoded = load_decoded_text(path.to_str().unwrap(), None).unwrap();
+            assert!(
+                !decoded.contains('\u{FFFD}'),
+                "pad={pad} UTF-8 缓存路径不得产出替换字符"
+            );
+            assert!(
+                decoded.contains("第1章 缓存编码对齐") && decoded.contains("这是正文内容。"),
+                "pad={pad} UTF-8 缓存路径正文应正确解码"
+            );
+            let _ = std::fs::remove_dir_all(path.parent().unwrap());
+        }
+
+        // GBK
+        let (gbk, _, had_errors) = encoding_rs::GBK.encode(&text);
+        assert!(!had_errors);
+        let gbk_bytes = gbk.into_owned();
+        for pad in 0..4usize {
+            let path = temp_txt_path(&format!("align_gbk_{pad}"));
+            let mut content = vec![b'A'; pad];
+            content.push(b'\n');
+            content.extend_from_slice(&gbk_bytes);
+            std::fs::write(&path, &content).unwrap();
+
+            let decoded = load_decoded_text(path.to_str().unwrap(), None).unwrap();
+            assert!(
+                !decoded.contains('\u{FFFD}'),
+                "pad={pad} GBK 缓存路径不得产出替换字符"
+            );
+            assert!(
+                decoded.contains("第1章 缓存编码对齐") && decoded.contains("这是正文内容。"),
+                "pad={pad} GBK 缓存路径正文应正确解码"
+            );
+            let _ = std::fs::remove_dir_all(path.parent().unwrap());
+        }
+    }
 }
