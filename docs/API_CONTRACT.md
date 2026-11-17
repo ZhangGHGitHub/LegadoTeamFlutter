@@ -1517,7 +1517,7 @@
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
-| `cacheDownloadStart({required String bookUrl, required int startChapter, required int endChapter})` | bookUrl, startChapter/endChapter（章节 index，闭区间；越界自动收敛） | `Future<String>` | 创建并后台启动批量下载任务，返回任务 ID（字符串）；同一本书已有进行中任务时复用返回既有 ID；全局同时只准入 1 本书、任务内并发度见上方批9b-2 语义 |
+| `cacheDownloadStart({required String bookUrl, required int startChapter, required int endChapter})` | bookUrl, startChapter/endChapter（章节 index，闭区间；越界自动收敛） | `Future<int>`（任务 ID 数值；Rust FFI `cache_download_start` 返回 `Result<String>`（u64 转字符串），Dart `RustApi.cacheDownloadStart` 用 `int.tryParse` 解析为 int，解析失败抛异常） | 创建并后台启动批量下载任务，返回任务 ID（int）；同一本书已有进行中任务时复用返回既有 ID；全局同时只准入 1 本书、任务内并发度见上方批9b-2 语义 |
 | `cacheDownloadProgress(String taskId)` | taskId | `Future<String>` | 进度 JSON（camelCase）：`taskId`/`bookUrl`/`status`（running/completed/cancelled/failed/notFound）/`total`/`completed`/`failed` |
 | `cacheDownloadCancel(String taskId)` | taskId | `Future<bool>` | 取消进行中任务：排队中任务不再发起任何 HTTP；已准入任务不再派发新章（竞态窗口内最多再派发 N 章），在途章完成后停止。返回任务是否存在 |
 | `cacheDownloadList()` | 无 | `Future<String>` | 全部任务进度 JSON 数组（字段同上） |
