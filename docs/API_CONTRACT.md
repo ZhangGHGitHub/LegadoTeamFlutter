@@ -1079,7 +1079,7 @@
 | `exploreInfoMapPut(String sourceUrl, String key, String value)` | sourceUrl, key, value | `Future<void>` | toggle/select/text 写入 infoMap |
 | `exploreInfoMapEnsureDefault(String sourceUrl, String key, String defaultValue)` | sourceUrl, key, defaultValue | `Future<void>` | infoMap 键不存在时写入默认值 |
 | `exploreInfoMapSnapshot(String sourceUrl)` | sourceUrl | `Future<String>` | 读取 infoMap 快照（JSON 对象；UI 回显 toggle/select/text 已存值，对齐原版 InfoMap 持久化）。加法式新增（2026-08-14 发现页修复 B①） |
-| `exploreEvalAction({required String sourceJson, required String actionJs})` | sourceJson, actionJs | `Future<Map>` | 执行发现控件 action JS；返回 `{raw, actions, refreshExplore}`（对标 evalButtonClick + java 中途 UI） |
+| `exploreEvalAction({required String sourceJson, required String actionJs})` | sourceJson, actionJs | `Future<Map<String, dynamic>>` | 执行发现控件 action JS；返回 `{raw, actions, refreshExplore}`（对标 evalButtonClick + java 中途 UI） |
 | `exploreEvalUiJs({required String sourceJson, required String jsStr})` | sourceJson, jsStr | `Future<String>` | 执行 viewName 动态标题 JS（对标 evalUiJs） |
 
 ### 2.19 规则解析（1 个方法）
@@ -1486,7 +1486,7 @@
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
-| `chapterPayAction({required String bookUrl, required int chapterIndex})` | bookUrl（本地书短路返回 kind=none，对齐 Kotlin isLocal 短路）, chapterIndex | `Future<String>` | 结果 JSON（camelCase）：`{"kind": "url"/"success"/"none", "value": "<JS 返回原文>"}`；kind=success 时 Rust 侧已清当前章正文缓存；需 quickjs 构建，否则返回 JsEngine 错误 |
+| `chapterPayAction({required String bookUrl, required int chapterIndex})` | bookUrl（本地书短路返回 kind=none，对齐 Kotlin isLocal 短路）, chapterIndex | `Future<({String kind, String value})>`（Dart record；Rust FFI 返回结果 JSON，`RustApi` 解析为具名 record，缺字段按 `kind='none'` / `value=''`） | 执行章节购买动作。结果字段：`kind`（`url`/`success`/`none`）/ `value`（JS 返回原文）；kind=success 时 Rust 侧已清当前章正文缓存；需 quickjs 构建，否则返回 JsEngine 错误 |
 
 #### 2.43.3 R7 缓存批量下载（4 个方法）
 
