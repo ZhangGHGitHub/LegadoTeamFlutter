@@ -10,17 +10,26 @@
 //! | 标签 | 语义 |
 //! |---|---|
 //! | `#EXTM3U` | 首行必需（BOM 自动剥除） |
-//! | `#EXT-X-STREAM-INF` | master playlist 的 variant（`BANDWIDTH` + `CODECS`） |
+//! | `#EXT-X-STREAM-INF` | master playlist 的 variant（`BANDWIDTH` / `CODECS` / `RESOLUTION` / `AUDIO`） |
+//! | `#EXT-X-MEDIA` | `TYPE=AUDIO` 的独立音频轨（`GROUP-ID` / `NAME` / `URI` / `DEFAULT`） |
 //! | `#EXTINF` | media playlist 的段时长（标题丢弃） |
 //! | `#EXT-X-KEY` | `METHOD=AES-128` 支持；`METHOD=NONE` 表示不加密 |
-//! | `#EXT-X-MAP` | fMP4 初始化段 |
+//! | `#EXT-X-MAP` | fMP4 初始化段（**至多一个**；多个视为多 period，显式报错） |
 //! | `#EXT-X-BYTERANGE` | 同文件字节区间（`n[@o]`，缺省 offset 按 §4.3.2.2 续接） |
-//! | `#EXT-X-DISCONTINUITY` | 段边界标记（TS 可忽略，fMP4 据此重放 init map） |
+//! | `#EXT-X-DISCONTINUITY` | 段边界标记（仅落到 [`Segment::discontinuity`]；**不做** init map 重放） |
 //! | `#EXT-X-MEDIA-SEQUENCE` | IV 缺省时的序列号基准（§5.2） |
-//! | `#EXT-X-ENDLIST` | 点播（非直播）标记 |
+//! | `#EXT-X-ENDLIST` | 点播（非直播）标记；见 [`MediaPlaylist::is_vod`] |
 //!
 //! **显式报错（不静默降级）**：`METHOD=SAMPLE-AES*`（含 SAMPLE-AES-CTR）、
-//! `#EXT-X-I-FRAMES-ONLY`、以及其它未知加密方法。
+//! `#EXT-X-I-FRAMES-ONLY`、其它未知加密方法、以及**多个 `#EXT-X-MAP`**
+//! （多 period fMP4——单一 init map 无法覆盖全部分片，静默取最后一个会把
+//! 前段拼到错误 init 上，产物不可播且无报错）。
+//!
+//! # 直播（live）playlist
+//!
+//! 无 `#EXT-X-ENDLIST` 的 playlist 只是**当前滑动窗口**的快照，按窗口下载会
+//! 得到「半章」。调用方必须先用 [`MediaPlaylist::is_vod`] 判定，`false` 时
+//! 拒绝缓存（本模块只解析，不做该判定）。
 //!
 //! # 容错口径
 //!
@@ -50,6 +59,8 @@ use legado_parser::AnalyzeUrl;
 #[derive(Debug, Clone, PartialEq)]
 pub struct MasterPlaylist {
     pub variants: Vec<Variant>,
+    /// `#EXT-X-MEDIA:TYPE=AUDIO` 声明的独立音频轨（按出现顺序）
+    pub audio_groups: Vec<AudioRendition>,
 }
 
 /// master playlist 的一个档位
@@ -59,18 +70,106 @@ pub struct Variant {
     pub bandwidth: u64,
     /// `CODECS` 属性原文（可能含逗号，如 `"avc1.4d401f,mp4a.40.2"`）；缺失为 `None`
     pub codecs: Option<String>,
+    /// `RESOLUTION` 属性（宽, 高）；存在即**强信号**表明该档含视频
+    pub resolution: Option<(u32, u32)>,
+    /// `AUDIO` 属性引用的 `#EXT-X-MEDIA` 音频组 ID
+    pub audio_group: Option<String>,
     /// 档位播放列表 URI（已绝对化）
     pub uri: String,
+}
+
+impl Variant {
+    /// 是否明确含视频轨
+    ///
+    /// 判定依据（任一成立即为视频档）：
+    /// - 有 `RESOLUTION`（纯音频档不会声明分辨率）；
+    /// - `CODECS` 含视频编码标识（`avc1`/`hvc1`/`hev1`/`av01`/`vp09`/`vp08`/
+    ///   `dvh1`/`dvhe`/`dva1`/`dvav`，大小写不敏感）。
+    pub fn has_video(&self) -> bool {
+        self.resolution.is_some() || self.codecs.as_deref().is_some_and(has_video_codec)
+    }
+
+    /// 是否「明确纯音频」：无 `RESOLUTION` 且 `CODECS` 存在但只列音频编码
+    pub fn is_audio_only(&self) -> bool {
+        if self.resolution.is_some() {
+            return false;
+        }
+        match self.codecs.as_deref().map(str::trim) {
+            Some(codecs) if !codecs.is_empty() => !has_video_codec(codecs),
+            // CODECS 缺失/为空：信息不足，不算「明确纯音频」
+            _ => false,
+        }
+    }
+
+    /// 是否「无任何视频信号」：无 `RESOLUTION` 且 `CODECS` 未标明视频编码
+    ///
+    /// 这是比 [`Self::is_audio_only`] 更宽的判据：`CODECS` 完全缺失的档位也
+    /// 满足（真实世界里纯音频档常常省略 `CODECS`）。
+    pub fn lacks_video_signal(&self) -> bool {
+        !self.has_video()
+    }
+}
+
+/// `#EXT-X-MEDIA:TYPE=AUDIO` 声明的独立音频轨
+#[derive(Debug, Clone, PartialEq)]
+pub struct AudioRendition {
+    /// `GROUP-ID` 属性
+    pub group_id: String,
+    /// `NAME` 属性（人可读名）
+    pub name: Option<String>,
+    /// `LANGUAGE` 属性
+    pub language: Option<String>,
+    /// `DEFAULT=YES`
+    pub default: bool,
+    /// `URI` 属性（已绝对化）；缺失表示该音轨复用档位内的音频
+    pub uri: Option<String>,
+}
+
+/// 视频编码标识（`CODECS` 中出现的即视为视频档）
+const VIDEO_CODEC_PREFIXES: &[&str] = &[
+    "avc1", // H.264/AVC
+    "avc3", // H.264/AVC（带内参数集）
+    "hvc1", // H.265/HEVC
+    "hev1", // H.265/HEVC（带内参数集）
+    "av01", // AV1
+    "vp09", // VP9
+    "vp08", // VP8
+    "dvh1", // Dolby Vision（HEVC 基础）
+    "dvhe", // Dolby Vision（HEVC 基础，旧标识）
+    "dva1", // Dolby Vision（AVC 基础）
+    "dvav", // Dolby Vision（AVC 基础，旧标识）
+];
+
+/// `CODECS` 原文是否含视频编码标识（大小写不敏感）
+fn has_video_codec(codecs: &str) -> bool {
+    let lower = codecs.to_ascii_lowercase();
+    VIDEO_CODEC_PREFIXES
+        .iter()
+        .any(|prefix| lower.contains(prefix))
 }
 
 /// media playlist（可播放的分片列表）
 #[derive(Debug, Clone, PartialEq)]
 pub struct MediaPlaylist {
     pub segments: Vec<Segment>,
-    /// fMP4 初始化段；多个 `EXT-X-MAP` 时取**最后一个**
+    /// fMP4 初始化段
+    ///
+    /// 至多一个：出现第二个 `#EXT-X-MAP` 时解析直接返回 `Err`（多 period
+    /// fMP4 不支持，静默取最后一个会把前段拼到错误 init 上）。
     pub init_map: Option<InitMap>,
     /// 是否含 `#EXT-X-ENDLIST`（点播）；false 表示直播/事件流
     pub is_endlist: bool,
+}
+
+impl MediaPlaylist {
+    /// 是否可作为**完整**内容缓存（点播）
+    ///
+    /// 仅当 playlist 含 `#EXT-X-ENDLIST` 时为 `true`。直播（live）playlist
+    /// 只是当前滑动窗口的快照，按窗口下载只能得到「半章」，**调用方必须**
+    /// 在缓存前检查本方法并拒绝 `false`。
+    pub fn is_vod(&self) -> bool {
+        self.is_endlist
+    }
 }
 
 /// 一个媒体分片
@@ -155,39 +254,58 @@ pub fn parse_playlist(text: &str, base_url: &str) -> LegadoResult<Playlist> {
     }
 }
 
-/// 选档策略：优先**纯音频** variant，其次最高带宽
+/// 选档策略：优先**纯音频** variant，其次无视频信号的档，最后最高带宽
 ///
-/// 「纯音频」= `CODECS` 存在且不含视频编码标识（`avc1`/`hvc1`/`hev1`，
-/// 大小写不敏感）。`CODECS` 缺失或为空时**不判定为纯音频**（信息不足，
-/// 可能是视频档）。纯音频档之间取 `BANDWIDTH` 最高者；无纯音频档则取全部
-/// 档位中 `BANDWIDTH` 最高者。同带宽时取**靠前**者（稳定选择）。
+/// 分三档，逐档回落（同档内取 `BANDWIDTH` 最高者，同带宽取**靠前**者）：
+///
+/// 1. **明确纯音频**（[`Variant::is_audio_only`]）：无 `RESOLUTION` 且 `CODECS`
+///    存在、只列音频编码；
+/// 2. **无视频信号**（[`Variant::lacks_video_signal`]）：无 `RESOLUTION` 且
+///    `CODECS` 未标明视频编码——**包含 `CODECS` 完全缺失的情况**（纯音频档
+///    省略 `CODECS` 相当常见，旧实现会因此误选视频档）；
+/// 3. 兜底：全部档位中 `BANDWIDTH` 最高者。
+///
+/// `RESOLUTION` 是「该档含视频」的强信号，故带分辨率的档永远不会进入前两档。
+///
+/// 若 master 是「视频档 + `#EXT-X-MEDIA:TYPE=AUDIO` 独立音频轨」的标准形态，
+/// 纯音频内容在音频轨里而不在任何 variant 中，调用方应改用
+/// [`select_audio_rendition`] 直接取音频轨 URI。
 pub fn select_variant(master: &MasterPlaylist) -> Option<&Variant> {
     if master.variants.is_empty() {
         return None;
     }
-    let audio_only = master
-        .variants
-        .iter()
-        .filter(|v| is_audio_only(v))
-        .collect::<Vec<_>>();
-    if audio_only.is_empty() {
-        pick_max_bandwidth(master.variants.iter())
-    } else {
-        pick_max_bandwidth(audio_only.into_iter())
+    if let Some(picked) = pick_max_bandwidth(master.variants.iter().filter(|v| v.is_audio_only())) {
+        return Some(picked);
     }
+    if let Some(picked) =
+        pick_max_bandwidth(master.variants.iter().filter(|v| v.lacks_video_signal()))
+    {
+        return Some(picked);
+    }
+    pick_max_bandwidth(master.variants.iter())
 }
 
-/// 是否纯音频档（CODECS 存在、非空、且不含视频编码标识）
-fn is_audio_only(variant: &Variant) -> bool {
-    let Some(codecs) = variant.codecs.as_deref() else {
-        return false;
-    };
-    let codecs = codecs.trim();
-    if codecs.is_empty() {
-        return false;
+/// 选「独立音频轨」：`#EXT-X-MEDIA:TYPE=AUDIO` 中带 `URI` 的音轨
+///
+/// 优先 `DEFAULT=YES`，否则取靠前者。返回 `None` 表示该 master 没有独立音频
+/// 播放列表（音频混在 variant 内），此时仍用 [`select_variant`]。
+pub fn select_audio_rendition(master: &MasterPlaylist) -> Option<&AudioRendition> {
+    let with_uri = || master.audio_groups.iter().filter(|a| a.uri.is_some());
+    with_uri().find(|a| a.default).or_else(|| with_uri().next())
+}
+
+/// 选**播放列表 URI**：优先独立音频轨，其次 [`select_variant`]
+///
+/// 这是缓存/播放路径推荐的入口——「视频 variant + 独立音频组」的标准 master
+/// 里，纯音频内容只存在于 `#EXT-X-MEDIA:TYPE=AUDIO` 的 `URI`，任何 variant
+/// 都是视频档。
+pub fn select_playlist_uri(master: &MasterPlaylist) -> Option<&str> {
+    if let Some(rendition) = select_audio_rendition(master) {
+        if let Some(uri) = rendition.uri.as_deref() {
+            return Some(uri);
+        }
     }
-    let lower = codecs.to_ascii_lowercase();
-    !(lower.contains("avc1") || lower.contains("hvc1") || lower.contains("hev1"))
+    select_variant(master).map(|variant| variant.uri.as_str())
 }
 
 /// 取带宽最高者；同带宽保留先出现者
@@ -205,8 +323,9 @@ fn pick_max_bandwidth<'a>(mut iter: impl Iterator<Item = &'a Variant>) -> Option
 /// 解析 master playlist
 fn parse_master(text: &str, base_url: &str) -> LegadoResult<MasterPlaylist> {
     let mut variants: Vec<Variant> = Vec::new();
-    // 等待 URI 行的档位属性：(BANDWIDTH, CODECS)
-    let mut pending: Option<(u64, Option<String>)> = None;
+    let mut audio_groups: Vec<AudioRendition> = Vec::new();
+    // 等待 URI 行的档位属性
+    let mut pending: Option<PendingVariant> = None;
 
     for line in text.lines().map(str::trim) {
         if line.is_empty() {
@@ -222,36 +341,27 @@ fn parse_master(text: &str, base_url: &str) -> LegadoResult<MasterPlaylist> {
                         ));
                     }
                     let value = tag_value(line).unwrap_or("");
-                    let attrs = parse_attributes(value)?;
-                    let mut bandwidth = None;
-                    let mut codecs = None;
-                    for (name, val) in attrs {
-                        match name.to_ascii_uppercase().as_str() {
-                            "BANDWIDTH" => {
-                                bandwidth = Some(val.trim().parse::<u64>().map_err(|_| {
-                                    parse_err(format!(
-                                        "EXT-X-STREAM-INF 的 BANDWIDTH 非数字: {val}"
-                                    ))
-                                })?);
-                            }
-                            "CODECS" => codecs = Some(val),
-                            _ => {}
-                        }
-                    }
-                    let bandwidth = bandwidth
-                        .ok_or_else(|| parse_err("EXT-X-STREAM-INF 缺少 BANDWIDTH 属性"))?;
-                    pending = Some((bandwidth, codecs));
+                    pending = Some(parse_stream_inf(value)?);
                 }
-                // 未知标签（EXT-X-MEDIA / EXT-X-VERSION / EXT-X-INDEPENDENT-SEGMENTS 等）忽略
+                "EXT-X-MEDIA" => {
+                    let value = tag_value(line).unwrap_or("");
+                    if let Some(rendition) = parse_media_rendition(value, base_url)? {
+                        audio_groups.push(rendition);
+                    }
+                }
+                // 未知标签（EXT-X-VERSION / EXT-X-INDEPENDENT-SEGMENTS /
+                // EXT-X-I-FRAME-STREAM-INF 等）忽略
                 _ => {}
             }
             continue;
         }
         // 裸行 = 档位 URI
-        if let Some((bandwidth, codecs)) = pending.take() {
+        if let Some(pending) = pending.take() {
             variants.push(Variant {
-                bandwidth,
-                codecs,
+                bandwidth: pending.bandwidth,
+                codecs: pending.codecs,
+                resolution: pending.resolution,
+                audio_group: pending.audio_group,
                 uri: absolutize(base_url, line),
             });
         }
@@ -263,7 +373,97 @@ fn parse_master(text: &str, base_url: &str) -> LegadoResult<MasterPlaylist> {
             "master playlist 畸形：#EXT-X-STREAM-INF 后缺少档位 URI",
         ));
     }
-    Ok(MasterPlaylist { variants })
+    Ok(MasterPlaylist {
+        variants,
+        audio_groups,
+    })
+}
+
+/// `#EXT-X-STREAM-INF` 解析出的待绑定属性（尚未关联 URI）
+struct PendingVariant {
+    bandwidth: u64,
+    codecs: Option<String>,
+    resolution: Option<(u32, u32)>,
+    audio_group: Option<String>,
+}
+
+/// 解析 `#EXT-X-STREAM-INF` 的属性值
+fn parse_stream_inf(value: &str) -> LegadoResult<PendingVariant> {
+    let attrs = parse_attributes(value)?;
+    let mut bandwidth = None;
+    let mut codecs = None;
+    let mut resolution = None;
+    let mut audio_group = None;
+    for (name, val) in attrs {
+        match name.to_ascii_uppercase().as_str() {
+            "BANDWIDTH" => {
+                bandwidth = Some(val.trim().parse::<u64>().map_err(|_| {
+                    parse_err(format!("EXT-X-STREAM-INF 的 BANDWIDTH 非数字: {val}"))
+                })?);
+            }
+            "CODECS" => codecs = Some(val),
+            "RESOLUTION" => resolution = parse_resolution(&val),
+            "AUDIO" => audio_group = Some(val.trim().to_string()),
+            _ => {}
+        }
+    }
+    let bandwidth = bandwidth.ok_or_else(|| parse_err("EXT-X-STREAM-INF 缺少 BANDWIDTH 属性"))?;
+    Ok(PendingVariant {
+        bandwidth,
+        codecs,
+        resolution,
+        audio_group,
+    })
+}
+
+/// 解析 `RESOLUTION=<w>x<h>`；畸形时返回 `None`（视为未声明，不影响可播性）
+fn parse_resolution(value: &str) -> Option<(u32, u32)> {
+    let (width, height) = value.trim().split_once(['x', 'X'])?;
+    let width = width.trim().parse::<u32>().ok()?;
+    let height = height.trim().parse::<u32>().ok()?;
+    if width == 0 || height == 0 {
+        return None;
+    }
+    Some((width, height))
+}
+
+/// 解析 `#EXT-X-MEDIA`；仅保留 `TYPE=AUDIO`，其余类型返回 `None`
+fn parse_media_rendition(value: &str, base_url: &str) -> LegadoResult<Option<AudioRendition>> {
+    let attrs = parse_attributes(value)?;
+    let mut media_type: Option<String> = None;
+    let mut group_id: Option<String> = None;
+    let mut name: Option<String> = None;
+    let mut language: Option<String> = None;
+    let mut uri: Option<String> = None;
+    let mut default = false;
+    for (attr, val) in attrs {
+        match attr.to_ascii_uppercase().as_str() {
+            "TYPE" => media_type = Some(val.trim().to_string()),
+            "GROUP-ID" => group_id = Some(val.trim().to_string()),
+            "NAME" => name = Some(val),
+            "LANGUAGE" => language = Some(val),
+            "URI" => uri = Some(val),
+            "DEFAULT" => default = val.trim().eq_ignore_ascii_case("YES"),
+            _ => {}
+        }
+    }
+    let is_audio = media_type
+        .as_deref()
+        .is_some_and(|t| t.eq_ignore_ascii_case("AUDIO"));
+    if !is_audio {
+        return Ok(None);
+    }
+    let Some(group_id) = group_id else {
+        // TYPE=AUDIO 缺 GROUP-ID：无法被档位引用，忽略（不因可选轨丢整条播放链）
+        return Ok(None);
+    };
+    Ok(Some(AudioRendition {
+        group_id,
+        name,
+        language,
+        default,
+        uri: uri.map(|u| absolutize(base_url, &u)),
+    }))
 }
 
 /// media playlist 解析的中间状态
@@ -328,6 +528,14 @@ fn parse_media(text: &str, base_url: &str) -> LegadoResult<MediaPlaylist> {
                 state.current_key = parse_key(value, base_url)?;
             }
             "EXT-X-MAP" => {
+                if state.init_map.is_some() {
+                    // 多 period fMP4：换 init map（通常还换 key）。单一 init_map
+                    // 无法覆盖全部段，静默取最后一个会把前段拼到错误 init 上，
+                    // 产物不可播且无任何报错——宁可直接失败。
+                    return Err(parse_err(
+                        "不支持多 period fMP4（多个 EXT-X-MAP）：无法用单一 init map 覆盖全部分片",
+                    ));
+                }
                 state.init_map = Some(parse_map(value, base_url, &state.current_key)?);
                 state.init_iv_resolved = false;
             }
@@ -755,8 +963,8 @@ v_720.m3u8
     }
 
     #[test]
-    fn master_without_codecs_falls_back_to_highest_bandwidth() {
-        // CODECS 缺失无法判定纯音频 → 不按音频优先，回落最高带宽
+    fn master_without_codecs_prefers_variant_without_resolution() {
+        // CODECS 全缺失：两档都「无视频信号」，仍取最高带宽（第二档回落）
         let text = "\
 #EXTM3U
 #EXT-X-STREAM-INF:BANDWIDTH=100000
@@ -768,6 +976,138 @@ high.m3u8
         assert_eq!(master.variants[0].codecs, None);
         let picked = select_variant(&master).expect("应有选中档位");
         assert_eq!(picked.bandwidth, 900_000);
+    }
+
+    #[test]
+    fn master_audio_without_codecs_beats_video_with_avc1() {
+        // P2-3 回归：纯音频档省略 CODECS，视频档写了 avc1。
+        // 旧实现 audio_only 为空 → 回落最高带宽 → 误选视频档。
+        let text = "\
+#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=4000000,CODECS=\"avc1.640028,mp4a.40.2\"
+video.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=128000
+audio_no_codecs.m3u8
+";
+        let master = parse_master_only(text);
+        let picked = select_variant(&master).expect("应有选中档位");
+        assert_eq!(
+            picked.uri,
+            "https://cdn.example.com/media/audio_no_codecs.m3u8"
+        );
+        assert_eq!(picked.bandwidth, 128_000);
+    }
+
+    #[test]
+    fn master_resolution_without_codecs_is_video() {
+        // RESOLUTION 是视频强信号：即使 CODECS 缺失也不能当作音频候选
+        let text = "\
+#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080
+video.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=128000,CODECS=\"mp4a.40.2\"
+audio.m3u8
+";
+        let master = parse_master_only(text);
+        assert_eq!(master.variants[0].resolution, Some((1920, 1080)));
+        assert!(master.variants[0].has_video());
+        let picked = select_variant(&master).expect("应有选中档位");
+        assert_eq!(picked.uri, "https://cdn.example.com/media/audio.m3u8");
+    }
+
+    #[test]
+    fn master_av1_and_vp9_variants_are_not_audio_only() {
+        // av01 / vp09 / vp08 / dvhe 等新编码必须被识别为视频档
+        let text = "\
+#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=3000000,CODECS=\"av01.0.05M.08\"
+av1.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=2000000,CODECS=\"vp09.00.10.08\"
+vp9.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=1000000,CODECS=\"vp08.00.41.08\"
+vp8.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=2500000,CODECS=\"dvh1.05.06\"
+dovi.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=64000,CODECS=\"opus\"
+audio.m3u8
+";
+        let master = parse_master_only(text);
+        assert!(master.variants[..4].iter().all(|v| v.has_video()));
+        assert!(master.variants[..4].iter().all(|v| !v.is_audio_only()));
+        assert!(master.variants[4].is_audio_only());
+        let picked = select_variant(&master).expect("应有选中档位");
+        assert_eq!(picked.uri, "https://cdn.example.com/media/audio.m3u8");
+    }
+
+    #[test]
+    fn master_resolution_variant_never_outranks_resolutionless() {
+        // 有 RESOLUTION 的档（即便 CODECS 缺失）不得优先于无 RESOLUTION 的档
+        let text = "\
+#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=9000000,RESOLUTION=3840x2160
+uhd.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=64000
+maybe_audio.m3u8
+";
+        let master = parse_master_only(text);
+        let picked = select_variant(&master).expect("应有选中档位");
+        assert_eq!(picked.uri, "https://cdn.example.com/media/maybe_audio.m3u8");
+    }
+
+    #[test]
+    fn master_audio_rendition_group_parsed_and_selected() {
+        // 只有视频 variant + 独立音频组（标准形态）：应能取到音频组 URI
+        let text = "\
+#EXTM3U
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",NAME=\"cn\",DEFAULT=YES,URI=\"audio_cn.m3u8\"
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",NAME=\"en\",URI=\"audio_en.m3u8\"
+#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"sub\",NAME=\"cn\",URI=\"sub.m3u8\"
+#EXT-X-STREAM-INF:BANDWIDTH=5000000,CODECS=\"avc1.640028,mp4a.40.2\",RESOLUTION=1920x1080,AUDIO=\"aud\"
+video_1080.m3u8
+";
+        let master = parse_master_only(text);
+        assert_eq!(master.variants.len(), 1);
+        // 非 AUDIO 类型不入列
+        assert_eq!(master.audio_groups.len(), 2);
+        assert_eq!(master.audio_groups[0].group_id, "aud");
+        assert_eq!(master.audio_groups[0].name.as_deref(), Some("cn"));
+        assert!(master.audio_groups[0].default);
+        assert_eq!(
+            master.audio_groups[0].uri.as_deref(),
+            Some("https://cdn.example.com/media/audio_cn.m3u8")
+        );
+        assert!(!master.audio_groups[1].default);
+        assert_eq!(master.variants[0].audio_group.as_deref(), Some("aud"));
+
+        // 独立音频组优先（DEFAULT=YES）
+        let rendition = select_audio_rendition(&master).expect("应有音频轨");
+        assert_eq!(rendition.name.as_deref(), Some("cn"));
+        assert_eq!(
+            select_playlist_uri(&master),
+            Some("https://cdn.example.com/media/audio_cn.m3u8")
+        );
+        // select_variant 仍只看 variant（此 master 全是视频档 → 兜底最高带宽）
+        assert_eq!(
+            select_variant(&master).map(|v| v.uri.as_str()),
+            Some("https://cdn.example.com/media/video_1080.m3u8")
+        );
+    }
+
+    #[test]
+    fn master_audio_rendition_without_uri_falls_back_to_variant() {
+        let text = "\
+#EXTM3U
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",NAME=\"cn\",DEFAULT=YES
+#EXT-X-STREAM-INF:BANDWIDTH=128000,CODECS=\"mp4a.40.2\",AUDIO=\"aud\"
+audio.m3u8
+";
+        let master = parse_master_only(text);
+        assert!(master.audio_groups[0].uri.is_none());
+        assert!(select_audio_rendition(&master).is_none());
+        assert_eq!(
+            select_playlist_uri(&master),
+            Some("https://cdn.example.com/media/audio.m3u8")
+        );
     }
 
     #[test]
@@ -791,7 +1131,10 @@ second.m3u8
             select_variant(&master).unwrap().uri,
             "https://cdn.example.com/media/x.m3u8"
         );
-        let empty = MasterPlaylist { variants: vec![] };
+        let empty = MasterPlaylist {
+            variants: vec![],
+            audio_groups: vec![],
+        };
         assert!(select_variant(&empty).is_none());
     }
 
@@ -907,6 +1250,55 @@ https://abs.example.com/seg2.ts
         let media = parse_media_only("#EXTM3U\n#EXTINF:4,\nseg.ts\n");
         assert!(!media.is_endlist);
         assert_eq!(media.segments.len(), 1);
+    }
+
+    #[test]
+    fn media_is_vod_tracks_endlist() {
+        // P2-5：live 快照必须能被识别（is_vod=false），由调用方拒绝缓存
+        let live = parse_media_only("#EXTM3U\n#EXTINF:4,\nseg.ts\n");
+        assert!(!live.is_vod());
+        let vod = parse_media_only("#EXTM3U\n#EXTINF:4,\nseg.ts\n#EXT-X-ENDLIST\n");
+        assert!(vod.is_vod());
+        // 事件流（无 ENDLIST 但有 PLAYLIST-TYPE:EVENT）同样是未完结快照
+        let event = parse_media_only("#EXTM3U\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXTINF:4,\nseg.ts\n");
+        assert!(!event.is_vod());
+    }
+
+    #[test]
+    fn media_multiple_ext_x_map_is_error() {
+        // P2-4：多 period fMP4（换 init map）不能被静默拼成「最后一个 init + 全部段」
+        let text = "\
+#EXTM3U
+#EXT-X-MAP:URI=\"init_p1.mp4\"
+#EXTINF:4,
+seg0.m4s
+#EXT-X-DISCONTINUITY
+#EXT-X-KEY:METHOD=AES-128,URI=\"k2.key\"
+#EXT-X-MAP:URI=\"init_p2.mp4\"
+#EXTINF:4,
+seg1.m4s
+#EXT-X-ENDLIST
+";
+        let err = parse_playlist(text, BASE).expect_err("多个 EXT-X-MAP 必须报错");
+        let message = err.to_string();
+        assert!(message.contains("EXT-X-MAP"), "message={message}");
+        assert!(message.contains("多 period"), "message={message}");
+        assert_eq!(err.to_error_code(), 1001);
+    }
+
+    #[test]
+    fn media_single_ext_x_map_repeated_uri_still_error() {
+        // 即使 URI 相同，第二个 EXT-X-MAP 也说明存在 period 切换语义歧义
+        let text = "\
+#EXTM3U
+#EXT-X-MAP:URI=\"init.mp4\"
+#EXTINF:4,
+seg0.m4s
+#EXT-X-MAP:URI=\"init.mp4\"
+#EXTINF:4,
+seg1.m4s
+";
+        assert!(parse_playlist(text, BASE).is_err());
     }
 
     // ---------- media：BYTERANGE ----------
