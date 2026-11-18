@@ -56,11 +56,12 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use legado_core::crypto::AesCrypto;
 use legado_core::{LegadoError, LegadoResult};
 use legado_db::{BookChapterRepository, BookRepository, BookSourceRepository};
+use legado_fetcher::web_book::SourceHeaderSet;
 use legado_net::{LegadoClient, LegadoRequest, LegadoStreamResponse, Method};
 use legado_parser::{AnalyzeUrl, TemplateContext};
 
 use crate::api::hls_playlist::{
-    parse_playlist, select_variant, ByteRange, HlsKey, InitMap, MediaPlaylist, Playlist,
+    parse_playlist, select_playlist_uri, ByteRange, HlsKey, InitMap, MediaPlaylist, Playlist,
 };
 use crate::db_state::with_database;
 
@@ -977,10 +978,18 @@ fn audio_cache_download_with_client(
     } else {
         Some(base_url)
     };
-    let mut headers = fetcher
-        .parse_source_headers_for_url(&source, analyze_url.url(), base_url)
+    // 书源 header 保留「静态头 / 登录头」两份（P2-6）：登录头必须**逐请求**
+    // 按目标 URL 同站门控，不能像此前那样在 playlist 上一次判定后原样复用给
+    // 全部 segment/key（这些常在不同域名的 CDN 上 → 凭据外泄给第三方）。
+    let header_set = fetcher.parse_source_header_set(&source);
+    let source_url = source.book_source_url.clone();
+    // playUrl 的 `,{options}` 显式声明的头：属于该媒体请求本身（非登录态），
+    // 对 playlist 与全部 segment/key 一致发送。
+    let extra_headers = analyze_url.headers().clone();
+    let mut headers = header_set
+        .for_request(&source_url, analyze_url.url(), base_url)
         .unwrap_or_default();
-    headers.extend(analyze_url.headers().clone());
+    headers.extend(extra_headers.clone());
     legado_js::host_api::cookie_store::merge_js_cookies(&mut headers, analyze_url.url());
     // 批29b 审查 P2-6：`proxy` 是源 header 的代理配置键而非 HTTP 头
     // （上游 AnalyzeUrl 提取后即删除），合并后发送前必须剔除，避免代理凭据
@@ -988,9 +997,6 @@ fn audio_cache_download_with_client(
     legado_fetcher::web_book::strip_proxy_header(&mut headers);
 
     let body = analyze_url.request_body();
-    // HLS 分支复用同一套书源 headers 请求 playlist / key / segment
-    // （契约 §2.48「分片请求头」：Referer/UA/登录头门控与主请求一致）
-    let segment_headers = headers.clone();
     // 解析后的请求 URL（playUrl 原串可能带 `,{options}` 模板尾巴，HLS 后缀判定
     // 必须用解析后 URL）
     let request_url = analyze_url.url().to_string();
@@ -1063,7 +1069,9 @@ fn audio_cache_download_with_client(
             chapter_index,
             chapter_title,
             play_url,
-            &segment_headers,
+            &header_set,
+            &source_url,
+            &extra_headers,
             &final_url,
             playlist_bytes,
             cancel_snapshot,
@@ -1347,6 +1355,9 @@ fn init_map_identity(init: Option<&InitMap>) -> Option<String> {
 type KeyCache = HashMap<String, Vec<u8>>;
 
 /// 取（必要时拉取）AES-128 密钥：长度必须为 16 字节（AES-128）
+///
+/// 请求头由调用方经 [`HlsFetchCtx::headers_for`] 按 **key URI** 单独组装
+/// （P2-6：key 也常在异域 CDN 上，不得携带登录头），不复用分片的头。
 fn resolve_key(
     client: &LegadoClient,
     key: &HlsKey,
@@ -1383,16 +1394,49 @@ fn decrypt_segment(key: &[u8], hls_key: &HlsKey, data: Vec<u8>) -> LegadoResult<
     AesCrypto::decrypt_cbc(key, &iv, &data)
 }
 
-/// HLS 分片拉取上下文（客户端 + 请求头 + 取消代数 + 密钥缓存），
+/// HLS 分片拉取上下文（客户端 + 书源头原料 + 取消代数 + 密钥缓存），
 /// 避免各辅助函数重复传同一批参数
+///
+/// **请求头按 URL 逐次组装（P2-6）**：登录头（`loginHeader_*`）只发给与书源
+/// 同站的请求，而 HLS 的 segment / key 常托管在异域 CDN 上。若像旧实现那样
+/// 在 playlist 处一次性判定后复用同一份 headers，认证凭据会随每个分片请求
+/// 外泄给第三方（原版 #1099 要防的正是此场景——`AnalyzeUrl.isLoginHeaderSite`
+/// 是**逐请求**判定的）。故此处只持有原料，由 [`Self::headers_for`] 按每个
+/// 资源 URL 现组装。
 struct HlsFetchCtx<'a> {
     client: &'a LegadoClient,
-    headers: &'a HashMap<String, String>,
+    /// 书源 header 集合（静态头 + 登录头，登录头由 `for_request` 同站门控）
+    header_set: &'a SourceHeaderSet,
+    /// 书源自身 URL（同站判定基准）
+    source_url: &'a str,
+    /// playUrl `,{options}` 显式声明的头（对全部 HLS 资源一致发送）
+    extra_headers: &'a HashMap<String, String>,
+    /// 相对资源 URI 的解析基准（= 真正给出分片清单的 playlist URL）
+    playlist_base: String,
     cancel_snapshot: u64,
     key_cache: KeyCache,
 }
 
 impl HlsFetchCtx<'_> {
+    /// 按目标资源 URL 组装请求头（P2-6 核心门控）
+    ///
+    /// 顺序与主请求一致：书源静态头 + 同站登录头（[`SourceHeaderSet::for_request`]
+    /// 逐请求判定 eTLD+1）→ playUrl 显式头 → 该 URL 属域 JS cookie
+    /// （`cookies_for_url` 按域取，天然不跨域）→ 剔除代理配置键。
+    ///
+    /// - 同站资源：静态头 + 登录头（登录后才能听的源不受影响）
+    /// - 跨站资源：仅静态头（UA/Referer）+ playUrl 显式头，**无**登录头
+    fn headers_for(&self, url: &str) -> HashMap<String, String> {
+        let mut h = self
+            .header_set
+            .for_request(self.source_url, url, Some(self.playlist_base.as_str()))
+            .unwrap_or_default();
+        h.extend(self.extra_headers.clone());
+        legado_js::host_api::cookie_store::merge_js_cookies(&mut h, url);
+        legado_fetcher::web_book::strip_proxy_header(&mut h);
+        h
+    }
+
     /// 下载单个 HLS 资源（init map / segment）到写入器：处理 key 解密与 BYTERANGE
     ///
     /// **空体即错（P2-1）**：2xx + 0 字节是 CDN/回源的典型失败形态，静默跳过会
@@ -1405,10 +1449,11 @@ impl HlsFetchCtx<'_> {
         writer: &mut impl Write,
         label: &str,
     ) -> LegadoResult<u64> {
+        let headers = self.headers_for(url);
         let raw = fetch_bytes_capped(
             self.client,
             url,
-            self.headers,
+            &headers,
             byte_range,
             HLS_SEGMENT_MAX_BYTES,
             self.cancel_snapshot,
@@ -1420,10 +1465,13 @@ impl HlsFetchCtx<'_> {
         }
         let bytes = match key {
             Some(hls_key) => {
+                // key 是独立资源（常在另一台 CDN 上）：按 key URI 重新门控，
+                // 不复用分片头的判定结果（P2-6）
+                let key_headers = self.headers_for(&hls_key.uri);
                 let key_bytes = resolve_key(
                     self.client,
                     hls_key,
-                    self.headers,
+                    &key_headers,
                     &mut self.key_cache,
                     self.cancel_snapshot,
                 )?;
@@ -1440,12 +1488,13 @@ impl HlsFetchCtx<'_> {
         Ok(bytes.len() as u64)
     }
 
-    /// 拉取并解析 playlist（`base_url` 为 playlist 自身 URL，用于相对路径绝对化）
+    /// 拉取并解析 playlist（`url` 为 playlist 自身 URL，用于相对路径绝对化）
     fn fetch_playlist(&self, url: &str) -> LegadoResult<Playlist> {
+        let headers = self.headers_for(url);
         let bytes = fetch_bytes_capped(
             self.client,
             url,
-            self.headers,
+            &headers,
             None,
             HLS_META_MAX_BYTES,
             self.cancel_snapshot,
@@ -1458,10 +1507,18 @@ impl HlsFetchCtx<'_> {
 /// HLS 下载：解析 playlist → 下载全部 segment → 合并为单文件 → 走既有安装流程
 ///
 /// 流程见契约 §2.48「HLS 合并下载路径」：
-/// 1. 解析首响应（playlist 原文）；master → `select_variant` 选档后**再拉一次**
-/// 2. 有 `init_map` → 先写 init segment（同样支持 BYTERANGE + key）
-/// 3. 逐 segment：key 解密 / BYTERANGE / **边下边拼**追加写临时文件
-/// 4. 拼接完成 → 既有 size 校验 + 五段式安装 + `.complete` + 清理旧版本
+/// 1. 解析首响应（playlist 原文）；master → [`select_playlist_uri`] 选档
+///    （优先独立音频轨，P2-3）后**再拉一次**
+/// 2. **直播门禁**：playlist 无 `#EXT-X-ENDLIST` 即 Err（滑动窗口快照只能得到
+///    半章，P2-5）；重拉后的 playlist 同样复检
+/// 3. 有 `init_map` → 先写 init segment（同样支持 BYTERANGE + key）
+/// 4. 逐 segment：key 解密 / BYTERANGE / **边下边拼**追加写临时文件
+/// 5. 拼接完成 → 既有 size 校验 + 五段式安装 + `.complete` + 清理旧版本
+///
+/// **请求头（P2-6）**：不接收一份复用的 headers，而是接收书源头原料
+/// （[`SourceHeaderSet`] + 源 URL + playUrl 显式头），由
+/// [`HlsFetchCtx::headers_for`] 对每个 playlist/variant/init/segment/key URL
+/// **逐请求**同站门控登录头。
 ///
 /// **签名过期**：单段失败时重拉一次 playlist（token 可能刷新）后重试该段；
 /// 重拉目标是**媒体分片清单**的实际地址（master 源为其 variant URL，P1-1），
@@ -1476,14 +1533,20 @@ fn download_hls_and_install(
     chapter_index: i32,
     chapter_title: &str,
     play_url: &str,
-    headers: &HashMap<String, String>,
+    header_set: &SourceHeaderSet,
+    source_url: &str,
+    extra_headers: &HashMap<String, String>,
     playlist_url: &str,
     playlist_bytes: Vec<u8>,
     cancel_snapshot: u64,
 ) -> LegadoResult<String> {
     let mut ctx = HlsFetchCtx {
         client,
-        headers,
+        header_set,
+        source_url,
+        extra_headers,
+        // 首响应来自 playlist_url；master 选档成功后改写为 variant URL
+        playlist_base: playlist_url.to_string(),
         cancel_snapshot,
         key_cache: HashMap::new(),
     };
@@ -1491,16 +1554,20 @@ fn download_hls_and_install(
     // ① 解析首响应；master → 选档后重拉
     //
     // `effective_playlist_url` 记录**真正给出媒体分片清单**的 playlist URL：
-    // master 源是 variant 的 URL，media 源就是自身（P1-1）。重试时必须拉它——
-    // 拉 master 只会再次拿到 master，重试逻辑形同死代码且错误文案误导。
+    // master 源是所选播放列表（音频轨优先）的 URL，media 源就是自身（P1-1）。
+    // 重试时必须拉它——拉 master 只会再次拿到 master，重试逻辑形同死代码且
+    // 错误文案误导。
     let text = String::from_utf8_lossy(&playlist_bytes);
     let first = parse_playlist(&text, playlist_url)?;
     let (media, effective_playlist_url): (MediaPlaylist, String) = match first {
         Playlist::Media(media) => (media, playlist_url.to_string()),
         Playlist::Master(master) => {
-            let variant = select_variant(&master)
-                .ok_or_else(|| LegadoError::Parser("HLS master playlist 无可用档位".to_string()))?;
-            let variant_url = variant.uri.clone();
+            // P2-3：优先 `#EXT-X-MEDIA:TYPE=AUDIO` 的独立音频轨——「视频档 +
+            // 独立音频组」的标准 master 里纯音频内容只在音轨，任何 variant 都是
+            // 视频档；无独立音轨才回落到 select_variant 选档。
+            let variant_url = select_playlist_uri(&master)
+                .ok_or_else(|| LegadoError::Parser("HLS master playlist 无可用档位".to_string()))?
+                .to_string();
             let media = match ctx.fetch_playlist(&variant_url)? {
                 Playlist::Media(media) => media,
                 Playlist::Master(_) => {
@@ -1512,6 +1579,16 @@ fn download_hls_and_install(
             (media, variant_url)
         }
     };
+    // 相对资源 URI 的基准 = 真正给出分片清单的 playlist（P2-6 headers_for 用）
+    ctx.playlist_base = effective_playlist_url.clone();
+
+    // 直播门禁（P2-5）：无 `EXT-X-ENDLIST` 的 playlist 只是当前滑动窗口快照，
+    // 按窗口下载只能得到半章——必须在写盘前拒绝，且错误文案可诊断。
+    if !media.is_vod() {
+        return Err(LegadoError::Ffi(format!(
+            "HLS 直播流不支持离线缓存（playlist 无 EXT-X-ENDLIST，只是当前滑动窗口快照，缓存只能得到半章）: {effective_playlist_url}"
+        )));
+    }
 
     if media.segments.is_empty() {
         return Err(LegadoError::Ffi("HLS 播放列表为空（无可用分片）".into()));
@@ -1590,6 +1667,13 @@ fn download_hls_and_install(
                                 )))
                             }
                         };
+                        // 直播门禁复检（P2-5）：重拉可能让 VOD 变 live（服务端切换
+                        // 直播态 / ENDLIST 消失），此时继续拼接同样只能得到半章。
+                        if !refreshed.is_vod() {
+                            return Err(LegadoError::Ffi(format!(
+                                "HLS 直播流不支持离线缓存（playlist 无 EXT-X-ENDLIST，只是当前滑动窗口快照，缓存只能得到半章）: {effective_playlist_url}"
+                            )));
+                        }
                         // P2-7：仅比段数不够——直播窗口「进 1 出 1」时数量不变但
                         // 内容整体位移，继续按下标拼接会产出错序文件。故要求该
                         // index 处的分片身份（路径 + BYTERANGE，忽略签名查询串）
@@ -2224,6 +2308,44 @@ mod tests {
             ..legado_net::LegadoClientConfig::default()
         })
         .expect("构建测试 HTTP 客户端")
+    }
+
+    /// 插入音频书 + 书源（可带静态 header）+ 单章（测试 DB，唯一 bookUrl 隔离）
+    fn insert_audio_book_with_header(
+        book_url: &str,
+        source_url: &str,
+        source_header: Option<&str>,
+        chapter_url: &str,
+        chapter_title: &str,
+    ) {
+        with_database(|db| {
+            let book = legado_core::models::Book {
+                book_url: book_url.to_string(),
+                name: format!("听书header测试-{book_url}"),
+                author: String::new(),
+                origin: source_url.to_string(),
+                ..Default::default()
+            };
+            BookRepository::new(db.connection()).insert(&book)?;
+            let source = BookSource {
+                book_source_url: source_url.to_string(),
+                book_source_name: "测试音频源".into(),
+                header: source_header.map(str::to_string),
+                ..BookSource::default()
+            };
+            BookSourceRepository::new(db.connection()).insert(&source)?;
+            let chapter = legado_core::models::BookChapter {
+                book_url: book_url.to_string(),
+                index: 0,
+                title: chapter_title.to_string(),
+                url: chapter_url.to_string(),
+                is_volume: false,
+                ..Default::default()
+            };
+            BookChapterRepository::new(db.connection()).insert(&chapter)?;
+            Ok(())
+        })
+        .unwrap();
     }
 
     /// 插入音频书 + 书源 + 单章（测试 DB，唯一 bookUrl 隔离）
@@ -3317,10 +3439,20 @@ mod tests {
     where
         F: Fn(&str) -> HttpReply + Send + Sync + 'static,
     {
+        spawn_router_server_on("127.0.0.1", responder)
+    }
+
+    /// 同上，但可指定监听地址（P2-6 跨站用例用 `127.0.0.1` vs `127.0.0.2`
+    /// 模拟两个不同 eTLD+1：`cookie_domain_key` 对 IP 字面量以自身为键，
+    /// 故两个不同 IP 即判定为异站）
+    fn spawn_router_server_on<F>(host: &str, responder: F) -> (u16, SeenRequests)
+    where
+        F: Fn(&str) -> HttpReply + Send + Sync + 'static,
+    {
         use std::io::{Read, Write};
         use std::net::TcpListener;
 
-        let listener = TcpListener::bind("127.0.0.1:0").expect("绑定回环端口");
+        let listener = TcpListener::bind((host, 0)).expect("绑定回环端口");
         let port = listener.local_addr().unwrap().port();
         let seen: SeenRequests = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let seen_srv = std::sync::Arc::clone(&seen);
@@ -4609,6 +4741,390 @@ mod tests {
             fs::read(json["path"].as_str().unwrap()).unwrap(),
             body,
             "嗅探消费的首块必须写回，字节不得丢失"
+        );
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // ─── P2-6：跨域认证头门控（本线核心）──────────────────────────────────
+
+    /// P2-6 核心：登录头只发同站资源，跨站 segment 必须收不到 `Authorization`
+    ///
+    /// 场景：书源 `https://source.example/audio`（登录头 `Authorization:
+    /// Bearer secret`），playlist 在同站（`http://127.0.0.1:p1`），segment 在
+    /// **异站**（`http://127.0.0.2:p2`）。改前：登录头在 playlist 处一次性判定
+    /// 后原样复用给全部 segment → 异站 segment 收到凭据（红）；改后：逐 URL
+    /// 门控 → 异站无登录头、同站有（绿）。
+    ///
+    /// 判定依据：`legado_net::cookie_store::cookie_domain_key` 对 IP 字面量
+    /// 以**自身**为键（`127.0.0.1` ≠ `127.0.0.2`），故两个回环别名即异站。
+    #[test]
+    fn hls_login_header_not_leaked_to_cross_site_segments() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("hls-cross-site");
+        set_test_root(&root);
+
+        // 异站服务器（127.0.0.2）：承载跨站 segment
+        let (cdn_port, cdn_seen) = spawn_router_server_on("127.0.0.2", |head| {
+            let target = request_target(head);
+            if target.starts_with("/cdn-seg.ts") {
+                return HttpReply::ok("video/mp2t", b"CDN-SEG".to_vec());
+            }
+            HttpReply::status(404)
+        });
+
+        // 同站服务器（127.0.0.1）：playlist + 同站 segment
+        let (site_port, site_seen) = {
+            let playlist = media_playlist(&[
+                "#EXTINF:10,",
+                "same-seg.ts",
+                "#EXTINF:10,",
+                &format!("http://127.0.0.2:{cdn_port}/cdn-seg.ts"),
+            ]);
+            spawn_router_server(move |head| {
+                let target = request_target(head);
+                if target.starts_with("/playlist.m3u8") {
+                    return HttpReply::ok(
+                        "application/vnd.apple.mpegurl",
+                        playlist.clone().into_bytes(),
+                    );
+                }
+                if target.starts_with("/same-seg.ts") {
+                    return HttpReply::ok("video/mp2t", b"SAME-SEG".to_vec());
+                }
+                HttpReply::status(404)
+            })
+        };
+
+        let book_url = "https://a.com/book/hls-cross-site";
+        let source_url = "http://127.0.0.1";
+        // 书源静态头（UA）+ 登录头（Authorization）分开：静态头跨站也发，
+        // 登录头只在同站发
+        insert_audio_book_with_header(
+            book_url,
+            source_url,
+            Some(r#"{"User-Agent":"LegadoTest/1.0"}"#),
+            "hello",
+            "第一章",
+        );
+        crate::api::source_login_cache::put_login_header(
+            source_url,
+            r#"{"Authorization":"Bearer secret"}"#,
+        )
+        .expect("写登录头");
+
+        let play_url = format!("http://127.0.0.1:{site_port}/playlist.m3u8");
+        let out = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        );
+        // 清理登录头（进程级内存真源，避免污染其他测试）
+        let _ = crate::api::source_login_cache::remove_login_header(source_url);
+        let out = out.expect("同站 playlist + 同站/跨站 segment 应合并成功");
+        let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(
+            fs::read(json["path"].as_str().unwrap()).unwrap(),
+            b"SAME-SEGCDN-SEG".to_vec()
+        );
+
+        // 同站资源（playlist / same-seg）必须带登录头
+        let site_heads = site_seen.lock().unwrap().clone();
+        assert_eq!(
+            site_heads.len(),
+            2,
+            "playlist + 同站 segment: {site_heads:?}"
+        );
+        for head in &site_heads {
+            assert_eq!(
+                request_header(head, "authorization").as_deref(),
+                Some("Bearer secret"),
+                "同站请求必须带登录头（否则登录后才能听的源全废）: {head}"
+            );
+            assert_eq!(
+                request_header(head, "user-agent").as_deref(),
+                Some("LegadoTest/1.0"),
+                "静态头同站必须发送: {head}"
+            );
+        }
+
+        // 跨站 segment：不得带登录头，但静态头仍须发送
+        let cdn_heads = cdn_seen.lock().unwrap().clone();
+        assert_eq!(cdn_heads.len(), 1, "只应有 1 次跨站 segment 请求");
+        let cdn_head = &cdn_heads[0];
+        assert!(
+            request_header(cdn_head, "authorization").is_none(),
+            "跨站 segment 不得收到登录头（P2-6 凭据外泄）: {cdn_head}"
+        );
+        assert_eq!(
+            request_header(cdn_head, "user-agent").as_deref(),
+            Some("LegadoTest/1.0"),
+            "跨站 segment 仍须带静态头 UA: {cdn_head}"
+        );
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// P2-6 单元层：`HlsFetchCtx::headers_for` 的同站/跨站门控语义
+    ///
+    /// 不依赖网络：直接构造 `SourceHeaderSet`（静态头 + 登录头）与 ctx，
+    /// 断言同站 URL 带登录头、跨站 URL 不带，且两站都带静态头与 playUrl 显式头。
+    #[test]
+    fn headers_for_gates_login_headers_per_request_url() {
+        let mut static_headers = HashMap::new();
+        static_headers.insert("User-Agent".to_string(), "LegadoTest/1.0".to_string());
+        let mut login_headers = HashMap::new();
+        login_headers.insert("Authorization".to_string(), "Bearer secret".to_string());
+        let header_set = SourceHeaderSet {
+            static_headers,
+            login_headers,
+        };
+        let mut extra_headers = HashMap::new();
+        extra_headers.insert("X-Play-Option".to_string(), "1".to_string());
+        let client = test_client();
+        let ctx = HlsFetchCtx {
+            client: &client,
+            header_set: &header_set,
+            source_url: "https://www.example.com/book",
+            extra_headers: &extra_headers,
+            playlist_base: "https://www.example.com/media/playlist.m3u8".to_string(),
+            cancel_snapshot: 0,
+            key_cache: HashMap::new(),
+        };
+
+        // 同站（同 eTLD+1）：登录头 + 静态头 + playUrl 显式头
+        let same = ctx.headers_for("https://cdn.example.com/media/seg0.ts");
+        assert_eq!(
+            same.get("Authorization").map(String::as_str),
+            Some("Bearer secret"),
+            "同 eTLD+1 必须带登录头"
+        );
+        assert_eq!(
+            same.get("User-Agent").map(String::as_str),
+            Some("LegadoTest/1.0")
+        );
+        assert_eq!(same.get("X-Play-Option").map(String::as_str), Some("1"));
+
+        // 跨站（不同 eTLD+1）：无登录头，静态头 + playUrl 显式头仍在
+        let cross = ctx.headers_for("https://cdn3.example-cdn.net/seg0.ts");
+        assert!(
+            !cross.contains_key("Authorization"),
+            "跨站请求不得携带登录头: {cross:?}"
+        );
+        assert_eq!(
+            cross.get("User-Agent").map(String::as_str),
+            Some("LegadoTest/1.0"),
+            "跨站仍须带静态头"
+        );
+        assert_eq!(
+            cross.get("X-Play-Option").map(String::as_str),
+            Some("1"),
+            "playUrl 显式头属于该媒体请求本身，跨站也应发送"
+        );
+
+        // 相对 URI：按 playlist_base 绝对化后再判定（落在同站 → 带登录头）
+        let relative = ctx.headers_for("/media/seg1.ts");
+        assert_eq!(
+            relative.get("Authorization").map(String::as_str),
+            Some("Bearer secret"),
+            "相对 URI 应经 playlist_base 绝对化为同站，故带登录头"
+        );
+    }
+
+    // ─── P2-5：直播 playlist 拒绝缓存 ──────────────────────────────────────
+
+    /// 无 `#EXT-X-ENDLIST` 的 playlist（直播滑动窗口）必须拒绝缓存：
+    /// Err 文案含「直播」，且不留残留文件与 `.complete` 标记
+    #[test]
+    fn live_playlist_is_rejected_without_residue() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("hls-live");
+        set_test_root(&root);
+
+        // 直播 playlist：无 EXT-X-ENDLIST
+        let live = concat!(
+            "#EXTM3U\n",
+            "#EXT-X-VERSION:4\n",
+            "#EXT-X-TARGETDURATION:10\n",
+            "#EXT-X-MEDIA-SEQUENCE:100\n",
+            "#EXTINF:10,\n",
+            "live0.ts\n",
+            "#EXTINF:10,\n",
+            "live1.ts\n",
+        )
+        .to_string();
+        let (port, seen) = spawn_router_server(move |head| {
+            let target = request_target(head);
+            if target.starts_with("/live.m3u8") {
+                return HttpReply::ok("application/vnd.apple.mpegurl", live.clone().into_bytes());
+            }
+            if target.starts_with("/live0.ts") {
+                return HttpReply::ok("video/mp2t", b"LIVE-0".to_vec());
+            }
+            if target.starts_with("/live1.ts") {
+                return HttpReply::ok("video/mp2t", b"LIVE-1".to_vec());
+            }
+            HttpReply::status(404)
+        });
+
+        let book_url = "https://a.com/book/hls-live";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let play_url = format!("http://127.0.0.1:{port}/live.m3u8");
+        let err = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        )
+        .expect_err("直播 playlist 必须拒绝缓存");
+        let msg = err.to_string();
+        assert!(msg.contains("直播"), "错误文案须含「直播」: {msg}");
+        assert!(
+            msg.contains("EXT-X-ENDLIST"),
+            "错误文案应说明缺 ENDLIST: {msg}"
+        );
+
+        // 只应请求了 playlist（门禁在写盘前），不得请求任何分片
+        let targets: Vec<String> = seen
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|h| request_target(h))
+            .collect();
+        assert_eq!(targets.len(), 1, "直播门禁应在拉分片前拒绝: {targets:?}");
+        assert!(targets[0].starts_with("/live.m3u8"));
+
+        // 无残留：目录里不得有数据文件或 .complete 标记
+        let dir = book_dir(book_url);
+        let leftovers: Vec<String> = if dir.exists() {
+            fs::read_dir(&dir)
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .collect()
+        } else {
+            Vec::new()
+        };
+        assert!(
+            leftovers.is_empty(),
+            "直播拒绝后不得留残留文件: {leftovers:?}"
+        );
+        assert!(!audio_cache_query(book_url, 0, "hello", "第一章"));
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // ─── P2-3：音频轨优先选档 ─────────────────────────────────────────────
+
+    /// master 含 `EXT-X-MEDIA:TYPE=AUDIO,URI="audio.m3u8"` + 视频 variant →
+    /// 必须拉独立音频轨而非任何 variant（服务端记录请求路径断言）
+    ///
+    /// 改前（`select_variant`）：纯音频内容只在音轨里，选到的 variant 是视频档
+    /// → 红；改后（`select_playlist_uri`）：优先音轨 → 绿。
+    #[test]
+    fn hls_master_prefers_audio_rendition_over_video_variant() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("hls-audio-rendition");
+        set_test_root(&root);
+
+        // 标准形态：音轨独立声明，variant 全是视频档
+        let master = concat!(
+            "#EXTM3U\n",
+            "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",NAME=\"main\",DEFAULT=YES,URI=\"audio.m3u8\"\n",
+            "#EXT-X-STREAM-INF:BANDWIDTH=2000000,CODECS=\"avc1.4d401f,mp4a.40.2\",RESOLUTION=1280x720,AUDIO=\"aud\"\n",
+            "video.m3u8\n",
+        )
+        .to_string();
+        let audio_playlist = media_playlist(&["#EXTINF:10,", "ar0.ts", "#EXTINF:10,", "ar1.ts"]);
+        let video_playlist = media_playlist(&["#EXTINF:10,", "vr0.ts"]);
+        let (port, seen) = spawn_router_server(move |head| {
+            let target = request_target(head);
+            if target.starts_with("/master.m3u8") {
+                return HttpReply::ok("application/vnd.apple.mpegurl", master.clone().into_bytes());
+            }
+            if target.starts_with("/audio.m3u8") {
+                return HttpReply::ok(
+                    "application/vnd.apple.mpegurl",
+                    audio_playlist.clone().into_bytes(),
+                );
+            }
+            if target.starts_with("/video.m3u8") {
+                return HttpReply::ok(
+                    "application/vnd.apple.mpegurl",
+                    video_playlist.clone().into_bytes(),
+                );
+            }
+            if target.starts_with("/ar0.ts") {
+                return HttpReply::ok("video/mp2t", b"AR-0".to_vec());
+            }
+            if target.starts_with("/ar1.ts") {
+                return HttpReply::ok("video/mp2t", b"AR-1".to_vec());
+            }
+            if target.starts_with("/vr0.ts") {
+                return HttpReply::ok("video/mp2t", b"VR-0".to_vec());
+            }
+            HttpReply::status(404)
+        });
+
+        let book_url = "https://a.com/book/hls-audio-rendition";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let play_url = format!("http://127.0.0.1:{port}/master.m3u8");
+        let out = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        )
+        .expect("master 应选独立音频轨并合并成功");
+        let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(
+            fs::read(json["path"].as_str().unwrap()).unwrap(),
+            b"AR-0AR-1".to_vec(),
+            "应只下载独立音频轨的分片"
+        );
+
+        let targets: Vec<String> = seen
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|h| request_target(h))
+            .collect();
+        assert!(
+            targets.iter().any(|t| t.starts_with("/audio.m3u8")),
+            "必须拉独立音频轨 playlist: {targets:?}"
+        );
+        assert!(
+            !targets.iter().any(|t| t.starts_with("/video.m3u8")),
+            "视频 variant playlist 不得被请求: {targets:?}"
+        );
+        assert!(
+            !targets.iter().any(|t| t.starts_with("/vr0.ts")),
+            "视频 variant 分片不得被请求: {targets:?}"
         );
 
         clear_test_root();
