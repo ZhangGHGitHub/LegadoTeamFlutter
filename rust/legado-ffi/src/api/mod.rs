@@ -28,6 +28,8 @@ pub mod download_api;
 pub mod explore_api;
 pub mod explore_info_map;
 pub mod highlight_api;
+/// [批 2 线 A | 2026-11-19] HLS m3u8 播放列表解析（纯解析，无网络）
+pub mod hls_playlist;
 /// [批11 | 2026-10-26] HTTP 采集开关（契约 §2.10 / legado-net 采集点接线）
 pub mod http_log_api;
 pub mod http_tts_api;
