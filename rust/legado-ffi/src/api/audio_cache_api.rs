@@ -60,7 +60,7 @@ use legado_net::{LegadoClient, LegadoRequest, LegadoStreamResponse, Method};
 use legado_parser::{AnalyzeUrl, TemplateContext};
 
 use crate::api::hls_playlist::{
-    parse_playlist, select_variant, ByteRange, HlsKey, MediaPlaylist, Playlist,
+    parse_playlist, select_variant, ByteRange, HlsKey, InitMap, MediaPlaylist, Playlist,
 };
 use crate::db_state::with_database;
 
@@ -1220,10 +1220,15 @@ fn read_stream_capped(
     Ok(out)
 }
 
-/// 发起一次 GET 并读取有界响应体（key / segment 共用）
+/// 发起一次 GET 并读取有界响应体（key / segment / playlist 共用）
 ///
-/// `byte_range` 有值时加 `Range: bytes=<offset>-<offset+length-1>` 头；
+/// `byte_range` 有值时加 `Range: bytes=<offset>-<offset+length-1>` 头，并强制
+/// 校验部分响应语义（P2-2，见 [`validate_partial_response`]）。
 /// 非 2xx 返回 `LegadoError::Network`（调用方据此判定是否需要重拉 playlist）。
+///
+/// **完整性（P2-1）**：有 `Content-Length` 时按声明值校验实际字节数；
+/// BYTERANGE 还要求实际字节数等于区间长度——任何截断/超发都报错，
+/// 绝不把残缺字节交给调用方拼接。
 fn fetch_bytes_capped(
     client: &LegadoClient,
     url: &str,
@@ -1254,7 +1259,87 @@ fn fetch_bytes_capped(
             response.status()
         )));
     }
-    read_stream_capped(&mut response, max_bytes, cancel_snapshot)
+    // P2-2：Range 请求必须得到 206 + 起点正确的 Content-Range，否则服务端
+    // 很可能忽略了 Range（返回 200 全量体），拼进分片会让体积成倍且内容错乱
+    if let Some(range) = byte_range {
+        validate_partial_response(&response, range)?;
+    }
+    // 注意：reqwest 透明解压（Content-Encoding: gzip 等）时已移除 Content-Length，
+    // 故此处 `None` 表示长度未知而非 0 字节，不做校验
+    let declared = response.content_length();
+    let bytes = read_stream_capped(&mut response, max_bytes, cancel_snapshot)?;
+    if let Some(declared) = declared {
+        if bytes.len() as u64 != declared {
+            return Err(LegadoError::Network(format!(
+                "HLS 资源长度与声明不符（声明 {} 字节，实际 {} 字节）: {url}",
+                declared,
+                bytes.len()
+            )));
+        }
+    }
+    if let Some(range) = byte_range {
+        if bytes.len() as u64 != range.length {
+            return Err(LegadoError::Network(format!(
+                "HLS BYTERANGE 字节数不符（请求 {} 字节，实际 {} 字节）: {url}",
+                range.length,
+                bytes.len()
+            )));
+        }
+    }
+    Ok(bytes)
+}
+
+/// 校验 206 部分响应与请求区间一致（P2-2）
+///
+/// 只判 `is_success()` 时，对 Range 请求返回 200 全量体的 CDN 会把**整文件
+/// 重复写入每一段**（体积成倍 + 内容错乱）且全程无错误。这里强制：
+/// ① 状态码必须是 206；② `Content-Range` 起点必须等于请求 `offset`。
+/// `Content-Range` 缺失时退化为调用方的「实际字节数 == 区间长度」校验。
+fn validate_partial_response(
+    response: &LegadoStreamResponse,
+    range: ByteRange,
+) -> LegadoResult<()> {
+    let status = response.status();
+    let expected_end = range.offset.saturating_add(range.length).saturating_sub(1);
+    if status != 206 {
+        return Err(LegadoError::Network(format!(
+            "HLS BYTERANGE 请求未返回 206（实际 {status}，请求 bytes={}-{}）：服务端可能忽略 Range",
+            range.offset, expected_end
+        )));
+    }
+    let Some(content_range) = response.header("content-range") else {
+        return Ok(());
+    };
+    let spec = content_range.trim();
+    let spec = spec.strip_prefix("bytes ").unwrap_or(spec).trim();
+    let parsed = spec
+        .split_once('/')
+        .and_then(|(span, _total)| span.split_once('-'))
+        .and_then(|(start, _end)| start.trim().parse::<u64>().ok());
+    match parsed {
+        Some(start) if start == range.offset => Ok(()),
+        _ => Err(LegadoError::Network(format!(
+            "HLS BYTERANGE 响应区间不符（请求 bytes={}-{}，响应 Content-Range: {content_range}）",
+            range.offset, expected_end
+        ))),
+    }
+}
+
+/// 分片/初始化段身份：URI 去掉查询串与片段 + BYTERANGE
+///
+/// 重拉 playlist 时签名 token 常放在查询串里并**合法刷新**，故查询串不参与
+/// 身份判定；路径 + 区间才能识别「滑动窗口进 1 出 1」造成的分片位移（P2-7）。
+fn part_identity(uri: &str, byte_range: Option<ByteRange>) -> String {
+    let path = uri.split(['?', '#']).next().unwrap_or(uri);
+    match byte_range {
+        Some(range) => format!("{path}#{}@{}", range.length, range.offset),
+        None => path.to_string(),
+    }
+}
+
+/// 初始化段身份（`None` 表示无 `EXT-X-MAP`）
+fn init_map_identity(init: Option<&InitMap>) -> Option<String> {
+    init.map(|map| part_identity(&map.uri, map.byte_range))
 }
 
 /// 按 URI 缓存已拉取的 AES-128 密钥（同一 playlist 内多段共用同一 key URI，
@@ -1309,12 +1394,16 @@ struct HlsFetchCtx<'a> {
 
 impl HlsFetchCtx<'_> {
     /// 下载单个 HLS 资源（init map / segment）到写入器：处理 key 解密与 BYTERANGE
+    ///
+    /// **空体即错（P2-1）**：2xx + 0 字节是 CDN/回源的典型失败形态，静默跳过会
+    /// 让整章仍报 `installed` 却产出残缺文件。`label` 用于错误文案定位是哪一段。
     fn download_part(
         &mut self,
         url: &str,
         byte_range: Option<ByteRange>,
         key: Option<&HlsKey>,
         writer: &mut impl Write,
+        label: &str,
     ) -> LegadoResult<u64> {
         let raw = fetch_bytes_capped(
             self.client,
@@ -1324,6 +1413,11 @@ impl HlsFetchCtx<'_> {
             HLS_SEGMENT_MAX_BYTES,
             self.cancel_snapshot,
         )?;
+        if raw.is_empty() {
+            return Err(LegadoError::Network(format!(
+                "HLS {label}为空（服务端返回 0 字节）: {url}"
+            )));
+        }
         let bytes = match key {
             Some(hls_key) => {
                 let key_bytes = resolve_key(
@@ -1337,6 +1431,11 @@ impl HlsFetchCtx<'_> {
             }
             None => raw,
         };
+        if bytes.is_empty() {
+            return Err(LegadoError::Network(format!(
+                "HLS {label}解密后为空: {url}"
+            )));
+        }
         writer.write_all(&bytes)?;
         Ok(bytes.len() as u64)
     }
@@ -1365,6 +1464,8 @@ impl HlsFetchCtx<'_> {
 /// 4. 拼接完成 → 既有 size 校验 + 五段式安装 + `.complete` + 清理旧版本
 ///
 /// **签名过期**：单段失败时重拉一次 playlist（token 可能刷新）后重试该段；
+/// 重拉目标是**媒体分片清单**的实际地址（master 源为其 variant URL，P1-1），
+/// 且要求该段位置的分片身份（路径 + BYTERANGE）与重拉前一致（P2-7）。
 /// 仍失败则整章 Err（不产出残缺文件）。
 /// **取消**：每个 segment 边界检查取消代数；失败删除临时文件与半成品。
 #[allow(clippy::too_many_arguments)] // 入参为下载安装全链路所需（书/章标识 + 请求上下文 + playlist），拆结构体反而掩盖语义
@@ -1388,22 +1489,27 @@ fn download_hls_and_install(
     };
 
     // ① 解析首响应；master → 选档后重拉
+    //
+    // `effective_playlist_url` 记录**真正给出媒体分片清单**的 playlist URL：
+    // master 源是 variant 的 URL，media 源就是自身（P1-1）。重试时必须拉它——
+    // 拉 master 只会再次拿到 master，重试逻辑形同死代码且错误文案误导。
     let text = String::from_utf8_lossy(&playlist_bytes);
     let first = parse_playlist(&text, playlist_url)?;
-    let media: MediaPlaylist = match first {
-        Playlist::Media(media) => media,
+    let (media, effective_playlist_url): (MediaPlaylist, String) = match first {
+        Playlist::Media(media) => (media, playlist_url.to_string()),
         Playlist::Master(master) => {
             let variant = select_variant(&master)
                 .ok_or_else(|| LegadoError::Parser("HLS master playlist 无可用档位".to_string()))?;
             let variant_url = variant.uri.clone();
-            match ctx.fetch_playlist(&variant_url)? {
+            let media = match ctx.fetch_playlist(&variant_url)? {
                 Playlist::Media(media) => media,
                 Playlist::Master(_) => {
-                    return Err(LegadoError::Parser(
-                        "HLS master playlist 嵌套 master（不支持）".to_string(),
-                    ))
+                    return Err(LegadoError::Parser(format!(
+                        "HLS 变体播放列表仍为 master（嵌套 master 不支持）: {variant_url}"
+                    )))
                 }
-            }
+            };
+            (media, variant_url)
         }
     };
 
@@ -1438,6 +1544,7 @@ fn download_hls_and_install(
                 init_map.byte_range,
                 init_map.key.as_ref(),
                 &mut writer,
+                "初始化段",
             )?;
         }
 
@@ -1451,11 +1558,13 @@ fn download_hls_and_install(
             let mut attempt = 0u32;
             loop {
                 let segment = current_media.segments[index].clone();
+                let label = format!("分片（第 {} 段）", index + 1);
                 match ctx.download_part(
                     &segment.uri,
                     segment.byte_range,
                     segment.key.as_ref(),
                     &mut writer,
+                    &label,
                 ) {
                     Ok(_) => break,
                     Err(err) => {
@@ -1468,27 +1577,50 @@ fn download_hls_and_install(
                         if !retryable || attempt >= 1 || cancel_generation_changed(cancel_snapshot)
                         {
                             return Err(LegadoError::Network(format!(
-                                "HLS 分片下载失败（第 {} 段）: {err}",
-                                index + 1
+                                "HLS {label}下载失败: {err}"
                             )));
                         }
                         attempt += 1;
-                        let refreshed = ctx.fetch_playlist(playlist_url)?;
+                        let refreshed = ctx.fetch_playlist(&effective_playlist_url)?;
                         let refreshed = match refreshed {
                             Playlist::Media(m) => m,
                             Playlist::Master(_) => {
-                                return Err(LegadoError::Parser(
-                                    "HLS master playlist 嵌套 master（不支持）".to_string(),
-                                ))
+                                return Err(LegadoError::Parser(format!(
+                                    "HLS 变体播放列表仍为 master（嵌套 master 不支持）: {effective_playlist_url}"
+                                )))
                             }
                         };
-                        // 段数变化（直播窗口滑动）→ 如实报错，不静默产出残缺文件
+                        // P2-7：仅比段数不够——直播窗口「进 1 出 1」时数量不变但
+                        // 内容整体位移，继续按下标拼接会产出错序文件。故要求该
+                        // index 处的分片身份（路径 + BYTERANGE，忽略签名查询串）
+                        // 与重拉前一致；不一致即 Err，绝不静默产出残缺文件。
                         if refreshed.segments.len() != current_media.segments.len() {
                             return Err(LegadoError::Network(format!(
-                                "HLS 分片下载失败（第 {} 段）: 重拉 playlist 后分片数变化（{} → {}）",
-                                index + 1,
+                                "HLS {label}下载失败: 重拉 playlist 后分片数变化（{} → {}）",
                                 current_media.segments.len(),
                                 refreshed.segments.len()
+                            )));
+                        }
+                        let before = part_identity(
+                            &current_media.segments[index].uri,
+                            current_media.segments[index].byte_range,
+                        );
+                        let after = part_identity(
+                            &refreshed.segments[index].uri,
+                            refreshed.segments[index].byte_range,
+                        );
+                        if before != after {
+                            return Err(LegadoError::Network(format!(
+                                "HLS {label}下载失败: 重拉 playlist 后第 {} 段位置已变化（{before} → {after}），可能是直播窗口滑动",
+                                index + 1
+                            )));
+                        }
+                        // 初始化段身份同样必须一致（否则已写入的 init 与新分片不配套）
+                        let init_before = init_map_identity(current_media.init_map.as_ref());
+                        let init_after = init_map_identity(refreshed.init_map.as_ref());
+                        if init_before != init_after {
+                            return Err(LegadoError::Network(format!(
+                                "HLS {label}下载失败: 重拉 playlist 后初始化段已变化（{init_before:?} → {init_after:?}）"
                             )));
                         }
                         current_media = refreshed;
@@ -3130,6 +3262,8 @@ mod tests {
         content_type: &'static str,
         body: Vec<u8>,
         declared_len: Option<u64>,
+        /// 附加响应头（Content-Range 等）
+        extra_headers: Vec<(String, String)>,
     }
 
     impl HttpReply {
@@ -3139,6 +3273,22 @@ mod tests {
                 content_type,
                 body,
                 declared_len: None,
+                extra_headers: Vec::new(),
+            }
+        }
+
+        /// 206 部分响应（`Content-Range` 按 RFC 9110 写作 `bytes <start>-<end>/<total>`）
+        fn partial(content_type: &'static str, body: Vec<u8>, start: u64, total: u64) -> Self {
+            let end = start.saturating_add(body.len() as u64).saturating_sub(1);
+            Self {
+                status: 206,
+                content_type,
+                body,
+                declared_len: None,
+                extra_headers: vec![(
+                    "Content-Range".to_string(),
+                    format!("bytes {start}-{end}/{total}"),
+                )],
             }
         }
 
@@ -3148,7 +3298,14 @@ mod tests {
                 content_type: "text/plain",
                 body: format!("error {status}").into_bytes(),
                 declared_len: None,
+                extra_headers: Vec::new(),
             }
+        }
+
+        /// 覆盖 `Content-Length` 声明值（用于构造「声明与实际不符」的坏响应）
+        fn with_declared_len(mut self, len: u64) -> Self {
+            self.declared_len = Some(len);
+            self
         }
     }
 
@@ -3184,10 +3341,13 @@ mod tests {
                     guard.push(head_text.clone());
                 }
                 let reply = responder(&head_text);
-                let reason = if (200..300).contains(&reply.status) {
-                    "OK"
-                } else {
-                    "Error"
+                let reason = match reply.status {
+                    200 => "OK",
+                    206 => "Partial Content",
+                    403 => "Forbidden",
+                    404 => "Not Found",
+                    _ if (200..300).contains(&reply.status) => "OK",
+                    _ => "Error",
                 };
                 let mut out = format!("HTTP/1.1 {} {reason}\r\n", reply.status);
                 out.push_str(&format!("Content-Type: {}\r\n", reply.content_type));
@@ -3195,6 +3355,9 @@ mod tests {
                     "Content-Length: {}\r\n",
                     reply.declared_len.unwrap_or(reply.body.len() as u64)
                 ));
+                for (name, value) in &reply.extra_headers {
+                    out.push_str(&format!("{name}: {value}\r\n"));
+                }
                 out.push_str("Connection: close\r\n\r\n");
                 let _ = sock.write_all(out.as_bytes());
                 let _ = sock.write_all(&reply.body);
@@ -3616,7 +3779,12 @@ mod tests {
                     let (start, end) = spec.split_once('-').expect("Range 形如 a-b");
                     let start: usize = start.parse().unwrap();
                     let end: usize = end.parse().unwrap();
-                    return HttpReply::ok("video/mp2t", whole_for_srv[start..=end].to_vec());
+                    return HttpReply::partial(
+                        "video/mp2t",
+                        whole_for_srv[start..=end].to_vec(),
+                        start as u64,
+                        whole_for_srv.len() as u64,
+                    );
                 }
                 return HttpReply::ok("video/mp2t", whole_for_srv.clone());
             }
@@ -3749,6 +3917,379 @@ mod tests {
             2,
             "只应重拉一次 playlist"
         );
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 场景 6b（P1-1）：**master 源**签名过期——重试必须重拉 **variant** playlist，
+    /// 而不是重拉 master（后者必然再次得到 master → 「嵌套 master」误报，重试死代码）
+    #[test]
+    fn hls_master_source_expired_signature_refetches_variant() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("hls-master-expire");
+        set_test_root(&root);
+
+        let master = concat!(
+            "#EXTM3U\n",
+            "#EXT-X-STREAM-INF:BANDWIDTH=64000,CODECS=\"mp4a.40.2\"\n",
+            "audio.m3u8\n",
+        )
+        .to_string();
+        let old_audio = media_playlist(&[
+            "#EXTINF:10,",
+            "a0.ts?token=old",
+            "#EXTINF:10,",
+            "a1.ts?token=old",
+        ]);
+        let new_audio = media_playlist(&[
+            "#EXTINF:10,",
+            "a0.ts?token=new",
+            "#EXTINF:10,",
+            "a1.ts?token=new",
+        ]);
+        let master_hits = std::sync::Arc::new(AtomicUsize::new(0));
+        let audio_hits = std::sync::Arc::new(AtomicUsize::new(0));
+        let master_hits_srv = std::sync::Arc::clone(&master_hits);
+        let audio_hits_srv = std::sync::Arc::clone(&audio_hits);
+        let (port, _seen) = spawn_router_server(move |head| {
+            let target = request_target(head);
+            if target.starts_with("/master.m3u8") {
+                master_hits_srv.fetch_add(1, Ordering::SeqCst);
+                return HttpReply::ok("application/vnd.apple.mpegurl", master.clone().into_bytes());
+            }
+            if target.starts_with("/audio.m3u8") {
+                let n = audio_hits_srv.fetch_add(1, Ordering::SeqCst);
+                let body = if n == 0 {
+                    old_audio.clone()
+                } else {
+                    new_audio.clone()
+                };
+                return HttpReply::ok("application/vnd.apple.mpegurl", body.into_bytes());
+            }
+            if target.starts_with("/a1.ts?token=old") {
+                return HttpReply::status(403); // 旧 token 过期
+            }
+            if target.starts_with("/a0.ts") {
+                return HttpReply::ok("video/mp2t", b"A0".to_vec());
+            }
+            if target.starts_with("/a1.ts") {
+                return HttpReply::ok("video/mp2t", b"A1".to_vec());
+            }
+            HttpReply::status(404)
+        });
+
+        let book_url = "https://a.com/book/hls-master-expire";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let play_url = format!("http://127.0.0.1:{port}/master.m3u8");
+        let out = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        )
+        .expect("master 源签名过期重拉 variant 后应成功");
+        let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(
+            fs::read(json["path"].as_str().unwrap()).unwrap(),
+            b"A0A1".to_vec()
+        );
+        assert_eq!(
+            master_hits.load(Ordering::SeqCst),
+            1,
+            "重试不得重拉 master（重拉 master 只会再得到 master）"
+        );
+        assert_eq!(
+            audio_hits.load(Ordering::SeqCst),
+            2,
+            "重试应重拉 variant playlist"
+        );
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 场景 6c（P2-7）：重拉后分片数不变但内容位移（直播窗口「进 1 出 1」）→ Err
+    #[test]
+    fn hls_refetch_detects_shifted_segments_same_count() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("hls-shift");
+        set_test_root(&root);
+
+        let old_playlist = media_playlist(&[
+            "#EXTINF:10,",
+            "seg0.ts",
+            "#EXTINF:10,",
+            "seg1.ts",
+            "#EXTINF:10,",
+            "seg2.ts",
+        ]);
+        // 同样 3 段，但整体前移一段：index 1 由 seg1 → seg2
+        let shifted_playlist = media_playlist(&[
+            "#EXTINF:10,",
+            "seg1.ts",
+            "#EXTINF:10,",
+            "seg2.ts",
+            "#EXTINF:10,",
+            "seg3.ts",
+        ]);
+        let playlist_hits = std::sync::Arc::new(AtomicUsize::new(0));
+        let playlist_hits_srv = std::sync::Arc::clone(&playlist_hits);
+        let (port, _seen) = spawn_router_server(move |head| {
+            let target = request_target(head);
+            if target.starts_with("/playlist.m3u8") {
+                let n = playlist_hits_srv.fetch_add(1, Ordering::SeqCst);
+                let body = if n == 0 {
+                    old_playlist.clone()
+                } else {
+                    shifted_playlist.clone()
+                };
+                return HttpReply::ok("application/vnd.apple.mpegurl", body.into_bytes());
+            }
+            if target.starts_with("/seg0.ts") {
+                return HttpReply::ok("video/mp2t", b"S0".to_vec());
+            }
+            if target.starts_with("/seg1.ts") {
+                return HttpReply::status(403);
+            }
+            // 位移后的新分片必须可取——否则失败原因是 404 而非「位置已变化」，
+            // 掩盖了「静默产出错序文件」这一真实缺陷
+            if target.starts_with("/seg2.ts") {
+                return HttpReply::ok("video/mp2t", b"S2".to_vec());
+            }
+            if target.starts_with("/seg3.ts") {
+                return HttpReply::ok("video/mp2t", b"S3".to_vec());
+            }
+            HttpReply::status(404)
+        });
+
+        let book_url = "https://a.com/book/hls-shift";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let play_url = format!("http://127.0.0.1:{port}/playlist.m3u8");
+        let err = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("位置已变化"), "应识别分片位移: {err}");
+        let names: Vec<String> = super::read_dir_entries(&book_dir(book_url))
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert!(names.is_empty(), "失败不得残留文件: {names:?}");
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 场景 6d（P2-1）：某段 200 + 0 字节 → 整章 Err、无 `.complete`、无残留
+    #[test]
+    fn hls_empty_segment_fails_instead_of_installing_truncated_file() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("hls-empty-seg");
+        set_test_root(&root);
+
+        let playlist = media_playlist(&[
+            "#EXTINF:10,",
+            "seg0.ts",
+            "#EXTINF:10,",
+            "seg1.ts",
+            "#EXTINF:10,",
+            "seg2.ts",
+        ]);
+        let (port, _seen) = spawn_router_server(move |head| {
+            let target = request_target(head);
+            if target.starts_with("/playlist.m3u8") {
+                return HttpReply::ok(
+                    "application/vnd.apple.mpegurl",
+                    playlist.clone().into_bytes(),
+                );
+            }
+            if target.starts_with("/seg0.ts") {
+                return HttpReply::ok("video/mp2t", b"S0".to_vec());
+            }
+            if target.starts_with("/seg1.ts") {
+                return HttpReply::ok("video/mp2t", Vec::new()); // 200 + 空体
+            }
+            if target.starts_with("/seg2.ts") {
+                return HttpReply::ok("video/mp2t", b"S2".to_vec());
+            }
+            HttpReply::status(404)
+        });
+
+        let book_url = "https://a.com/book/hls-empty-seg";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let play_url = format!("http://127.0.0.1:{port}/playlist.m3u8");
+        let err = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("为空"), "应明确报空分片: {err}");
+        assert!(err.contains("第 2 段"), "应定位到第 2 段: {err}");
+        let names: Vec<String> = super::read_dir_entries(&book_dir(book_url))
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert!(names.is_empty(), "失败不得残留文件: {names:?}");
+        assert!(!audio_cache_query(book_url, 0, "hello", "第一章"));
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 场景 6e（P2-2）：BYTERANGE 但服务端忽略 Range 返回 200 全量体 → 明确 Err
+    #[test]
+    fn hls_byterange_rejects_full_body_response() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("hls-range-ignored");
+        set_test_root(&root);
+
+        let whole: Vec<u8> = (0..30u8).collect();
+        let playlist = media_playlist(&[
+            "#EXTINF:10,",
+            "#EXT-X-BYTERANGE:10@0",
+            "all.ts",
+            "#EXTINF:10,",
+            "#EXT-X-BYTERANGE:10@10",
+            "all.ts",
+        ]);
+        let whole_for_srv = whole.clone();
+        let (port, _seen) = spawn_router_server(move |head| {
+            let target = request_target(head);
+            if target.starts_with("/playlist.m3u8") {
+                return HttpReply::ok(
+                    "application/vnd.apple.mpegurl",
+                    playlist.clone().into_bytes(),
+                );
+            }
+            if target.starts_with("/all.ts") {
+                // 忽略 Range：200 + 整文件
+                return HttpReply::ok("video/mp2t", whole_for_srv.clone());
+            }
+            HttpReply::status(404)
+        });
+
+        let book_url = "https://a.com/book/hls-range-ignored";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let play_url = format!("http://127.0.0.1:{port}/playlist.m3u8");
+        let err = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("未返回 206"),
+            "应拒绝忽略 Range 的 200 全量响应: {err}"
+        );
+        let names: Vec<String> = super::read_dir_entries(&book_dir(book_url))
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert!(names.is_empty(), "失败不得残留文件: {names:?}");
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 场景 6f（P2-1）：分片响应体短于 `Content-Length` 声明 → 整章 Err、无残留
+    #[test]
+    fn hls_truncated_segment_body_fails() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("hls-truncated");
+        set_test_root(&root);
+
+        let playlist = media_playlist(&["#EXTINF:10,", "seg0.ts", "#EXTINF:10,", "seg1.ts"]);
+        let (port, _seen) = spawn_router_server(move |head| {
+            let target = request_target(head);
+            if target.starts_with("/playlist.m3u8") {
+                return HttpReply::ok(
+                    "application/vnd.apple.mpegurl",
+                    playlist.clone().into_bytes(),
+                );
+            }
+            if target.starts_with("/seg0.ts") {
+                return HttpReply::ok("video/mp2t", b"S0".to_vec());
+            }
+            if target.starts_with("/seg1.ts") {
+                // 声明 100 字节，实际只发 5 字节（截断）
+                return HttpReply::ok("video/mp2t", b"TRUNC".to_vec()).with_declared_len(100);
+            }
+            HttpReply::status(404)
+        });
+
+        let book_url = "https://a.com/book/hls-truncated";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let play_url = format!("http://127.0.0.1:{port}/playlist.m3u8");
+        let err = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("第 2 段"), "应定位到第 2 段: {err}");
+        let names: Vec<String> = super::read_dir_entries(&book_dir(book_url))
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert!(names.is_empty(), "失败不得残留文件: {names:?}");
+        assert!(!audio_cache_query(book_url, 0, "hello", "第一章"));
 
         clear_test_root();
         let _ = fs::remove_dir_all(&root);
