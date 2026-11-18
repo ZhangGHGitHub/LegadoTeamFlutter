@@ -6,22 +6,26 @@
 //
 // 原版：`AudioPlayService.kt:307-317` 有 `requestUrl.isJsonArray()` 分支 →
 // `ExoPlayerHelper.getMediaSource`（`ExoPlayerHelper.kt:158-169`）拼
-// `ConcatenatingMediaSource2`。我方播放器无媒体源拼接能力，改为逐段串播：
-// 段完成 → 间隙 → 下一段。
+// `ConcatenatingMediaSource2`。该处 `add(source, 3000)` 的第二参数是
+// initialPlaceholderDurationMs（初始占位时长估计），**不是静音间隙**——原版
+// 多段是同一条连续时间轴、段间零等待。我方播放器无媒体源拼接能力，改为
+// 逐段串播，并把人为间隙取 0（`kMultiSegmentAudioGapMs == 0`）：段完成回调
+// 内立即起播下一段，换源装载耗时是唯一自然间隔。
 //
 // 覆盖：
 // 1) 地址解析（数组 / 单 URL / 段内 UrlOption / 畸形数组）
-// 2) 3 段依次播放，顺序正确
-// 3) 段间间隙（间隙内不起播，到点才起播）
-// 4) 中途暂停 → 不继续；恢复从下一段续播（不重播）
-// 5) 中途停止 → 不继续
-// 6) 中途切章 → 旧串播链终止，新章正常起播
+// 2) 3 段依次播放，顺序正确，段间零等待
+// 3) 段间零间隙：第 1 段播完立即起播第 2 段（不出现 3000ms 等待）
+// 4) 推进窗口内暂停 → 不起播；恢复从下一段续播（不重播）
+// 5) 推进窗口内停止 → 不继续
+// 6) 推进窗口内切章 → 旧串播链终止，新章正常起播
 // 7) 单 URL（非数组）行为不变（防回归）
 // 8) 每段 headers / formatHint 正确传递
 // 9) 跨段进度按章累计（不倒退到段首）
 //
-// [批3 | 2026-11-19] 新增。
+// [批3 | 2026-11-19] 新增；[零间隙回修 | 2026-11-19] 间隙 3000ms → 0。
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -203,19 +207,14 @@ void main() {
       expect(readState().state, PlayerState.playing);
       expect(fakePlayer.playedUrls, [urls[0]]);
 
-      // 第 1 段播完 → 进入间隙（不立即起播）
+      // 第 1 段播完 → 零间隙立即起播第 2 段（不切章）
       fakePlayer.completePlayback();
-      await tester.pump();
-      expect(fakePlayer.playedUrls, [urls[0]], reason: '间隙内不得起播下一段');
-
-      await tester.pump(const Duration(milliseconds: kMultiSegmentAudioGapMs));
       await tester.pump();
       expect(fakePlayer.playedUrls, [urls[0], urls[1]]);
       expect(readState().currentIndex, 0, reason: '多段未播完不得切章');
 
+      // 第 2 段播完 → 立即起播第 3 段
       fakePlayer.completePlayback();
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: kMultiSegmentAudioGapMs));
       await tester.pump();
       expect(fakePlayer.playedUrls, urls);
       expect(readState().currentIndex, 0);
@@ -225,32 +224,55 @@ void main() {
       fakePlayer.completePlayback();
       await tester.pump();
       await tester.pump();
+      await tester.pump();
       expect(readState().currentIndex, 1);
       expect(fakePlayer.playedUrls.last, 'https://cdn.example.com/ch1.mp3');
     });
 
-    testWidgets('段间间隙为 3000ms（2999ms 不起播，3000ms 起播）', (tester) async {
+    testWidgets('段间零间隙：第 1 段播完无需任何等待即起播第 2 段', (tester) async {
+      // 钉住口径：原版 `add(source, 3000)` 的 3000 是 initialPlaceholderDurationMs
+      // （占位时长估计）而非静音间隙，故人为间隙恒为 0。
+      expect(kMultiSegmentAudioGapMs, 0, reason: '对齐原版零间隙连续播放');
+
       stubAudioBook(mediaUrls: urls);
       await startStream();
 
       fakePlayer.completePlayback();
+      // 单次 pump（零时长推进）后即应已起播下一段：不存在 3000ms 等待
       await tester.pump();
-      await tester.pump(
-        const Duration(milliseconds: kMultiSegmentAudioGapMs - 1),
+      expect(
+        fakePlayer.playedUrls,
+        [urls[0], urls[1]],
+        reason: '零间隙：完成回调内立即续播，不得有 3000ms 等待',
       );
-      expect(fakePlayer.playedUrls, hasLength(1), reason: '未到间隙终点');
 
-      await tester.pump(const Duration(milliseconds: 1));
-      await tester.pump();
-      expect(fakePlayer.playedUrls, hasLength(2));
+      // 再推进 3 秒也不会多起播（证明不是「到点才播」的定时器语义）
+      await tester.pump(const Duration(seconds: 3));
+      expect(fakePlayer.playedUrls, [urls[0], urls[1]]);
     });
 
-    testWidgets('间隙中暂停 → 不继续；恢复从下一段续播（不重播第 1 段）', (tester) async {
+    testWidgets('重复完成事件不重复推进（推进中幂等）', (tester) async {
       stubAudioBook(mediaUrls: urls);
       await startStream();
 
+      // 同一段连续两次完成事件（播放器重复上报）
+      fakePlayer.completePlayback();
       fakePlayer.completePlayback();
       await tester.pump();
+      expect(
+        fakePlayer.playedUrls,
+        [urls[0], urls[1]],
+        reason: '同一段的重复完成不得跳段（不得直接起播第 3 段）',
+      );
+      expect(readState().currentIndex, 0);
+    });
+
+    testWidgets('推进窗口内暂停 → 不起播下一段；恢复从下一段续播（不重播第 1 段）', (tester) async {
+      stubAudioBook(mediaUrls: urls);
+      await startStream();
+
+      // 段 1 完成 → 推进窗口（下一段装载在途，尚未 pump 让微任务跑完）
+      fakePlayer.completePlayback();
       expect(readState().state, PlayerState.playing);
 
       readNotifier().pause();
@@ -281,12 +303,75 @@ void main() {
       expect(fakePlayer.resumeCount, 1);
     });
 
-    testWidgets('间隙中停止 → 不继续', (tester) async {
+    testWidgets('下一段装载在途时暂停 → 装载完成后立即收回，不出现「已暂停但在播」', (tester) async {
+      stubAudioBook(mediaUrls: urls);
+      await startStream();
+
+      // 模拟第 2 段网络装载耗时窗口（playUrl 已发起但尚未开始播放）
+      final gate = Completer<void>();
+      fakePlayer.playUrlGate = gate;
+
+      fakePlayer.completePlayback();
+      await tester.pump();
+      expect(fakePlayer.playedUrls, [urls[0], urls[1]], reason: '第 2 段装载已发起');
+      expect(fakePlayer.isPlaying, isFalse, reason: '装载窗口内尚未开播');
+
+      // 装载在途时暂停
+      readNotifier().pause();
+      await tester.pump();
+      expect(readState().state, PlayerState.paused);
+
+      // 装载完成（播放器本会开始播第 2 段）
+      gate.complete();
+      fakePlayer.playUrlGate = null;
+      await tester.pump();
+      await tester.pump();
+      expect(
+        fakePlayer.isPlaying,
+        isFalse,
+        reason: '暂停后装载完成必须立即收回播放器（不得「已暂停但下一段仍在播」）',
+      );
+      expect(readState().state, PlayerState.paused);
+
+      // 恢复：从第 2 段续播（不重播第 1 段）
+      await readNotifier().resumeOrPlay();
+      await tester.pump();
+      expect(fakePlayer.playedUrls, [urls[0], urls[1], urls[1]]);
+      expect(readState().state, PlayerState.playing);
+    });
+
+    testWidgets('下一段装载在途时停止 → 装载完成后播放器被收回，保持 idle', (tester) async {
+      stubAudioBook(mediaUrls: urls);
+      await startStream();
+
+      final gate = Completer<void>();
+      fakePlayer.playUrlGate = gate;
+
+      fakePlayer.completePlayback();
+      await tester.pump();
+      expect(fakePlayer.playedUrls, [urls[0], urls[1]]);
+
+      readNotifier().stop();
+      await tester.pump();
+      expect(readState().state, PlayerState.idle);
+
+      gate.complete();
+      fakePlayer.playUrlGate = null;
+      await tester.pump();
+      await tester.pump();
+      expect(
+        fakePlayer.isPlaying,
+        isFalse,
+        reason: '停止后装载完成不得让播放器继续播',
+      );
+      expect(readState().state, PlayerState.idle);
+    });
+
+    testWidgets('推进窗口内停止 → 不继续', (tester) async {
       stubAudioBook(mediaUrls: urls);
       await startStream();
 
       fakePlayer.completePlayback();
-      await tester.pump();
       readNotifier().stop();
       await tester.pump();
 
@@ -295,17 +380,23 @@ void main() {
       expect(readState().state, PlayerState.idle);
     });
 
-    testWidgets('间隙中切章 → 旧串播链终止，新章正常起播', (tester) async {
+    testWidgets('推进窗口内切章 → 旧串播链终止，旧章下一段永不装载', (tester) async {
       stubAudioBook(mediaUrls: urls);
       await startStream();
 
+      // 完成事件同步触发推进（下一段装载已排队，但微任务尚未跑）
       fakePlayer.completePlayback();
-      await tester.pump();
 
+      // 切章：`_cancelSegmentGap()` 同步作废在途装载，故第 2 段**一次都不会**
+      // 被装载（零间隙没有间隙定时器可取消，防护全靠序号 + token）
       await readNotifier().next();
       await tester.pump();
       expect(readState().currentIndex, 1);
-      expect(fakePlayer.playedUrls.last, 'https://cdn.example.com/ch1.mp3');
+      expect(
+        fakePlayer.playedUrls,
+        [urls[0], 'https://cdn.example.com/ch1.mp3'],
+        reason: '旧章第 2 段不得在新章前起播',
+      );
 
       final countAfterSwitch = fakePlayer.playedUrls.length;
       await tester.pump(const Duration(seconds: 5));
@@ -367,8 +458,6 @@ void main() {
 
       fakePlayer.completePlayback();
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: kMultiSegmentAudioGapMs));
-      await tester.pump();
 
       expect(fakePlayer.playedUrls.last, 'https://cdn.example.com/2.mp3');
       expect(
@@ -409,9 +498,6 @@ void main() {
       await tester.pump();
       expect(readState().positionMs, 10000);
 
-      await tester.pump(const Duration(milliseconds: kMultiSegmentAudioGapMs));
-      await tester.pump();
-
       // 第 2 段播到 2s → 章累计 12s
       fakePlayer.emitProgress(
         const Duration(seconds: 2),
@@ -426,13 +512,12 @@ void main() {
       );
     });
 
-    testWidgets('间隙中暂停写进度不双计（播放器仍停在已累计的上一段）', (tester) async {
+    testWidgets('推进窗口内暂停写进度不双计（播放器仍停在已累计的上一段）', (tester) async {
       stubAudioBook(mediaUrls: urls);
       fakePlayer.loadedDuration = const Duration(seconds: 10);
       await startStream();
 
       fakePlayer.completePlayback();
-      await tester.pump();
 
       // 播放器位置仍是上一段末尾（10s），累计已含该段 → 写库不得变成 20s
       fakePlayer.position = const Duration(seconds: 10);
@@ -447,7 +532,7 @@ void main() {
       expect(
         saved.last,
         10000,
-        reason: '间隙暂停不得把上一段末尾重复计入进度',
+        reason: '推进窗口内暂停不得把上一段末尾重复计入进度',
       );
     });
 

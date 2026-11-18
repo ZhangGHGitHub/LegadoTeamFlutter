@@ -220,27 +220,50 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   //
   // 原版 `AudioPlayService.kt:312-317` 把 JSON 数组地址交给 ExoPlayer 的
   // `ConcatenatingMediaSource2`（`ExoPlayerHelper.kt:158-169`），由播放器
-  // 内部把多段拼成一条时间轴。我方 [StreamAudioPlayer] 只有单个
-  // `VideoPlayerController`，无媒体源拼接能力，故改为**逐段串播**：
-  // 段完成 → 间隙 → 起播下一段；跨段进度按「已播完段时长累计 + 当前段位置」
-  // 折算为本章累计位置（与单段时间轴语义对齐，进度条/写库不受段数影响）。
+  // 内部把多段拼成一条时间轴（`add(source, 3000)` 的第二参数是
+  // initialPlaceholderDurationMs 占位时长估计，**不是静音间隙**）。
+  // 我方 [StreamAudioPlayer] 只有单个 `VideoPlayerController`，无媒体源拼接
+  // 能力，故改为**逐段串播**：段完成 → 起播下一段（[kMultiSegmentAudioGapMs]
+  // 为 0，即零间隙连续播放，换源加载耗时是唯一自然间隔）；跨段进度按
+  // 「已播完段时长累计 + 当前段位置」折算为本章累计位置（与单段时间轴语义
+  // 对齐，进度条/写库不受段数影响）。
 
   /// 当前章的播放段列表（单 URL 时为长度 1；缓存命中/未播放时为空）
   List<AudioPlaySegment> _segments = const [];
 
-  /// 当前正在播放（或间隙等待中即将播放）的段下标
+  /// 当前正在播放（或推进中即将播放）的段下标
   int _segmentIndex = 0;
 
   /// 已播完段的时长累计（毫秒）——跨段进度的基准偏移
   int _segmentAccumulatedMs = 0;
 
-  /// 段间间隙定时器（[kMultiSegmentAudioGapMs]）
+  /// 段间间隙定时器（仅 [kMultiSegmentAudioGapMs] > 0 时使用；0 走同步续播）
   Timer? _segmentGapTimer;
 
-  /// 是否处于段间间隙等待中（此期间播放器无装载内容）
+  /// 是否处于「段间推进中」（无段在播：间隙等待 或 下一段装载在途）
+  ///
+  /// 零间隙下它就是「下一段装载在途」窗口。除进度折算外还兼作**重复完成
+  /// 事件的幂等守卫**：进入推进后直到下一段装载完成前保持为真，同一段重复
+  /// 送达的完成回调不会二次推进；同时让 [_isAtChapterEnd] 在装载窗口内
+  /// 返回 false（此时播放器还停在上一段末尾，按位置判章末会误判）。
   bool _segmentGapActive = false;
 
-  /// 间隙等待中被暂停：恢复时直接从下一段起播（不重播上一段）
+  /// 段起播序号：每次 [_startSegment] 真正装载前自增
+  ///
+  /// 装载是异步的（`playUrl` 内含 stop → initialize → play）。装载完成/失败
+  /// 时若序号已被更晚的起播（或 [_cancelSegmentGap] 的主动作废）取代，说明
+  /// 本次装载已过时——不得再改状态、不得重新起播。零间隙下没有间隙定时器
+  /// 兜底，该守卫是「暂停后恢复 / 切章」与在途装载重叠时的关键防线。
+  int _segmentStartSerial = 0;
+
+  /// 段装载串行化链尾（上一个装载的完成信号）
+  ///
+  /// [StreamAudioPlayer] 只有单个 `VideoPlayerController`，两次 `playUrl`
+  /// 并发会互相 dispose 对方刚建的实例。零间隙下「暂停 → 恢复」可能在旧
+  /// 装载尚未返回时就发起新装载，故装载一律排队：前一次收尾后再换源。
+  Future<void> _segmentLoadTail = Future<void>.value();
+
+  /// 推进窗口中被暂停：恢复时直接从下一段起播（不重播上一段）
   bool _segmentGapPendingResume = false;
 
   /// 播放器当前装载的是**已计入** [_segmentAccumulatedMs] 的上一段
@@ -1022,11 +1045,18 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     _playerHoldsCountedSegment = false;
   }
 
-  /// 取消段间间隙等待（不改变 [_segmentIndex]，便于暂停后从下一段续播）
+  /// 终止段间推进（不改变 [_segmentIndex]，便于暂停后从下一段续播）
+  ///
+  /// 零间隙下没有可取消的定时器，只能**作废在途装载**：递增
+  /// [_segmentStartSerial]，使在途 `playUrl` 完成后的状态推进全部失效（它
+  /// 既不清推进标记、也不改段内进度口径）。播放器本身由调用方处理——暂停/
+  /// 停止各自会动播放器，切章由随后的 `play()` 换源。这是零间隙下
+  /// 「段完成回调 → 起播下一段」窗口里唯一的切章防护。
   void _cancelSegmentGap() {
     _segmentGapTimer?.cancel();
     _segmentGapTimer = null;
     _segmentGapActive = false;
+    _segmentStartSerial++;
   }
 
   /// 起播多段章节的指定段（批3）
@@ -1037,42 +1067,92 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   ///
   /// 归属 tag 仍是章级 `(bookUrl, chapterIndex)`：同一章各段共用 tag，
   /// 切章后旧段迟到回调依旧被 [_isCurrentStreamChapter] 丢弃。
-  Future<void> _startSegment(
+  ///
+  /// 返回 true 表示本次装载成功且仍是「最新一次起播」（[_segmentStartSerial]
+  /// 未被更晚的起播取代、token 未失效）；false 表示本次装载已被取代或
+  /// 提前放弃——调用方不得据此再推进状态或动播放器。
+  Future<bool> _startSegment(
     int chapterIndex,
     int segmentIndex, {
     required int token,
   }) async {
-    if (token != _playToken || _disposed) return;
-    if (segmentIndex < 0 || segmentIndex >= _segments.length) return;
-    final segment = _segments[segmentIndex];
-    _segmentIndex = segmentIndex;
-    // 新段装载后播放器位置从 0 起算，累计偏移不含本段
-    _playerHoldsCountedSegment = false;
-    // [批3] 非首段：片头跳过已消费（片头只在章首），且片尾窗口必须按
-    // 「章总时长」重算——首段时长算出的窗口对末段是错的。置 `_skipWindow`
-    // 为 null 让 `_maybeApplySkip` 用末段的累计总时长重新求解。
-    if (segmentIndex > 0) {
-      _introSkipEvaluated = true;
-      _skipWindow = null;
+    if (token != _playToken || _disposed) return false;
+    if (segmentIndex < 0 || segmentIndex >= _segments.length) return false;
+    // 入口快照：排队期间若有更晚的起播或被 [_cancelSegmentGap] 作废，
+    // 本次装载必须整段放弃——否则「段完成回调已触发、切章已开始但 token 尚未
+    // 自增」的窗口里，旧章的下一段仍会真的装载并出声。
+    final entrySerial = _segmentStartSerial;
+    // 串行化：等上一次段装载收尾再换源（单控制器不得并发 playUrl）
+    final previous = _segmentLoadTail;
+    final done = Completer<void>();
+    _segmentLoadTail = done.future;
+    try {
+      await previous;
+      if (token != _playToken || _disposed) return false;
+      // 排队期间被切章/停止/更晚起播取代（含 [_cancelSegmentGap] 的作废）
+      if (_segmentStartSerial != entrySerial) return false;
+      // 排队期间已被暂停/停止（零间隙下装载窗口与暂停可重叠）：不再装载，
+      // 否则会出现「已暂停但下一段已起播」。
+      if (state.state != PlayerState.playing) return false;
+      final segment = _segments[segmentIndex];
+      _segmentIndex = segmentIndex;
+      // [批3] 非首段：片头跳过已消费（片头只在章首），且片尾窗口必须按
+      // 「章总时长」重算——首段时长算出的窗口对末段是错的。置 `_skipWindow`
+      // 为 null 让 `_maybeApplySkip` 用末段的累计总时长重新求解。
+      if (segmentIndex > 0) {
+        _introSkipEvaluated = true;
+        _skipWindow = null;
+      }
+      final serial = ++_segmentStartSerial;
+      try {
+        await _streamPlayer.playUrl(
+          segment.url,
+          speed: state.config.speed,
+          tag: (bookUrl: state.bookUrl, chapterIndex: chapterIndex),
+          httpHeaders: segment.headers.isEmpty ? null : segment.headers,
+          formatHint: isHlsPlayUrl(segment.url) ? VideoFormat.hls : null,
+        );
+      } catch (_) {
+        // 过时的装载失败不得覆盖新会话的状态/错误
+        if (_isStaleSegmentLoad(serial, token)) return false;
+        rethrow;
+      }
+      if (_isStaleSegmentLoad(serial, token)) {
+        // 已被 [_cancelSegmentGap] 作废（切章/停止/暂停）：装载本身无法取消，
+        // 播放器可能已开始播这一段，若此刻已不在播放态立即收回。
+        if (state.state != PlayerState.playing) {
+          await _streamPlayer.pause();
+        }
+        return false;
+      }
+      // 播放器此刻才真正换到本段（位置从 0 起算）：累计偏移不含本段。
+      // **必须放在装载成功之后**——装载窗口与暂停可重叠，提前置假会让
+      // 「装载窗口内暂停写进度」把上一段末尾重复计入（双计）。
+      _playerHoldsCountedSegment = false;
+      _segmentGapActive = false;
+      return true;
+    } finally {
+      done.complete();
     }
-    await _streamPlayer.playUrl(
-      segment.url,
-      speed: state.config.speed,
-      tag: (bookUrl: state.bookUrl, chapterIndex: chapterIndex),
-      httpHeaders: segment.headers.isEmpty ? null : segment.headers,
-      formatHint: isHlsPlayUrl(segment.url) ? VideoFormat.hls : null,
-    );
   }
 
-  /// 非末段播放完成 → 进入段间间隙，间隙结束自动起播下一段
+  /// 段装载是否已过时（被更晚的起播取代或被 [_cancelSegmentGap] 作废）
+  bool _isStaleSegmentLoad(int serial, int token) =>
+      serial != _segmentStartSerial || token != _playToken || _disposed;
+
+  /// 非末段播放完成 → **立即**起播下一段（零间隙，对齐原版连续时间轴）
   ///
   /// 返回 true 表示「本次完成事件已被串播链消费」（调用方不得按章末处理）。
   ///
-  /// 竞态要点：
-  /// - [_segmentGapActive] 在同一事件内同步置位，重复的完成回调不会重复推进；
-  /// - 间隙定时器闭包捕获 [token]，暂停/停止/切章使 token 失效后回调直接返回；
-  /// - 间隙中被暂停时 [pause] 取消定时器并置 [_segmentGapPendingResume]，
-  ///   恢复时由 [resumeOrPlay] 从下一段续播（不重播已播完的段）。
+  /// 竞态要点（[kMultiSegmentAudioGapMs] == 0 时没有间隙定时器，防护全靠
+  /// token + 起播序号）：
+  /// - [_segmentGapActive] 在同一事件内同步置位，重复的完成回调不会二次推进；
+  /// - 续播在 [_continueToNextSegment] 内进行，入口捕获 [token]，切章/停止使
+  ///   token 失效后装载不启动（或启动后立即放弃），旧章的段不会串进新章；
+  /// - [_segmentStartSerial] 兜住「装载在途时又发生一次起播」：过时的装载
+  ///   完成时既不改状态、也不清推进标记；
+  /// - 推进窗口内被暂停：[pause] 经 [_cancelSegmentGap] 清标记并置
+  ///   [_segmentGapPendingResume]，恢复时由 [resumeOrPlay] 从下一段续播。
   bool _advanceToNextSegmentIfAny() {
     if (!_isMultiSegmentChapter) return false;
     if (_segmentGapActive) return true; // 已在推进中：忽略重复完成事件
@@ -1085,9 +1165,9 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     final token = _playToken;
     final chapterIndex = state.currentIndex;
     // 游标立即前移：[_segmentAccumulatedMs] 的语义恒为「游标之前的段时长之和」，
-    // 暂停后恢复直接按该游标起播，不依赖间隙定时器是否已经触发。
+    // 暂停后恢复直接按该游标起播，不依赖装载是否已经完成。
     final nextIndex = ++_segmentIndex;
-    // 间隙期间章级进度停在「已播完段的累计时长」；时长保留此前估计值
+    // 推进期间章级进度停在「已播完段的累计时长」；时长保留此前估计值
     // （回退到累计值会让进度条瞬间跳满），仅当尚无估计时才用累计值兜底。
     state = state.copyWith(
       positionMs: _segmentAccumulatedMs,
@@ -1098,28 +1178,55 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     unawaited(
       _persistStreamPosition(positionMs: _segmentAccumulatedMs, force: true),
     );
-    _segmentGapTimer?.cancel();
-    _segmentGapTimer = Timer(
-      const Duration(milliseconds: kMultiSegmentAudioGapMs),
-      () {
-        _segmentGapTimer = null;
-        if (_disposed || token != _playToken) return;
-        if (state.state != PlayerState.playing) return;
-        _segmentGapActive = false;
-        unawaited(() async {
-          try {
-            await _startSegment(chapterIndex, nextIndex, token: token);
-          } catch (e) {
-            if (token != _playToken || _disposed) return;
-            state = state.copyWith(
-              errorMessage: '音频分段播放失败：${errorMessage(e)}',
-              state: PlayerState.error,
-            );
-          }
-        }());
-      },
-    );
+    if (kMultiSegmentAudioGapMs > 0) {
+      // 显式配置了人为留白（当前口径为 0，此分支仅为可调性保留）
+      _segmentGapTimer?.cancel();
+      _segmentGapTimer = Timer(
+        const Duration(milliseconds: kMultiSegmentAudioGapMs),
+        () {
+          _segmentGapTimer = null;
+          if (_disposed || token != _playToken) return;
+          if (state.state != PlayerState.playing) return;
+          unawaited(_continueToNextSegment(chapterIndex, nextIndex, token));
+        },
+      );
+      return true;
+    }
+    // 零间隙：同步续播（不建定时器、不额外让出事件循环，只保留换源装载
+    // 本身的耗时——与原版把多段拼进同一条时间轴的连续播放语义一致）。
+    unawaited(_continueToNextSegment(chapterIndex, nextIndex, token));
     return true;
+  }
+
+  /// 起播下一段（段间推进的唯一出口：间隙定时器路径与零间隙同步路径共用）
+  ///
+  /// 装载失败置 error 态；装载期间被暂停/停止则把已起播的播放器重新收回，
+  /// 避免「暂停后下一段仍在播」（零间隙下装载窗口与暂停可以重叠）。
+  Future<void> _continueToNextSegment(
+    int chapterIndex,
+    int nextIndex,
+    int token,
+  ) async {
+    final bool started;
+    try {
+      started = await _startSegment(chapterIndex, nextIndex, token: token);
+    } catch (e) {
+      if (token != _playToken || _disposed) return;
+      _segmentGapActive = false;
+      state = state.copyWith(
+        errorMessage: '音频分段播放失败：${errorMessage(e)}',
+        state: PlayerState.error,
+      );
+      return;
+    }
+    // 本次装载已被更晚的起播取代（暂停后恢复/切章）：交给更晚那次收尾，
+    // 不得在此动播放器（否则会误停新起播的内容）。
+    if (!started || token != _playToken || _disposed) return;
+    // 装载窗口内被暂停/停止：装载本身无法取消，播放器可能已开始播下一段，
+    // 立即收回，避免「已暂停但下一段仍在播」。
+    if (state.state != PlayerState.playing) {
+      await _streamPlayer.pause();
+    }
   }
 
   Future<void> _playAudioBookStream() async {
@@ -1128,6 +1235,12 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     // [批3] 新播放会话：清掉上一章遗留的串播链（间隙定时器/段游标/累计时长）
     _cancelSegmentGap();
     _resetSegmentState();
+    // 上一章可能仍有段装载在途（零间隙下切章可与装载重叠）：等它收尾再换源，
+    // 避免两个 playUrl/playLocalFile 并发争用同一个控制器（并发换源会互相
+    // dispose 对方刚建的实例，比多等一会儿更糟）。旧装载已被上面的序号自增
+    // 作废，收尾时不会改状态、也不会重新起播。
+    await _segmentLoadTail;
+    if (token != _playToken || _disposed) return;
     try {
       var index = state.currentIndex;
       while (index < state.chapters.length) {
@@ -2470,8 +2583,17 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       state = state.copyWith(state: PlayerState.playing);
       await _syncMediaSession();
       try {
-        await _startSegment(state.currentIndex, _segmentIndex, token: _playToken);
+        final started = await _startSegment(
+          state.currentIndex,
+          _segmentIndex,
+          token: _playToken,
+        );
+        // 装载期间又被暂停/停止：立即收回（装载无法取消，可能已开播）
+        if (started && state.state != PlayerState.playing) {
+          await _streamPlayer.pause();
+        }
       } catch (e) {
+        if (_disposed) return;
         state = state.copyWith(
           errorMessage: '音频分段播放失败：${errorMessage(e)}',
           state: PlayerState.error,

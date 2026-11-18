@@ -16,15 +16,20 @@ import 'dart:convert';
 
 import 'video_play_utils.dart';
 
-/// 多段音频段间间隙（毫秒）
+/// 多段音频段间间隙（毫秒）——**0 = 零间隙连续播放（对齐原版）**
 ///
-/// 原版 `ExoPlayerHelper.kt:165` 写作 `mediaSourceBuilder.add(source, 3000)`；
+/// 原版 `ExoPlayerHelper.kt:163-167` 写作 `mediaSourceBuilder.add(source, 3000)`；
 /// media3 `ConcatenatingMediaSource2.Builder.add(MediaSource, long)` 的第二参数
-/// 是**占位时长**（initialPlaceholderDurationMs，用于真实时长未知时的
-/// 时间轴估算），不是静音间隙——原版实际是零间隙连续播放。我方逐段串播
-/// 每次换控制器必然有缓冲间隔，按本批次口径取 3000ms 作为可调间隙；
-/// 若后续裁决需贴近原版零间隙，把本常量改为 0 即可（其余逻辑不依赖具体值）。
-const int kMultiSegmentAudioGapMs = 3000;
+/// 是 **initialPlaceholderDurationMs（初始占位时长估计）**——媒体源加载前
+/// 用于估算总时长，**不是静音间隙**。原版多段由播放器内部拼成一条连续
+/// 时间轴，段与段之间零等待。
+///
+/// 我方 [StreamAudioPlayer] 只能逐段串播，故在段完成回调内**同步**起播
+/// 下一段（不建定时器、不额外让出事件循环，见
+/// `AudioNotifier._advanceToNextSegmentIfAny`）：换控制器时的加载耗时就是
+/// 唯一的自然间隔。取 0 即关闭人为间隙；若将来确需人为留白，把本常量改为
+/// 正数即可，串播编排会自动退回定时器路径。
+const int kMultiSegmentAudioGapMs = 0;
 
 /// 单段播放目标：纯 URL + 该段生效的请求头（空 Map = 无请求头）
 typedef AudioPlaySegment = ({String url, Map<String, String> headers});

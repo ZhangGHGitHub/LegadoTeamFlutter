@@ -194,6 +194,12 @@ class FakeStreamAudioPlayer implements StreamAudioPlayer {
   /// 置为非空后 [playUrl] 抛出该异常（模拟网络流播放失败）
   Object? playUrlError;
 
+  /// 非空时 [playUrl] 等待该闸门再完成（模拟网络装载耗时窗口）
+  ///
+  /// 零间隙串播下「下一段装载在途」是真实存在的窗口（`playUrl` 内含
+  /// stop → initialize → play）：暂停/切章可与之重叠，测试据此钉住竞态。
+  Completer<void>? playUrlGate;
+
   @override
   Future<void> playUrl(
     String url, {
@@ -204,10 +210,13 @@ class FakeStreamAudioPlayer implements StreamAudioPlayer {
   }) async {
     final err = playUrlError;
     if (err != null) throw err;
+    // 先记录调用（装载已发起），再等闸门——模拟「装载在途但尚未开始播放」
     playedUrls.add(url);
     playedUrlHeaders.add(httpHeaders);
     playedUrlFormatHints.add(formatHint);
     playedTags.add(tag);
+    final gate = playUrlGate;
+    if (gate != null) await gate.future;
     currentTag = tag;
     duration = loadedDuration;
     isPlaying = true;
