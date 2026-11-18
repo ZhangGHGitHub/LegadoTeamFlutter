@@ -21,9 +21,12 @@
 //! | `#EXT-X-ENDLIST` | 点播（非直播）标记；见 [`MediaPlaylist::is_vod`] |
 //!
 //! **显式报错（不静默降级）**：`METHOD=SAMPLE-AES*`（含 SAMPLE-AES-CTR）、
-//! `#EXT-X-I-FRAMES-ONLY`、其它未知加密方法、以及**多个 `#EXT-X-MAP`**
+//! `#EXT-X-I-FRAMES-ONLY`、其它未知加密方法、**多个 `#EXT-X-MAP`**
 //! （多 period fMP4——单一 init map 无法覆盖全部分片，静默取最后一个会把
-//! 前段拼到错误 init 上，产物不可播且无报错）。
+//! 前段拼到错误 init 上，产物不可播且无报错）、`#EXT-X-BYTERANGE` 长度为 0
+//! （非法 sub-range）、以及**加密的 `EXT-X-MAP` 缺显式 `IV`**（§4.3.2.5
+//! 要求 init section 的 `EXT-X-KEY` 必带 `IV`，§5.2 的序列号默认 IV 只适用于
+//! 媒体段）。
 //!
 //! # 直播（live）playlist
 //!
@@ -36,8 +39,8 @@
 //! - 未知标签（`#EXT-X-VERSION`/`#EXT-X-TARGETDURATION`/`#EXT-X-MEDIA`/
 //!   `#EXT-X-DATERANGE` 等）**忽略**；
 //! - 空行与 `#` 注释行忽略；行尾 `\r` 与首部 BOM 剥除；
-//! - 已知标签的值畸形（`EXTINF` 非数字、`BYTERANGE` 非数字、`IV` 非十六进制、
-//!   `EXT-X-KEY` 缺 `METHOD`/`URI`）→ `LegadoError::Parser`；
+//! - 已知标签的值畸形（`EXTINF` 非数字、`BYTERANGE` 非数字或长度为 0、
+//!   `IV` 非十六进制、`EXT-X-KEY` 缺 `METHOD`/`URI`）→ `LegadoError::Parser`；
 //! - 只有 `#EXTM3U` 的 playlist 是**合法但空**的 media playlist（0 段），
 //!   由上层决定是否可用；空文本/无 `#EXTM3U` 首行 → Err。
 //!
@@ -46,9 +49,12 @@
 //! 1. **IV 缺省**（§5.2）：`IV` 属性缺失时，用「媒体序列号」= `EXT-X-MEDIA-SEQUENCE`
 //!    起始值 + 该段在 playlist 中的下标（0 起），按 128-bit 大端填入。因此解析结果里
 //!    每个 AES-128 段的 `HlsKey.iv` **恒为 `Some`**，下游无需再算。
+//!    例外：**加密的 `EXT-X-MAP`**（§4.3.2.5）**不适用**该默认规则，`IV` 缺失
+//!    直接报错——init section 位于序列号 0 之前，用首段序列号补 IV 语义不成立。
 //! 2. **BYTERANGE 缺省 offset**（§4.3.2.2）：紧接**同一 URI** 上一段的末尾
-//!    （`offset + length`）；无同 URI 前驱则回落到 0。`EXT-X-MAP` 的 `BYTERANGE`
-//!    缺省 offset 取 0（初始化段独立资源，不与媒体段共享区间）。
+//!    （`offset + length`）；无同 URI 前驱（或中间夹了同资源的整资源段）则
+//!    回落到 0。`EXT-X-MAP` 的 `BYTERANGE` 缺省 offset 取 0（初始化段独立资源，
+//!    不与媒体段共享区间）。
 //! 3. **KEY 继承**：`#EXT-X-KEY` 对其后所有段生效，直到下一个 `#EXT-X-KEY`
 //!    （`METHOD=NONE` 显式终止继承）。
 
@@ -476,10 +482,11 @@ struct MediaState {
     pending_duration: Option<f64>,
     pending_byte_range: Option<(u64, Option<u64>)>,
     pending_discontinuity: bool,
-    /// 上一段的字节区间（URI, 末尾 offset），用于 §4.3.2.2 缺省 offset
-    last_range: Option<(String, u64)>,
-    /// init map 的缺省 IV 是否已按首个后续段解析
-    init_iv_resolved: bool,
+    /// 各 URI 最近一次 sub-range 的结束位置（URI, 末尾 offset），用于 §4.3.2.2
+    /// 缺省 offset——按「最近一个**同 URI** 段」续接，而非「上一个任意段」
+    last_ranges: Vec<(String, u64)>,
+    /// init map 的 key 是否已确定并校验（首个后续段或解析结束时）
+    init_key_resolved: bool,
 }
 
 /// 解析 media playlist
@@ -493,8 +500,8 @@ fn parse_media(text: &str, base_url: &str) -> LegadoResult<MediaPlaylist> {
         pending_duration: None,
         pending_byte_range: None,
         pending_discontinuity: false,
-        last_range: None,
-        init_iv_resolved: true,
+        last_ranges: Vec::new(),
+        init_key_resolved: true,
     };
 
     for line in text.lines().map(str::trim) {
@@ -537,7 +544,7 @@ fn parse_media(text: &str, base_url: &str) -> LegadoResult<MediaPlaylist> {
                     ));
                 }
                 state.init_map = Some(parse_map(value, base_url, &state.current_key)?);
-                state.init_iv_resolved = false;
+                state.init_key_resolved = false;
             }
             "EXT-X-BYTERANGE" => {
                 state.pending_byte_range = Some(parse_byte_range(value)?);
@@ -568,11 +575,67 @@ fn parse_media(text: &str, base_url: &str) -> LegadoResult<MediaPlaylist> {
         return Err(parse_err("media playlist 畸形：EXTINF 后缺少分片 URI"));
     }
 
+    // init map 后没有任何分片时，仍需按最终生效的 KEY 做 IV 校验
+    if let Some(map) = state.init_map.as_mut() {
+        if !state.init_key_resolved {
+            if map.key.is_none() {
+                map.key = state.current_key.clone();
+            }
+            ensure_init_map_key_has_iv(map)?;
+            state.init_key_resolved = true;
+        }
+    }
+
     Ok(MediaPlaylist {
         segments: state.segments,
         init_map: state.init_map,
         is_endlist: state.is_endlist,
     })
+}
+
+/// 取某个 URI 最近一次 sub-range 的结束位置（§4.3.2.2 缺省 offset 的基准）
+///
+/// RFC 8216 §4.3.2.2 的基准是「**同一 media resource** 上一段 sub-range 的
+/// 结束位置」，不是「playlist 里上一个段」。因此必须按 URI 精确匹配：
+/// `a.ts(100@0) → a.ts(50) → b.ts(30@0) → a.ts(20)` 的第四段应续到 150
+/// （`a.ts` 的上一次结束），而不是 `b.ts` 的 30。
+fn range_end_for(state: &MediaState, uri: &str) -> Option<u64> {
+    state
+        .last_ranges
+        .iter()
+        .find(|(last_uri, _)| last_uri == uri)
+        .map(|(_, end)| *end)
+}
+
+/// 记录某个 URI 的 sub-range 结束位置（同 URI 只保留最近一条）
+fn record_range_end(state: &mut MediaState, uri: &str, end: u64) {
+    match state
+        .last_ranges
+        .iter_mut()
+        .find(|(last_uri, _)| last_uri == uri)
+    {
+        Some(entry) => entry.1 = end,
+        None => state.last_ranges.push((uri.to_string(), end)),
+    }
+}
+
+/// 校验加密的 `EXT-X-MAP` 是否带显式 IV（RFC 8216 §4.3.2.5）
+///
+/// 该节明确规定：Media Initialization Section 若被 AES-128 加密，则作用于它的
+/// `EXT-X-KEY` **必须**带 `IV` 属性。§5.2 的「按媒体序列号补 IV」默认规则只
+/// 针对媒体段——init section 位于序列号 0 之前，用首段序列号补 IV 在语义上
+/// 无依据（不同播放器行为也不一致），故解析期直接报错，避免解出垃圾数据。
+fn ensure_init_map_key_has_iv(map: &InitMap) -> LegadoResult<()> {
+    let Some(key) = map.key.as_ref() else {
+        // METHOD=NONE / 无 EXT-X-KEY：未加密，无需 IV
+        return Ok(());
+    };
+    if key.iv.is_some() {
+        return Ok(());
+    }
+    Err(parse_err(
+        "加密的 EXT-X-MAP 必须显式提供 IV（RFC 8216 §4.3.2.5 的默认 IV 规则仅适用于媒体段）",
+    ))
 }
 
 /// 把一行分片 URI 落成 [`Segment`]（消费 pending 状态）
@@ -587,19 +650,17 @@ fn push_segment(state: &mut MediaState, uri_line: &str, base_url: &str) -> Legad
     let byte_range = match state.pending_byte_range.take() {
         Some((length, Some(offset))) => Some(ByteRange { length, offset }),
         Some((length, None)) => {
-            let offset = match &state.last_range {
-                Some((last_uri, last_end)) if *last_uri == uri => *last_end,
-                _ => 0,
-            };
+            let offset = range_end_for(state, &uri).unwrap_or(0);
             Some(ByteRange { length, offset })
         }
         None => None,
     };
 
     match byte_range {
-        Some(range) => state.last_range = Some((uri.clone(), range.offset + range.length)),
-        // 无字节区间的段使「上一段末尾」语义失效，回落到 0
-        None => state.last_range = None,
+        Some(range) => record_range_end(state, &uri, range.offset + range.length),
+        // 整资源段（无 BYTERANGE）使「同一资源上一段末尾」的前提失效：
+        // 其后的缺省 offset 一律回落到 0（§4.3.2.2 要求前一段是同资源的 sub-range）
+        None => state.last_ranges.clear(),
     }
 
     // §5.2：IV 缺省时用「媒体序列号」= MEDIA-SEQUENCE + 段下标
@@ -614,19 +675,16 @@ fn push_segment(state: &mut MediaState, uri_line: &str, base_url: &str) -> Legad
         }
     }
 
-    // init map 的缺省 IV 用紧随其后的第一个段序列号（与播放器口径一致）
+    // init map 的 key 在首个后续段时确定（兼容 KEY 出现在 MAP 之后的写法，
+    // RFC 未禁止）。**不得**按序列号补 IV：§4.3.2.5 要求加密的 init section
+    // 必须显式提供 IV，缺省即报错（详见 `ensure_init_map_key_has_iv`）。
     if let Some(map) = state.init_map.as_mut() {
-        if !state.init_iv_resolved {
-            // 兼容 KEY 出现在 MAP 之后的写法（RFC 未禁止）：首个段生效的 key 即 map 的 key
+        if !state.init_key_resolved {
             if map.key.is_none() {
                 map.key = state.current_key.clone();
             }
-            if let Some(map_key) = map.key.as_mut() {
-                if map_key.iv.is_none() {
-                    map_key.iv = Some(default_iv);
-                }
-            }
-            state.init_iv_resolved = true;
+            ensure_init_map_key_has_iv(map)?;
+            state.init_key_resolved = true;
         }
     }
 
@@ -705,6 +763,9 @@ fn parse_map(value: &str, base_url: &str, current_key: &Option<HlsKey>) -> Legad
 }
 
 /// 解析 `n[@o]` 字节区间
+///
+/// `n` 必须大于 0：长度为 0 的区间不是合法 sub-range，且下游 `offset + length - 1`
+/// 会退化成 `offset - 1`（`bytes=100-99` 之类非法 Range 头），故在解析期直接拒绝。
 fn parse_byte_range(value: &str) -> LegadoResult<(u64, Option<u64>)> {
     let value = value.trim();
     let (length_text, offset_text) = match value.split_once('@') {
@@ -715,6 +776,11 @@ fn parse_byte_range(value: &str) -> LegadoResult<(u64, Option<u64>)> {
         .trim()
         .parse::<u64>()
         .map_err(|_| parse_err(format!("EXT-X-BYTERANGE 长度非数字: {value}")))?;
+    if length == 0 {
+        return Err(parse_err(format!(
+            "EXT-X-BYTERANGE 长度必须大于 0: {value}"
+        )));
+    }
     let offset = match offset_text {
         Some(text) => Some(
             text.trim()
@@ -779,6 +845,11 @@ fn absolutize(base_url: &str, uri: &str) -> String {
 ///
 /// 只处理 scheme://authority 之后的 path 部分，query/fragment 原样保留；
 /// 非绝对 URI（无 `://`）原样返回。
+///
+/// §5.2.4 的 `remove_dot_segments` 在输入以 `/.` 或 `/..` 结尾时，替换为 `/`
+/// 后会把该 `/` 留在输出末尾——即 `/a/b/..` → `/a/`、`/a/b/.` → `/a/b/`。
+/// 该结尾斜杠决定相对 URI 的解析基准（`/a/b/..` + `c.ts` 与 `/a/` + `c.ts`
+/// 同结果，但 `/a/b/..` + `../c.ts` 不同），必须保留。
 fn normalize_dot_segments(url: &str) -> String {
     let Some(scheme_end) = url.find("://") else {
         return url.to_string();
@@ -815,7 +886,11 @@ fn normalize_dot_segments(url: &str) -> String {
             other => segments.push(other),
         }
     }
-    let normalized_path = segments.join("/");
+    let mut normalized_path = segments.join("/");
+    // §5.2.4：输入以 `/.` 或 `/..` 结尾时，替换产生的 `/` 必须留在输出末尾
+    if (path.ends_with("/.") || path.ends_with("/..")) && !normalized_path.ends_with('/') {
+        normalized_path.push('/');
+    }
     format!("{}{}{}", &url[..path_start], normalized_path, suffix)
 }
 
@@ -1425,6 +1500,74 @@ b.mp4
         );
     }
 
+    #[test]
+    fn media_byterange_default_offset_chains_across_interleaved_uris() {
+        // §4.3.2.2 的基准是「同一 media resource 上一段 sub-range 的结束位置」，
+        // 不是「playlist 里上一个段」：b.ts 的区间不得污染 a.ts 的续接位置。
+        let text = "\
+#EXTM3U
+#EXTINF:4,
+#EXT-X-BYTERANGE:100@0
+a.ts
+#EXTINF:4,
+#EXT-X-BYTERANGE:50
+a.ts
+#EXTINF:4,
+#EXT-X-BYTERANGE:30@0
+b.ts
+#EXTINF:4,
+#EXT-X-BYTERANGE:20
+a.ts
+";
+        let media = parse_media_only(text);
+        assert_eq!(
+            media.segments[1].byte_range,
+            Some(ByteRange {
+                length: 50,
+                offset: 100
+            })
+        );
+        assert_eq!(
+            media.segments[2].byte_range,
+            Some(ByteRange {
+                length: 30,
+                offset: 0
+            })
+        );
+        // a.ts 上一次结束 = 100 + 50 = 150（而非 b.ts 的 0 + 30）
+        assert_eq!(
+            media.segments[3].byte_range,
+            Some(ByteRange {
+                length: 20,
+                offset: 150
+            })
+        );
+    }
+
+    #[test]
+    fn media_byterange_zero_length_is_error() {
+        let text = "\
+#EXTM3U
+#EXTINF:4,
+#EXT-X-BYTERANGE:0@100
+a.ts
+";
+        let err = parse_playlist(text, BASE).expect_err("长度 0 必须报错");
+        let message = err.to_string();
+        assert!(message.contains("长度必须大于 0"), "message={message}");
+        assert!(message.contains("0@100"), "message={message}");
+    }
+
+    #[test]
+    fn map_byterange_zero_length_is_error() {
+        let err = parse_playlist(
+            "#EXTM3U\n#EXT-X-MAP:URI=\"init.mp4\",BYTERANGE=\"0@0\"\n#EXTINF:4,\nseg.m4s\n",
+            BASE,
+        )
+        .expect_err("init map 长度 0 必须报错");
+        assert!(err.to_string().contains("长度必须大于 0"), "err={err}");
+    }
+
     // ---------- media：EXT-X-MAP ----------
 
     #[test]
@@ -1477,7 +1620,8 @@ seg0.m4s
     }
 
     #[test]
-    fn media_ext_x_map_default_iv_uses_first_following_segment_sequence() {
+    fn encrypted_map_without_iv_is_error() {
+        // §4.3.2.5：加密的 init section 必须显式带 IV，不得按序列号补
         let text = "\
 #EXTM3U
 #EXT-X-MEDIA-SEQUENCE:5
@@ -1486,9 +1630,59 @@ seg0.m4s
 #EXTINF:4,
 seg0.m4s
 ";
+        let err = parse_playlist(text, BASE).expect_err("加密 MAP 缺 IV 必须报错");
+        let message = err.to_string();
+        assert!(message.contains("EXT-X-MAP"), "message={message}");
+        assert!(message.contains("IV"), "message={message}");
+        assert!(message.contains("4.3.2.5"), "message={message}");
+    }
+
+    #[test]
+    fn encrypted_map_with_explicit_iv_is_ok() {
+        let text = "\
+#EXTM3U
+#EXT-X-KEY:METHOD=AES-128,URI=\"k.key\",IV=0x00112233445566778899AABBCCDDEEFF
+#EXT-X-MAP:URI=\"init.mp4\"
+#EXTINF:4,
+seg0.m4s
+";
         let media = parse_media_only(text);
         let map = media.init_map.expect("应有 init map");
-        assert_eq!(map.key.and_then(|k| k.iv), Some(iv_from_sequence(5)));
+        assert_eq!(
+            map.key.and_then(|k| k.iv),
+            Some([
+                0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD,
+                0xEE, 0xFF
+            ])
+        );
+    }
+
+    #[test]
+    fn map_with_method_none_key_is_ok() {
+        // METHOD=NONE 不是加密，不需要 IV
+        let text = "\
+#EXTM3U
+#EXT-X-KEY:METHOD=AES-128,URI=\"k.key\",IV=0x00112233445566778899AABBCCDDEEFF
+#EXT-X-KEY:METHOD=NONE
+#EXT-X-MAP:URI=\"init.mp4\"
+#EXTINF:4,
+seg0.m4s
+";
+        let media = parse_media_only(text);
+        let map = media.init_map.expect("应有 init map");
+        assert!(map.key.is_none());
+    }
+
+    #[test]
+    fn encrypted_map_without_iv_is_error_even_with_no_following_segment() {
+        // 校验不依赖后续段：init map 后直接结束也要报错
+        let text = "\
+#EXTM3U
+#EXT-X-KEY:METHOD=AES-128,URI=\"k.key\"
+#EXT-X-MAP:URI=\"init.mp4\"
+";
+        let err = parse_playlist(text, BASE).expect_err("加密 MAP 缺 IV 必须报错");
+        assert!(err.to_string().contains("EXT-X-MAP"), "err={err}");
     }
 
     // ---------- media：AES-128 key ----------
@@ -1853,6 +2047,49 @@ seg2.ts
     }
 
     #[test]
+    fn dot_segments_trailing_slash_is_preserved() {
+        // §5.2.4：以 `/.` 或 `/..` 结尾时，替换产生的 `/` 留在输出末尾
+        assert_eq!(
+            normalize_dot_segments("https://h.com/a/b/.."),
+            "https://h.com/a/"
+        );
+        assert_eq!(
+            normalize_dot_segments("https://h.com/a/b/."),
+            "https://h.com/a/b/"
+        );
+        assert_eq!(
+            normalize_dot_segments("https://h.com/a/./b/../c"),
+            "https://h.com/a/c"
+        );
+        // 越过根：`/..` → `/`
+        assert_eq!(normalize_dot_segments("https://h.com/.."), "https://h.com/");
+        // query 保留
+        assert_eq!(
+            normalize_dot_segments("https://h/a/b/..?x=1"),
+            "https://h/a/?x=1"
+        );
+        // 无点段的 URL 快速路径不受影响（结尾斜杠原本就有）
+        assert_eq!(
+            normalize_dot_segments("https://h.com/a/b/"),
+            "https://h.com/a/b/"
+        );
+    }
+
+    #[test]
+    fn media_dot_segment_relative_resolution_uses_trailing_slash_base() {
+        // base 归一为 `.../a/` 后，`../c.ts` 应解析到 `.../c.ts`（而非 `.../b/c.ts`）
+        let media = parse_playlist(
+            "#EXTM3U\n#EXTINF:4,\n../c.ts\n",
+            "https://cdn.example.com/a/b/../index.m3u8",
+        )
+        .expect("应解析成功");
+        let Playlist::Media(media) = media else {
+            panic!("预期 media");
+        };
+        assert_eq!(media.segments[0].uri, "https://cdn.example.com/c.ts");
+    }
+
+    #[test]
     fn media_dot_segment_uris_are_normalized() {
         let media =
             parse_media_only("#EXTM3U\n#EXTINF:4,\n../seg0.ts\n#EXTINF:4,\n./sub/../seg1.ts\n");
@@ -1864,7 +2101,8 @@ seg2.ts
     }
 
     #[test]
-    fn key_after_map_applies_to_init_map() {
+    fn key_after_map_without_iv_is_error() {
+        // KEY 出现在 MAP 之后（RFC 未禁止）也适用 §4.3.2.5：加密 init section 缺 IV 报错
         let text = "\
 #EXTM3U
 #EXT-X-MAP:URI=\"init.mp4\"
@@ -1872,11 +2110,30 @@ seg2.ts
 #EXTINF:4,
 seg0.m4s
 ";
+        let err = parse_playlist(text, BASE).expect_err("MAP 之后的加密 KEY 缺 IV 也必须报错");
+        assert!(err.to_string().contains("EXT-X-MAP"), "err={err}");
+    }
+
+    #[test]
+    fn key_after_map_applies_to_init_map() {
+        let text = "\
+#EXTM3U
+#EXT-X-MAP:URI=\"init.mp4\"
+#EXT-X-KEY:METHOD=AES-128,URI=\"k.key\",IV=0x00112233445566778899AABBCCDDEEFF
+#EXTINF:4,
+seg0.m4s
+";
         let media = parse_media_only(text);
         let map = media.init_map.expect("应有 init map");
         let map_key = map.key.expect("KEY 在 MAP 之后也应生效");
         assert_eq!(map_key.uri, "https://cdn.example.com/media/k.key");
-        assert_eq!(map_key.iv, Some(iv_from_sequence(0)));
+        assert_eq!(
+            map_key.iv,
+            Some([
+                0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD,
+                0xEE, 0xFF
+            ])
+        );
     }
 
     // ---------- 属性解析单元测试 ----------
