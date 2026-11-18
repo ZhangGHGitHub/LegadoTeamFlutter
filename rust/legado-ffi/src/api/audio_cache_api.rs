@@ -53,11 +53,15 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use legado_core::crypto::AesCrypto;
 use legado_core::{LegadoError, LegadoResult};
 use legado_db::{BookChapterRepository, BookRepository, BookSourceRepository};
-use legado_net::{LegadoClient, LegadoRequest, Method};
+use legado_net::{LegadoClient, LegadoRequest, LegadoStreamResponse, Method};
 use legado_parser::{AnalyzeUrl, TemplateContext};
 
+use crate::api::hls_playlist::{
+    parse_playlist, select_variant, ByteRange, HlsKey, MediaPlaylist, Playlist,
+};
 use crate::db_state::with_database;
 
 /// 音频缓存磁盘目录环境变量名（测试隔离用，非空即覆盖）
@@ -75,9 +79,13 @@ const CACHE_FILE_PATTERN: &str =
     r"^([0-9]{5,})_([0-9a-f]{16})_.+_([0-9a-f]{16})_([0-9a-f]{8})\.([a-z0-9]{2,6})$";
 
 /// 音频扩展名白名单（对齐原版 `AudioCachePolicy.audioExtensions:15-18`；
-/// `audio` 为原版 detectExtension 的兜底扩展名）
+/// `audio` 为原版 detectExtension 的兜底扩展名）。
+///
+/// `ts` 为本仓扩展（批 2 线 B）：HLS 明文 TS 分片合并产物的扩展名，
+/// 契约 §2.48「HLS 合并产物扩展名」登记；不加入白名单则产物无法被
+/// 五段式正则识别，读面永远命中不到。
 const AUDIO_EXTENSIONS: &[&str] = &[
-    "mp3", "m4a", "m4b", "aac", "ogg", "oga", "opus", "wav", "flac", "webm", "amr", "3gp",
+    "mp3", "m4a", "m4b", "aac", "ogg", "oga", "opus", "wav", "flac", "webm", "amr", "3gp", "ts",
 ];
 
 /// 陈旧未提交文件保留阈值（对齐原版 `AudioCacheManager.STALE_PARTIAL_AGE_MILLIS:43`）
@@ -520,7 +528,10 @@ fn is_json_array(s: &str) -> bool {
 }
 
 /// playUrl 可缓存性校验（对齐原版 `AudioCachePolicy.requireCacheablePlayUrl:25-33`）：
-/// 空 / JSON 数组多段 / HLS → Err（原文案，写入面上抛不降级）
+/// 空 / JSON 数组多段 → Err（原文案，写入面上抛不降级）。
+///
+/// **HLS 不再拒绝**（批 2 线 B，契约 §2.48 变更）：`.m3u8`/`.m3u` 走
+/// [`download_hls_merged`] 合并单文件路径；JSON 数组多段本批仍不支持。
 fn require_cacheable_play_url(play_url: &str) -> LegadoResult<()> {
     if kotlin_is_blank(play_url) {
         return Err(LegadoError::Ffi("播放链接为空".into()));
@@ -528,31 +539,37 @@ fn require_cacheable_play_url(play_url: &str) -> LegadoResult<()> {
     if is_json_array(play_url) {
         return Err(LegadoError::Ffi("暂不支持缓存多段音频".into()));
     }
-    if is_hls_url(play_url) {
-        return Err(LegadoError::Ffi("暂不支持缓存 HLS 音频".into()));
-    }
     Ok(())
+}
+
+/// HLS 判定（响应侧口径）：Content-Type 含 `mpegurl` 或最终 URL 以
+/// `.m3u8`/`.m3u` 结尾——两条任一成立即按 HLS 合并路径处理
+fn is_hls_response(content_type: Option<&str>, final_url: &str) -> bool {
+    content_type
+        .map(|ct| ct.split(';').next().unwrap_or("").trim().to_lowercase())
+        .is_some_and(|ct| ct.contains("mpegurl"))
+        || is_hls_url(final_url)
 }
 
 /// 扩展名三级探测（对齐原版 `AudioCachePolicy.detectExtension:35-65`）：
 /// Content-Type（截 `;`/trim/小写）→ 最终 URL 后缀 → playUrl 后缀 → 缺省
-/// `"audio"`；Content-Type 含 `mpegurl` 或最终 URL 为 HLS → Err「暂不支持
-/// 缓存 HLS 音频」（`:45-47`）。
+/// `"audio"`。
+///
+/// **HLS 分支已改**（批 2 线 B，契约 §2.48）：不再 Err，改为返回**合并产物**
+/// 扩展名——调用方须已确认 playlist 是否含 `EXT-X-MAP`；`has_init_map=true`
+/// （fMP4）返回 `m4a`，否则（MPEG-TS 分片直拼）返回 `ts`。
 fn detect_extension(
     content_type: Option<&str>,
     final_url: &str,
     play_url: &str,
+    has_init_map: bool,
 ) -> LegadoResult<String> {
     require_cacheable_play_url(play_url)?;
+    if is_hls_response(content_type, final_url) || is_hls_url(play_url) {
+        return Ok(hls_merged_extension(has_init_map).to_string());
+    }
     let normalized =
         content_type.map(|ct| ct.split(';').next().unwrap_or("").trim().to_lowercase());
-    if normalized
-        .as_deref()
-        .is_some_and(|ct| ct.contains("mpegurl"))
-        || is_hls_url(final_url)
-    {
-        return Err(LegadoError::Ffi("暂不支持缓存 HLS 音频".into()));
-    }
     let ext = match normalized.as_deref() {
         // Content-Type 缺失（None）：直接由 URL 三级兜底（对齐 Kotlin when 第一支）
         None => extension_from_url(final_url)
@@ -971,8 +988,14 @@ fn audio_cache_download_with_client(
     legado_fetcher::web_book::strip_proxy_header(&mut headers);
 
     let body = analyze_url.request_body();
+    // HLS 分支复用同一套书源 headers 请求 playlist / key / segment
+    // （契约 §2.48「分片请求头」：Referer/UA/登录头门控与主请求一致）
+    let segment_headers = headers.clone();
+    // 解析后的请求 URL（playUrl 原串可能带 `,{options}` 模板尾巴，HLS 后缀判定
+    // 必须用解析后 URL）
+    let request_url = analyze_url.url().to_string();
     let request = LegadoRequest {
-        url: analyze_url.url().to_string(),
+        url: request_url.clone(),
         method: match analyze_url.method() {
             legado_parser::RequestMethod::Post => Method::Post,
             legado_parser::RequestMethod::Head => Method::Head,
@@ -1009,14 +1032,49 @@ fn audio_cache_download_with_client(
         )));
     }
 
-    // 扩展名三级探测（下载响应 Content-Type/最终 URL 或 HLS → 拒绝）
     let final_url = response.url().to_string();
-    let extension = detect_extension(
-        response.content_type().map(|s| s.as_str()),
-        &final_url,
-        play_url,
-    )?;
+    let content_type = response.content_type().cloned();
+
+    // ─── HLS 分支（批 2 线 B，契约 §2.48）：合并单文件路径 ───────────────
+    // 判定三层（任一成立即按 HLS 处理）：
+    // ① 解析后请求 URL 以 `.m3u8`/`.m3u` 结尾（用 `analyze_url.url()` 而非
+    //    playUrl 原串——原串可能带 `,{options}` 模板尾巴）；
+    // ② 响应 Content-Type 含 `mpegurl` 或最终 URL 为 HLS；
+    // ③ **内容嗅探**：首块以 `#EXTM3U` 开头（无扩展名 m3u8，批 47 真机风险②——
+    //    部分站点返回 `application/octet-stream`，仅靠 ①② 会误当二进制音频）。
+    let meta_hls = is_hls_url(&request_url) || is_hls_response(content_type.as_deref(), &final_url);
+    let mut first_chunk = next_chunk_checked(&mut response, cancel_snapshot)?;
+    let sniff_hls = first_chunk.as_deref().is_some_and(looks_like_m3u8);
+    if meta_hls || sniff_hls {
+        let mut playlist_bytes = first_chunk.take().unwrap_or_default();
+        let rest = read_stream_capped(&mut response, HLS_META_MAX_BYTES, cancel_snapshot)?;
+        if playlist_bytes.len() as u64 + rest.len() as u64 > HLS_META_MAX_BYTES {
+            return Err(LegadoError::Network(format!(
+                "HLS 资源超出上限（>{} 字节）",
+                HLS_META_MAX_BYTES
+            )));
+        }
+        playlist_bytes.extend_from_slice(&rest);
+        drop(response);
+        return download_hls_and_install(
+            &effective,
+            &dir,
+            &key16,
+            chapter_index,
+            chapter_title,
+            play_url,
+            &segment_headers,
+            &final_url,
+            playlist_bytes,
+            cancel_snapshot,
+        );
+    }
+
+    // 扩展名三级探测（非 HLS：Content-Type → 最终 URL → playUrl → audio）
+    let extension = detect_extension(content_type.as_deref(), &final_url, play_url, false)?;
     let expected_size = response.content_length().filter(|n| *n > 0);
+    // 嗅探已消费的首块必须写回（非 HLS 路径不得丢字节）
+    let sniffed_head = first_chunk.take();
 
     let revision = random_hex(8);
     let final_name = build_file_name(
@@ -1036,6 +1094,10 @@ fn audio_cache_download_with_client(
         {
             let file = fs::File::create(&staged_path)?;
             let mut writer = io::BufWriter::new(file);
+            // 嗅探阶段已消费的首块先写回（非 HLS 路径不得丢字节）
+            if let Some(head) = sniffed_head.as_ref() {
+                writer.write_all(head)?;
+            }
             loop {
                 if cancel_generation_changed(cancel_snapshot) {
                     return Err(LegadoError::Ffi("音频缓存下载已取消".into()));
@@ -1072,6 +1134,395 @@ fn audio_cache_download_with_client(
         Ok(size) => size,
         Err(e) => {
             // ⑧ 失败清理：已安装文件 + 标记 + tmp（对齐 :190-197）
+            let _ = fs::remove_file(&final_path);
+            let _ = fs::remove_file(&marker_path);
+            let _ = fs::remove_file(&staged_path);
+            return Err(e);
+        }
+    };
+    Ok(serde_json::json!({
+        "status": "installed",
+        "path": final_path.to_string_lossy(),
+        "sizeBytes": installed_size,
+        "extension": extension,
+    })
+    .to_string())
+}
+
+// ─── HLS 合并下载路径（批 2 线 B，契约 §2.48）───────────────────────────────
+
+/// HLS 元数据（playlist / key）单次读取上限：1MB（契约 §2.48）
+const HLS_META_MAX_BYTES: u64 = 1024 * 1024;
+
+/// HLS 单个分片读取上限：64MB。分片本身可达数 MB，但必须有界——无限上限
+/// 会让坏 playlist（或恶意服务端）把内存/磁盘打满；超限如实报错而非静默截断。
+const HLS_SEGMENT_MAX_BYTES: u64 = 64 * 1024 * 1024;
+
+/// HLS 合并产物扩展名：fMP4（有 `EXT-X-MAP`）→ `m4a`；MPEG-TS 分片直拼 → `ts`
+fn hls_merged_extension(has_init_map: bool) -> &'static str {
+    if has_init_map {
+        "m4a"
+    } else {
+        "ts"
+    }
+}
+
+/// 读取下一块（块级取消检查；`None` 表示流结束）
+fn next_chunk_checked(
+    response: &mut LegadoStreamResponse,
+    cancel_snapshot: u64,
+) -> LegadoResult<Option<Vec<u8>>> {
+    if cancel_generation_changed(cancel_snapshot) {
+        return Err(LegadoError::Ffi("音频缓存下载已取消".into()));
+    }
+    crate::runtime::block_on(response.next_chunk())
+}
+
+/// m3u8 内容嗅探：去掉 UTF-8 BOM 与前导空白后以 `#EXTM3U` 开头
+///
+/// 用于「无扩展名 + 无正确 Content-Type」的 HLS（批 47 真机风险②：
+/// 部分站点对 `.m3u8` 返回 `application/octet-stream`）。只看首块即可判定——
+/// RFC 8216 要求 `#EXTM3U` 为首行。
+fn looks_like_m3u8(first_chunk: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(first_chunk);
+    let trimmed = text.strip_prefix('\u{feff}').unwrap_or(&text);
+    trimmed.trim_start().starts_with("#EXTM3U")
+}
+
+/// 流式读取响应至多 `max_bytes`（块级取消检查，对齐 `copyCancellable`）。
+/// 声明长度超限 → 读 body 前快速拒绝；逐块累计超限 → 中止并报错。
+fn read_stream_capped(
+    response: &mut LegadoStreamResponse,
+    max_bytes: u64,
+    cancel_snapshot: u64,
+) -> LegadoResult<Vec<u8>> {
+    if let Some(declared) = response.content_length() {
+        if declared > max_bytes {
+            return Err(LegadoError::Network(format!(
+                "HLS 资源超出上限（声明 {} 字节 > {} 字节）",
+                declared, max_bytes
+            )));
+        }
+    }
+    let mut out = Vec::new();
+    while let Some(chunk) = crate::runtime::block_on(response.next_chunk())? {
+        if cancel_generation_changed(cancel_snapshot) {
+            return Err(LegadoError::Ffi("音频缓存下载已取消".into()));
+        }
+        if out.len() as u64 + chunk.len() as u64 > max_bytes {
+            return Err(LegadoError::Network(format!(
+                "HLS 资源超出上限（>{} 字节）",
+                max_bytes
+            )));
+        }
+        out.extend_from_slice(&chunk);
+    }
+    Ok(out)
+}
+
+/// 发起一次 GET 并读取有界响应体（key / segment 共用）
+///
+/// `byte_range` 有值时加 `Range: bytes=<offset>-<offset+length-1>` 头；
+/// 非 2xx 返回 `LegadoError::Network`（调用方据此判定是否需要重拉 playlist）。
+fn fetch_bytes_capped(
+    client: &LegadoClient,
+    url: &str,
+    headers: &HashMap<String, String>,
+    byte_range: Option<ByteRange>,
+    max_bytes: u64,
+    cancel_snapshot: u64,
+) -> LegadoResult<Vec<u8>> {
+    let mut request_headers = headers.clone();
+    if let Some(range) = byte_range {
+        let end = range.offset.saturating_add(range.length).saturating_sub(1);
+        request_headers.insert(
+            "Range".to_string(),
+            format!("bytes={}-{}", range.offset, end),
+        );
+    }
+    let request = LegadoRequest {
+        url: url.to_string(),
+        method: Method::Get,
+        headers: request_headers,
+        body: None,
+        timeout: None,
+    };
+    let mut response = crate::runtime::block_on(client.send_stream(&request))?;
+    if !response.is_success() {
+        return Err(LegadoError::Network(format!(
+            "网络请求失败({})",
+            response.status()
+        )));
+    }
+    read_stream_capped(&mut response, max_bytes, cancel_snapshot)
+}
+
+/// 按 URI 缓存已拉取的 AES-128 密钥（同一 playlist 内多段共用同一 key URI，
+/// 避免逐段重复拉取；契约 §2.48「按 uri 缓存避免重复拉」）
+type KeyCache = HashMap<String, Vec<u8>>;
+
+/// 取（必要时拉取）AES-128 密钥：长度必须为 16 字节（AES-128）
+fn resolve_key(
+    client: &LegadoClient,
+    key: &HlsKey,
+    headers: &HashMap<String, String>,
+    cache: &mut KeyCache,
+    cancel_snapshot: u64,
+) -> LegadoResult<Vec<u8>> {
+    if let Some(bytes) = cache.get(&key.uri) {
+        return Ok(bytes.clone());
+    }
+    let bytes = fetch_bytes_capped(
+        client,
+        &key.uri,
+        headers,
+        None,
+        HLS_META_MAX_BYTES,
+        cancel_snapshot,
+    )?;
+    if bytes.len() != 16 {
+        return Err(LegadoError::Ffi(format!(
+            "HLS AES-128 密钥长度非法（应为 16 字节，实际 {}）",
+            bytes.len()
+        )));
+    }
+    cache.insert(key.uri.clone(), bytes.clone());
+    Ok(bytes)
+}
+
+/// 解密一段 AES-128 密文（`iv` 由解析器按 §5.2 序列号算好，恒为 `Some`）
+fn decrypt_segment(key: &[u8], hls_key: &HlsKey, data: Vec<u8>) -> LegadoResult<Vec<u8>> {
+    let iv = hls_key.iv.ok_or_else(|| {
+        LegadoError::Ffi("HLS AES-128 段缺少 IV（解析器应已按序列号补全）".into())
+    })?;
+    AesCrypto::decrypt_cbc(key, &iv, &data)
+}
+
+/// HLS 分片拉取上下文（客户端 + 请求头 + 取消代数 + 密钥缓存），
+/// 避免各辅助函数重复传同一批参数
+struct HlsFetchCtx<'a> {
+    client: &'a LegadoClient,
+    headers: &'a HashMap<String, String>,
+    cancel_snapshot: u64,
+    key_cache: KeyCache,
+}
+
+impl HlsFetchCtx<'_> {
+    /// 下载单个 HLS 资源（init map / segment）到写入器：处理 key 解密与 BYTERANGE
+    fn download_part(
+        &mut self,
+        url: &str,
+        byte_range: Option<ByteRange>,
+        key: Option<&HlsKey>,
+        writer: &mut impl Write,
+    ) -> LegadoResult<u64> {
+        let raw = fetch_bytes_capped(
+            self.client,
+            url,
+            self.headers,
+            byte_range,
+            HLS_SEGMENT_MAX_BYTES,
+            self.cancel_snapshot,
+        )?;
+        let bytes = match key {
+            Some(hls_key) => {
+                let key_bytes = resolve_key(
+                    self.client,
+                    hls_key,
+                    self.headers,
+                    &mut self.key_cache,
+                    self.cancel_snapshot,
+                )?;
+                decrypt_segment(&key_bytes, hls_key, raw)?
+            }
+            None => raw,
+        };
+        writer.write_all(&bytes)?;
+        Ok(bytes.len() as u64)
+    }
+
+    /// 拉取并解析 playlist（`base_url` 为 playlist 自身 URL，用于相对路径绝对化）
+    fn fetch_playlist(&self, url: &str) -> LegadoResult<Playlist> {
+        let bytes = fetch_bytes_capped(
+            self.client,
+            url,
+            self.headers,
+            None,
+            HLS_META_MAX_BYTES,
+            self.cancel_snapshot,
+        )?;
+        let text = String::from_utf8_lossy(&bytes);
+        parse_playlist(&text, url)
+    }
+}
+
+/// HLS 下载：解析 playlist → 下载全部 segment → 合并为单文件 → 走既有安装流程
+///
+/// 流程见契约 §2.48「HLS 合并下载路径」：
+/// 1. 解析首响应（playlist 原文）；master → `select_variant` 选档后**再拉一次**
+/// 2. 有 `init_map` → 先写 init segment（同样支持 BYTERANGE + key）
+/// 3. 逐 segment：key 解密 / BYTERANGE / **边下边拼**追加写临时文件
+/// 4. 拼接完成 → 既有 size 校验 + 五段式安装 + `.complete` + 清理旧版本
+///
+/// **签名过期**：单段失败时重拉一次 playlist（token 可能刷新）后重试该段；
+/// 仍失败则整章 Err（不产出残缺文件）。
+/// **取消**：每个 segment 边界检查取消代数；失败删除临时文件与半成品。
+#[allow(clippy::too_many_arguments)] // 入参为下载安装全链路所需（书/章标识 + 请求上下文 + playlist），拆结构体反而掩盖语义
+fn download_hls_and_install(
+    client: &LegadoClient,
+    dir: &Path,
+    key16: &str,
+    chapter_index: i32,
+    chapter_title: &str,
+    play_url: &str,
+    headers: &HashMap<String, String>,
+    playlist_url: &str,
+    playlist_bytes: Vec<u8>,
+    cancel_snapshot: u64,
+) -> LegadoResult<String> {
+    let mut ctx = HlsFetchCtx {
+        client,
+        headers,
+        cancel_snapshot,
+        key_cache: HashMap::new(),
+    };
+
+    // ① 解析首响应；master → 选档后重拉
+    let text = String::from_utf8_lossy(&playlist_bytes);
+    let first = parse_playlist(&text, playlist_url)?;
+    let media: MediaPlaylist = match first {
+        Playlist::Media(media) => media,
+        Playlist::Master(master) => {
+            let variant = select_variant(&master)
+                .ok_or_else(|| LegadoError::Parser("HLS master playlist 无可用档位".to_string()))?;
+            let variant_url = variant.uri.clone();
+            match ctx.fetch_playlist(&variant_url)? {
+                Playlist::Media(media) => media,
+                Playlist::Master(_) => {
+                    return Err(LegadoError::Parser(
+                        "HLS master playlist 嵌套 master（不支持）".to_string(),
+                    ))
+                }
+            }
+        }
+    };
+
+    if media.segments.is_empty() {
+        return Err(LegadoError::Ffi("HLS 播放列表为空（无可用分片）".into()));
+    }
+
+    let has_init_map = media.init_map.is_some();
+    let extension = hls_merged_extension(has_init_map);
+    let revision = random_hex(8);
+    let final_name = build_file_name(
+        chapter_index,
+        key16,
+        chapter_title,
+        &md5_mid16(play_url),
+        &revision,
+        extension,
+    )?;
+    let staged_path = dir.join(format!("tmp_{key16}_{revision}_{}.part", random_hex(32)));
+    let final_path = dir.join(&final_name);
+    let marker_path = dir.join(format!("{final_name}{COMPLETE_SUFFIX}"));
+
+    // 期望大小未知（HLS 由多段拼接，无单一 Content-Length）→ None 仅校验非空
+    let result: LegadoResult<u64> = (|| {
+        let file = fs::File::create(&staged_path)?;
+        let mut writer = io::BufWriter::new(file);
+
+        // ② init segment（fMP4）
+        if let Some(init_map) = media.init_map.as_ref() {
+            ctx.download_part(
+                &init_map.uri,
+                init_map.byte_range,
+                init_map.key.as_ref(),
+                &mut writer,
+            )?;
+        }
+
+        // ③ 逐段下载拼接（每段边界检查取消代数；每段至多重拉一次 playlist 后重试）
+        let mut current_media = media;
+        let mut index = 0usize;
+        while index < current_media.segments.len() {
+            if cancel_generation_changed(cancel_snapshot) {
+                return Err(LegadoError::Ffi("音频缓存下载已取消".into()));
+            }
+            let mut attempt = 0u32;
+            loop {
+                let segment = current_media.segments[index].clone();
+                match ctx.download_part(
+                    &segment.uri,
+                    segment.byte_range,
+                    segment.key.as_ref(),
+                    &mut writer,
+                ) {
+                    Ok(_) => break,
+                    Err(err) => {
+                        // 仅**网络类**失败才重拉 playlist 重试（签名过期/token 刷新）。
+                        // 段字节先整段取回内存再一次性写盘（`download_part`），故网络
+                        // 失败时本段尚未追加任何字节，重试不会重复拼接；而磁盘 IO /
+                        // 解密 / 取消等失败重试无意义（且写入可能已部分生效）——直接上抛。
+                        let retryable = matches!(err, LegadoError::Network(_));
+                        // 签名过期（风险①）：本段重拉一次 playlist（token 可能已刷新）
+                        if !retryable || attempt >= 1 || cancel_generation_changed(cancel_snapshot)
+                        {
+                            return Err(LegadoError::Network(format!(
+                                "HLS 分片下载失败（第 {} 段）: {err}",
+                                index + 1
+                            )));
+                        }
+                        attempt += 1;
+                        let refreshed = ctx.fetch_playlist(playlist_url)?;
+                        let refreshed = match refreshed {
+                            Playlist::Media(m) => m,
+                            Playlist::Master(_) => {
+                                return Err(LegadoError::Parser(
+                                    "HLS master playlist 嵌套 master（不支持）".to_string(),
+                                ))
+                            }
+                        };
+                        // 段数变化（直播窗口滑动）→ 如实报错，不静默产出残缺文件
+                        if refreshed.segments.len() != current_media.segments.len() {
+                            return Err(LegadoError::Network(format!(
+                                "HLS 分片下载失败（第 {} 段）: 重拉 playlist 后分片数变化（{} → {}）",
+                                index + 1,
+                                current_media.segments.len(),
+                                refreshed.segments.len()
+                            )));
+                        }
+                        current_media = refreshed;
+                        // 重拉后 URI 可能已带新 token，重试同一 index
+                    }
+                }
+            }
+            index += 1;
+        }
+        writer.flush()?;
+
+        if cancel_generation_changed(cancel_snapshot) {
+            return Err(LegadoError::Ffi("音频缓存下载已取消".into()));
+        }
+
+        // ④ 既有安装流程：size 校验（无期望长度，仅非空）→ rename → 标记 → 清理
+        let staged_len = fs::metadata(&staged_path)?.len();
+        require_complete_size(staged_len, None)?;
+        let installed_len = install_staged_file(&staged_path, &final_path, None)?;
+
+        if cancel_generation_changed(cancel_snapshot) {
+            return Err(LegadoError::Ffi("音频缓存下载已取消".into()));
+        }
+        write_complete_marker(&marker_path, play_url)?;
+
+        let _ = remove_cache_files(dir, key16, Some(&final_name));
+
+        Ok(installed_len)
+    })();
+
+    let installed_size = match result {
+        Ok(size) => size,
+        Err(e) => {
+            // 失败清理：已安装文件 + 标记 + 临时文件（复用既有清理口径）
             let _ = fs::remove_file(&final_path);
             let _ = fs::remove_file(&marker_path);
             let _ = fs::remove_file(&staged_path);
@@ -1710,7 +2161,8 @@ mod tests {
         assert_eq!(safe_title("\u{00A0}"), "\u{00A0}");
     }
 
-    /// 扩展名三级探测与 HLS/多段拒绝（对齐 AudioCachePolicy.kt:25-65）
+    /// 扩展名三级探测与多段拒绝（对齐 AudioCachePolicy.kt:25-65；
+    /// HLS 自批 2 线 B 起返回合并产物扩展名，不再拒绝——契约 §2.48）
     #[test]
     fn extension_detection_and_rejections() {
         // playUrl 校验
@@ -1723,11 +2175,9 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("暂不支持缓存多段音频"));
-        assert!(require_cacheable_play_url("https://x.com/a.M3U8?t=1")
-            .unwrap_err()
-            .to_string()
-            .contains("暂不支持缓存 HLS 音频"));
-        assert!(require_cacheable_play_url("https://x.com/a.m3u#frag").is_err());
+        // HLS 不再拒绝（行为变更：合并单文件路径）
+        assert!(require_cacheable_play_url("https://x.com/a.M3U8?t=1").is_ok());
+        assert!(require_cacheable_play_url("https://x.com/a.m3u#frag").is_ok());
         assert!(require_cacheable_play_url("https://x.com/a.mp3").is_ok());
 
         // Content-Type 优先映射
@@ -1735,56 +2185,90 @@ mod tests {
             detect_extension(
                 Some("audio/mpeg; charset=utf-8"),
                 "https://x/a",
-                "https://x/a"
+                "https://x/a",
+                false
             )
             .unwrap(),
             "mp3"
         );
         assert_eq!(
-            detect_extension(Some("audio/mp4"), "https://x/a.m4b", "https://x/a.m4b").unwrap(),
+            detect_extension(
+                Some("audio/mp4"),
+                "https://x/a.m4b",
+                "https://x/a.m4b",
+                false
+            )
+            .unwrap(),
             "m4a"
         );
         assert_eq!(
-            detect_extension(Some("audio/x-flac"), "https://x/a", "https://x/a").unwrap(),
+            detect_extension(Some("audio/x-flac"), "https://x/a", "https://x/a", false).unwrap(),
             "flac"
         );
         // Content-Type 缺失 → 最终 URL → playUrl → audio
         assert_eq!(
-            detect_extension(None, "https://x.com/f.mp3?sign=1", "https://y/a").unwrap(),
+            detect_extension(None, "https://x.com/f.mp3?sign=1", "https://y/a", false).unwrap(),
             "mp3"
         );
         assert_eq!(
-            detect_extension(None, "https://x.com/stream", "https://y.com/b.ogg#z").unwrap(),
+            detect_extension(None, "https://x.com/stream", "https://y.com/b.ogg#z", false).unwrap(),
             "ogg"
         );
         assert_eq!(
-            detect_extension(None, "https://x.com/stream", "https://y/stream").unwrap(),
+            detect_extension(None, "https://x.com/stream", "https://y/stream", false).unwrap(),
             "audio"
         );
         // Content-Type 存在但无已知子串（空串同）→ URL 兜底
         assert_eq!(
-            detect_extension(Some(""), "https://x.com/f.aac", "https://y/a").unwrap(),
+            detect_extension(Some(""), "https://x.com/f.aac", "https://y/a", false).unwrap(),
             "aac"
         );
         assert_eq!(
             detect_extension(
                 Some("application/octet-stream"),
                 "https://x.com/f",
-                "https://y/a"
+                "https://y/a",
+                false
             )
             .unwrap(),
             "audio"
         );
-        // HLS 拒绝：Content-Type 含 mpegurl / 最终 URL 为 m3u8
-        assert!(detect_extension(
-            Some("application/vnd.apple.mpegurl"),
-            "https://x/a",
-            "https://x/a"
-        )
-        .unwrap_err()
-        .to_string()
-        .contains("暂不支持缓存 HLS 音频"));
-        assert!(detect_extension(None, "https://x/live.m3u8", "https://x/live").is_err());
+        // HLS → 合并产物扩展名：TS（无 EXT-X-MAP）→ ts；fMP4（有）→ m4a
+        assert_eq!(
+            detect_extension(
+                Some("application/vnd.apple.mpegurl"),
+                "https://x/a",
+                "https://x/a",
+                false
+            )
+            .unwrap(),
+            "ts"
+        );
+        assert_eq!(
+            detect_extension(
+                Some("application/vnd.apple.mpegurl"),
+                "https://x/a",
+                "https://x/a",
+                true
+            )
+            .unwrap(),
+            "m4a"
+        );
+        assert_eq!(
+            detect_extension(None, "https://x/live.m3u8", "https://x/live", false).unwrap(),
+            "ts"
+        );
+        // playUrl 为 HLS 后缀即按 HLS 处理（即便响应 URL 无后缀）
+        assert_eq!(
+            detect_extension(
+                Some("audio/mpeg"),
+                "https://x/a",
+                "https://x/live.m3u8",
+                false
+            )
+            .unwrap(),
+            "ts"
+        );
         // URL 无点 → 不误判（substringAfterLast 缺省空串语义）
         assert_eq!(extension_from_url("https://x.com/stream"), None);
         assert_eq!(
@@ -1964,11 +2448,10 @@ mod tests {
         .unwrap_err()
         .to_string()
         .contains("分卷章节不支持缓存"));
-        // playUrl 空 / JSON 多段 / HLS
+        // playUrl 空 / JSON 多段（HLS 自批 2 线 B 起走合并路径，不再拒绝）
         for (play, msg) in [
             ("", "播放链接为空"),
             ("[{\"url\":\"x\"}]", "暂不支持缓存多段音频"),
-            ("https://x/live.m3u8", "暂不支持缓存 HLS 音频"),
         ] {
             let err =
                 audio_cache_download_with_client(&client, book_url, 0, "hello", "第一章", play)
@@ -2635,6 +3118,958 @@ mod tests {
             !dir.join(format!("{name}{COMPLETE_SUFFIX}")).exists(),
             "孤儿标记应被删除（对齐原版 removeCacheFiles 标记照删）"
         );
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // ─── HLS 合并下载路径（批 2 线 B，契约 §2.48）──────────────────────────
+
+    /// HLS 测试响应（按请求路由）
+    struct HttpReply {
+        status: u16,
+        content_type: &'static str,
+        body: Vec<u8>,
+        declared_len: Option<u64>,
+    }
+
+    impl HttpReply {
+        fn ok(content_type: &'static str, body: Vec<u8>) -> Self {
+            Self {
+                status: 200,
+                content_type,
+                body,
+                declared_len: None,
+            }
+        }
+
+        fn status(status: u16) -> Self {
+            Self {
+                status,
+                content_type: "text/plain",
+                body: format!("error {status}").into_bytes(),
+                declared_len: None,
+            }
+        }
+    }
+
+    /// 已记录的请求头快照（每个请求一条）
+    type SeenRequests = std::sync::Arc<std::sync::Mutex<Vec<String>>>;
+
+    /// 启动按请求头路由的回环服务器（记录全部请求头便于断言 Range / 路径）
+    fn spawn_router_server<F>(responder: F) -> (u16, SeenRequests)
+    where
+        F: Fn(&str) -> HttpReply + Send + Sync + 'static,
+    {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("绑定回环端口");
+        let port = listener.local_addr().unwrap().port();
+        let seen: SeenRequests = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen_srv = std::sync::Arc::clone(&seen);
+        let responder = std::sync::Arc::new(responder);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut sock) = stream else { continue };
+                let mut head = Vec::new();
+                let mut b = [0u8; 1];
+                while let Ok(1) = sock.read(&mut b) {
+                    head.push(b[0]);
+                    if head.ends_with(b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let head_text = String::from_utf8_lossy(&head).to_string();
+                if let Ok(mut guard) = seen_srv.lock() {
+                    guard.push(head_text.clone());
+                }
+                let reply = responder(&head_text);
+                let reason = if (200..300).contains(&reply.status) {
+                    "OK"
+                } else {
+                    "Error"
+                };
+                let mut out = format!("HTTP/1.1 {} {reason}\r\n", reply.status);
+                out.push_str(&format!("Content-Type: {}\r\n", reply.content_type));
+                out.push_str(&format!(
+                    "Content-Length: {}\r\n",
+                    reply.declared_len.unwrap_or(reply.body.len() as u64)
+                ));
+                out.push_str("Connection: close\r\n\r\n");
+                let _ = sock.write_all(out.as_bytes());
+                let _ = sock.write_all(&reply.body);
+                let _ = sock.flush();
+                let _ = sock.shutdown(std::net::Shutdown::Both);
+            }
+        });
+        (port, seen)
+    }
+
+    /// 从请求头提取请求目标（path + query）
+    fn request_target(head: &str) -> String {
+        head.lines()
+            .next()
+            .and_then(|line| line.split_whitespace().nth(1))
+            .unwrap_or("/")
+            .to_string()
+    }
+
+    /// 从请求头提取某个头值（大小写不敏感）
+    fn request_header(head: &str, name: &str) -> Option<String> {
+        head.lines().skip(1).find_map(|line| {
+            let (k, v) = line.split_once(':')?;
+            k.trim()
+                .eq_ignore_ascii_case(name)
+                .then(|| v.trim().to_string())
+        })
+    }
+
+    /// media playlist 文本（`entries` 为逐行原文，通常成对 `#EXTINF` + URI）
+    fn media_playlist(entries: &[&str]) -> String {
+        let mut text = String::from(
+            "#EXTM3U\n#EXT-X-VERSION:4\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:0\n",
+        );
+        for entry in entries {
+            text.push_str(entry);
+            text.push('\n');
+        }
+        text.push_str("#EXT-X-ENDLIST\n");
+        text
+    }
+
+    /// 场景 1 + 9：明文 TS 四段合并 + `.complete` 三行内容（第三行存原始 m3u8 URL）
+    #[test]
+    fn hls_plain_ts_merges_segments_and_writes_marker() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("hls-ts");
+        set_test_root(&root);
+
+        let segs: Vec<Vec<u8>> = (0..4u8).map(|i| vec![0x40 + i; 1024]).collect();
+        let playlist = media_playlist(&[
+            "#EXTINF:10,",
+            "seg0.ts",
+            "#EXTINF:10,",
+            "seg1.ts",
+            "#EXTINF:10,",
+            "seg2.ts",
+            "#EXTINF:10,",
+            "seg3.ts",
+        ]);
+        let segs_for_srv = segs.clone();
+        let (port, seen) = spawn_router_server(move |head| {
+            let target = request_target(head);
+            if target.starts_with("/playlist.m3u8") {
+                return HttpReply::ok(
+                    "application/vnd.apple.mpegurl",
+                    playlist.clone().into_bytes(),
+                );
+            }
+            for (i, bytes) in segs_for_srv.iter().enumerate() {
+                if target.starts_with(&format!("/seg{i}.ts")) {
+                    return HttpReply::ok("video/mp2t", bytes.clone());
+                }
+            }
+            HttpReply::status(404)
+        });
+
+        let book_url = "https://a.com/book/hls-ts";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let play_url = format!("http://127.0.0.1:{port}/playlist.m3u8");
+        let out = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        )
+        .expect("明文 TS HLS 应合并成功");
+        let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(json["status"], "installed");
+        assert_eq!(json["extension"], "ts", "无 EXT-X-MAP → ts");
+        let expected: Vec<u8> = segs.concat();
+        assert_eq!(json["sizeBytes"], expected.len(), "产物字节数 = 4 段之和");
+        let path = json["path"].as_str().unwrap();
+        assert!(path.ends_with(".ts"));
+        assert_eq!(
+            fs::read(path).unwrap(),
+            expected,
+            "合并顺序须与 playlist 一致"
+        );
+
+        // 场景 9：`.complete` 三行正确，第三行存原始 m3u8 URL
+        let marker = fs::read_to_string(format!("{path}{COMPLETE_SUFFIX}")).unwrap();
+        assert_eq!(marker, encode_metadata(&play_url));
+        let lines: Vec<&str> = marker.split('\n').collect();
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0], "1");
+        assert_eq!(lines[1], md5_mid16(&play_url));
+        assert_eq!(lines[2], play_url);
+
+        assert!(audio_cache_query(book_url, 0, "hello", "第一章"));
+        assert_eq!(audio_cache_list(book_url), vec![0]);
+        // 4 段各 1 次 + 1 次 playlist
+        assert_eq!(seen.lock().unwrap().len(), 5);
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 场景 2：AES-128 加密段 → 解密合并后等于明文之和
+    #[test]
+    fn hls_aes128_decrypts_and_merges() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("hls-aes");
+        set_test_root(&root);
+
+        let key = *b"0123456789abcdef";
+        let iv = [
+            0x10u8, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab,
+            0xcd, 0xef,
+        ];
+        let plain: Vec<Vec<u8>> = vec![
+            b"first-segment-plaintext".to_vec(),
+            b"second-segment-plaintext".to_vec(),
+            b"third".to_vec(),
+        ];
+        let encrypted: Vec<Vec<u8>> = plain
+            .iter()
+            .map(|p| AesCrypto::encrypt_cbc(&key, &iv, p).expect("加密测试段"))
+            .collect();
+        let playlist = media_playlist(&[
+            "#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\",IV=0x1032547698BADCFE0123456789ABCDEF",
+            "#EXTINF:10,",
+            "enc0.ts",
+            "#EXTINF:10,",
+            "enc1.ts",
+            "#EXTINF:10,",
+            "enc2.ts",
+        ]);
+        let encrypted_for_srv = encrypted.clone();
+        let (port, seen) = spawn_router_server(move |head| {
+            let target = request_target(head);
+            if target.starts_with("/playlist.m3u8") {
+                return HttpReply::ok(
+                    "application/vnd.apple.mpegurl",
+                    playlist.clone().into_bytes(),
+                );
+            }
+            if target.starts_with("/key.bin") {
+                return HttpReply::ok("application/octet-stream", key.to_vec());
+            }
+            for (i, bytes) in encrypted_for_srv.iter().enumerate() {
+                if target.starts_with(&format!("/enc{i}.ts")) {
+                    return HttpReply::ok("video/mp2t", bytes.clone());
+                }
+            }
+            HttpReply::status(404)
+        });
+
+        let book_url = "https://a.com/book/hls-aes";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let play_url = format!("http://127.0.0.1:{port}/playlist.m3u8");
+        let out = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        )
+        .expect("AES-128 HLS 应解密合并成功");
+        let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(json["extension"], "ts");
+        let expected: Vec<u8> = plain.concat();
+        assert_eq!(
+            fs::read(json["path"].as_str().unwrap()).unwrap(),
+            expected,
+            "解密后应等于明文之和"
+        );
+        // key 只拉一次（按 URI 缓存，3 段共用）
+        let key_hits = seen
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|h| request_target(h).starts_with("/key.bin"))
+            .count();
+        assert_eq!(key_hits, 1, "同一 key URI 只应拉取一次");
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 场景 3：fMP4（EXT-X-MAP + 3 个 m4s）→ 产物以 init 开头，扩展名 m4a
+    #[test]
+    fn hls_fmp4_prepends_init_map() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("hls-fmp4");
+        set_test_root(&root);
+
+        let init = b"INIT-SEGMENT-HEADER".to_vec();
+        let parts: Vec<Vec<u8>> = vec![
+            b"m4s-part-one".to_vec(),
+            b"m4s-part-two".to_vec(),
+            b"m4s-part-three".to_vec(),
+        ];
+        let playlist = media_playlist(&[
+            "#EXT-X-MAP:URI=\"init.mp4\"",
+            "#EXTINF:10,",
+            "p0.m4s",
+            "#EXTINF:10,",
+            "p1.m4s",
+            "#EXTINF:10,",
+            "p2.m4s",
+        ]);
+        let parts_for_srv = parts.clone();
+        let init_for_srv = init.clone();
+        let (port, _seen) = spawn_router_server(move |head| {
+            let target = request_target(head);
+            if target.starts_with("/playlist.m3u8") {
+                return HttpReply::ok(
+                    "application/vnd.apple.mpegurl",
+                    playlist.clone().into_bytes(),
+                );
+            }
+            if target.starts_with("/init.mp4") {
+                return HttpReply::ok("video/mp4", init_for_srv.clone());
+            }
+            for (i, bytes) in parts_for_srv.iter().enumerate() {
+                if target.starts_with(&format!("/p{i}.m4s")) {
+                    return HttpReply::ok("video/iso.segment", bytes.clone());
+                }
+            }
+            HttpReply::status(404)
+        });
+
+        let book_url = "https://a.com/book/hls-fmp4";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let play_url = format!("http://127.0.0.1:{port}/playlist.m3u8");
+        let out = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        )
+        .expect("fMP4 HLS 应合并成功");
+        let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(json["extension"], "m4a", "有 EXT-X-MAP → m4a");
+        let path = json["path"].as_str().unwrap();
+        assert!(path.ends_with(".m4a"));
+        let bytes = fs::read(path).unwrap();
+        assert!(bytes.starts_with(&init), "产物必须以 init segment 开头");
+        let mut expected = init.clone();
+        for part in &parts {
+            expected.extend_from_slice(part);
+        }
+        assert_eq!(bytes, expected);
+        assert_eq!(json["sizeBytes"], expected.len());
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 场景 4：master playlist（视频档 + 纯音频档）→ 选纯音频档下载
+    #[test]
+    fn hls_master_playlist_selects_audio_only_variant() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("hls-master");
+        set_test_root(&root);
+
+        let master = concat!(
+            "#EXTM3U\n",
+            "#EXT-X-STREAM-INF:BANDWIDTH=2000000,CODECS=\"avc1.4d401f,mp4a.40.2\"\n",
+            "video.m3u8\n",
+            "#EXT-X-STREAM-INF:BANDWIDTH=64000,CODECS=\"mp4a.40.2\"\n",
+            "audio.m3u8\n",
+        )
+        .to_string();
+        let audio_playlist = media_playlist(&["#EXTINF:10,", "a0.ts", "#EXTINF:10,", "a1.ts"]);
+        let video_playlist = media_playlist(&["#EXTINF:10,", "v0.ts"]);
+        let (port, seen) = spawn_router_server(move |head| {
+            let target = request_target(head);
+            if target.starts_with("/master.m3u8") {
+                return HttpReply::ok("application/vnd.apple.mpegurl", master.clone().into_bytes());
+            }
+            if target.starts_with("/audio.m3u8") {
+                return HttpReply::ok(
+                    "application/vnd.apple.mpegurl",
+                    audio_playlist.clone().into_bytes(),
+                );
+            }
+            if target.starts_with("/video.m3u8") {
+                return HttpReply::ok(
+                    "application/vnd.apple.mpegurl",
+                    video_playlist.clone().into_bytes(),
+                );
+            }
+            if target.starts_with("/a0.ts") {
+                return HttpReply::ok("video/mp2t", b"AUDIO-0".to_vec());
+            }
+            if target.starts_with("/a1.ts") {
+                return HttpReply::ok("video/mp2t", b"AUDIO-1".to_vec());
+            }
+            if target.starts_with("/v0.ts") {
+                return HttpReply::ok("video/mp2t", b"VIDEO-0".to_vec());
+            }
+            HttpReply::status(404)
+        });
+
+        let book_url = "https://a.com/book/hls-master";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let play_url = format!("http://127.0.0.1:{port}/master.m3u8");
+        let out = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        )
+        .expect("master playlist 应选档成功");
+        let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(json["extension"], "ts");
+        assert_eq!(
+            fs::read(json["path"].as_str().unwrap()).unwrap(),
+            b"AUDIO-0AUDIO-1".to_vec(),
+            "应只下载纯音频档分片"
+        );
+        let targets: Vec<String> = seen
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|h| request_target(h))
+            .collect();
+        assert!(
+            !targets.iter().any(|t| t.starts_with("/v0.ts")),
+            "视频档分片不得被请求: {targets:?}"
+        );
+        assert!(targets.iter().any(|t| t.starts_with("/audio.m3u8")));
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 场景 5：BYTERANGE（单文件多区间）→ Range 请求头正确、产物为区间拼接
+    #[test]
+    fn hls_byterange_requests_ranges() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("hls-byterange");
+        set_test_root(&root);
+
+        // 单文件 30 字节，按 3 个 10 字节区间切
+        let whole: Vec<u8> = (0..30u8).collect();
+        let playlist = media_playlist(&[
+            "#EXTINF:10,",
+            "#EXT-X-BYTERANGE:10@0",
+            "all.ts",
+            "#EXTINF:10,",
+            "#EXT-X-BYTERANGE:10@10",
+            "all.ts",
+            "#EXTINF:10,",
+            "#EXT-X-BYTERANGE:10",
+            "all.ts",
+        ]);
+        let whole_for_srv = whole.clone();
+        let (port, seen) = spawn_router_server(move |head| {
+            let target = request_target(head);
+            if target.starts_with("/playlist.m3u8") {
+                return HttpReply::ok(
+                    "application/vnd.apple.mpegurl",
+                    playlist.clone().into_bytes(),
+                );
+            }
+            if target.starts_with("/all.ts") {
+                let range = request_header(head, "Range");
+                if let Some(range) = range {
+                    let spec = range.trim_start_matches("bytes=");
+                    let (start, end) = spec.split_once('-').expect("Range 形如 a-b");
+                    let start: usize = start.parse().unwrap();
+                    let end: usize = end.parse().unwrap();
+                    return HttpReply::ok("video/mp2t", whole_for_srv[start..=end].to_vec());
+                }
+                return HttpReply::ok("video/mp2t", whole_for_srv.clone());
+            }
+            HttpReply::status(404)
+        });
+
+        let book_url = "https://a.com/book/hls-byterange";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let play_url = format!("http://127.0.0.1:{port}/playlist.m3u8");
+        let out = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        )
+        .expect("BYTERANGE HLS 应合并成功");
+        let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(
+            fs::read(json["path"].as_str().unwrap()).unwrap(),
+            whole,
+            "三个区间拼接应还原完整文件"
+        );
+
+        let ranges: Vec<String> = seen
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|h| request_target(h).starts_with("/all.ts"))
+            .filter_map(|h| request_header(h, "Range"))
+            .collect();
+        assert_eq!(
+            ranges,
+            vec![
+                "bytes=0-9".to_string(),
+                "bytes=10-19".to_string(),
+                "bytes=20-29".to_string()
+            ],
+            "缺省 offset 段须续接上一区间末尾"
+        );
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 场景 6：签名过期——第 2 段首次 403 → 重拉 m3u8（新 token）→ 成功
+    #[test]
+    fn hls_expired_signature_refetches_playlist_once() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("hls-expire");
+        set_test_root(&root);
+
+        let old_playlist = media_playlist(&[
+            "#EXTINF:10,",
+            "seg0.ts?token=old",
+            "#EXTINF:10,",
+            "seg1.ts?token=old",
+            "#EXTINF:10,",
+            "seg2.ts?token=old",
+        ]);
+        let new_playlist = media_playlist(&[
+            "#EXTINF:10,",
+            "seg0.ts?token=new",
+            "#EXTINF:10,",
+            "seg1.ts?token=new",
+            "#EXTINF:10,",
+            "seg2.ts?token=new",
+        ]);
+        let playlist_hits = std::sync::Arc::new(AtomicUsize::new(0));
+        let playlist_hits_srv = std::sync::Arc::clone(&playlist_hits);
+        let (port, _seen) = spawn_router_server(move |head| {
+            let target = request_target(head);
+            if target.starts_with("/playlist.m3u8") {
+                let n = playlist_hits_srv.fetch_add(1, Ordering::SeqCst);
+                let body = if n == 0 {
+                    old_playlist.clone()
+                } else {
+                    new_playlist.clone()
+                };
+                return HttpReply::ok("application/vnd.apple.mpegurl", body.into_bytes());
+            }
+            if target.starts_with("/seg1.ts?token=old") {
+                return HttpReply::status(403); // 旧 token 过期
+            }
+            if target.starts_with("/seg0.ts") {
+                return HttpReply::ok("video/mp2t", b"SEG-0".to_vec());
+            }
+            if target.starts_with("/seg1.ts") {
+                return HttpReply::ok("video/mp2t", b"SEG-1".to_vec());
+            }
+            if target.starts_with("/seg2.ts") {
+                return HttpReply::ok("video/mp2t", b"SEG-2".to_vec());
+            }
+            HttpReply::status(404)
+        });
+
+        let book_url = "https://a.com/book/hls-expire";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let play_url = format!("http://127.0.0.1:{port}/playlist.m3u8");
+        let out = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        )
+        .expect("签名过期重拉 playlist 后应成功");
+        let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(
+            fs::read(json["path"].as_str().unwrap()).unwrap(),
+            b"SEG-0SEG-1SEG-2".to_vec()
+        );
+        assert_eq!(
+            playlist_hits.load(Ordering::SeqCst),
+            2,
+            "只应重拉一次 playlist"
+        );
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 场景 7：SAMPLE-AES → 明确 Err（解析器直接上抛，不静默）
+    #[test]
+    fn hls_sample_aes_rejected() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("hls-sample-aes");
+        set_test_root(&root);
+
+        let playlist = media_playlist(&[
+            "#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"skd://key\"",
+            "#EXTINF:10,",
+            "seg0.ts",
+        ]);
+        let (port, _seen) = spawn_router_server(move |head| {
+            let target = request_target(head);
+            if target.starts_with("/playlist.m3u8") {
+                return HttpReply::ok(
+                    "application/vnd.apple.mpegurl",
+                    playlist.clone().into_bytes(),
+                );
+            }
+            HttpReply::status(404)
+        });
+
+        let book_url = "https://a.com/book/hls-sample-aes";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let play_url = format!("http://127.0.0.1:{port}/playlist.m3u8");
+        let err = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("SAMPLE-AES"), "应明确报 SAMPLE-AES: {err}");
+        // 不产出任何残file
+        let names: Vec<String> = super::read_dir_entries(&book_dir(book_url))
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert!(names.is_empty(), "失败不得残留文件: {names:?}");
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 场景 8：下载中途取消 → Err 且不产生 `.complete`、无残留
+    #[test]
+    fn hls_cancel_aborts_merge_without_complete_marker() {
+        use std::io::Read as _;
+        use std::io::Write as _;
+        use std::net::TcpListener;
+
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("hls-cancel");
+        set_test_root(&root);
+
+        let mut entries: Vec<String> = Vec::new();
+        for i in 0..20 {
+            entries.push("#EXTINF:10,".to_string());
+            entries.push(format!("slow{i}.ts"));
+        }
+        let entries: Vec<&str> = entries.iter().map(|s| s.as_str()).collect();
+        let playlist = media_playlist(&entries);
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut sock) = stream else { continue };
+                let mut head = Vec::new();
+                let mut b = [0u8; 1];
+                while let Ok(1) = sock.read(&mut b) {
+                    head.push(b[0]);
+                    if head.ends_with(b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let head_text = String::from_utf8_lossy(&head).to_string();
+                let target = request_target(&head_text);
+                if target.starts_with("/playlist.m3u8") {
+                    let body = playlist.as_bytes();
+                    let _ = sock.write_all(
+                        format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: application/vnd.apple.mpegurl\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                            body.len()
+                        )
+                        .as_bytes(),
+                    );
+                    let _ = sock.write_all(body);
+                    let _ = sock.flush();
+                    let _ = sock.shutdown(std::net::Shutdown::Both);
+                    continue;
+                }
+                // 慢速分片：8KB，每 2KB 间隔 20ms
+                let total = 8 * 1024usize;
+                let _ = sock.write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: video/mp2t\r\nContent-Length: {total}\r\nConnection: close\r\n\r\n"
+                    )
+                    .as_bytes(),
+                );
+                let chunk = vec![0x5Au8; 2048];
+                for _ in 0..4 {
+                    if sock.write_all(&chunk).is_err() {
+                        break;
+                    }
+                    let _ = sock.flush();
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                let _ = sock.shutdown(std::net::Shutdown::Both);
+            }
+        });
+
+        let book_url = "https://a.com/book/hls-cancel";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let play_url = format!("http://127.0.0.1:{port}/playlist.m3u8");
+        let worker = std::thread::spawn(move || {
+            let client = test_client();
+            audio_cache_download_with_client(&client, book_url, 0, "hello", "第一章", &play_url)
+        });
+
+        let mut waited_ms = 0u32;
+        while IN_FLIGHT.load(Ordering::SeqCst) == 0 && waited_ms < 3000 {
+            std::thread::sleep(Duration::from_millis(10));
+            waited_ms += 10;
+        }
+        assert_eq!(IN_FLIGHT.load(Ordering::SeqCst), 1, "在途计数应为 1");
+        std::thread::sleep(Duration::from_millis(150));
+        assert!(audio_cache_cancel().unwrap(), "置位时应快照到在途下载");
+
+        let err = worker.join().unwrap().unwrap_err().to_string();
+        assert!(err.contains("音频缓存下载已取消"), "err={err}");
+
+        let names: Vec<String> = super::read_dir_entries(&book_dir(book_url))
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert!(names.is_empty(), "取消后不得残留临时文件/半成品: {names:?}");
+        assert!(
+            !names.iter().any(|n| n.ends_with(COMPLETE_SUFFIX)),
+            "取消后不得产生 .complete"
+        );
+        assert_eq!(IN_FLIGHT.load(Ordering::SeqCst), 0, "在途计数应复位");
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 单段 media playlist（仅 1 个 segment）同样走合并路径（不跳过）
+    #[test]
+    fn hls_single_segment_playlist_works() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("hls-single");
+        set_test_root(&root);
+
+        let playlist = media_playlist(&["#EXTINF:10,", "only.ts"]);
+        let (port, _seen) = spawn_router_server(move |head| {
+            let target = request_target(head);
+            if target.starts_with("/playlist.m3u8") {
+                return HttpReply::ok(
+                    "application/vnd.apple.mpegurl",
+                    playlist.clone().into_bytes(),
+                );
+            }
+            if target.starts_with("/only.ts") {
+                return HttpReply::ok("video/mp2t", b"ONLY-SEGMENT".to_vec());
+            }
+            HttpReply::status(404)
+        });
+
+        let book_url = "https://a.com/book/hls-single";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let play_url = format!("http://127.0.0.1:{port}/playlist.m3u8");
+        let out = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        )
+        .expect("单段 playlist 应可缓存");
+        let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(json["sizeBytes"], 12);
+        assert_eq!(
+            fs::read(json["path"].as_str().unwrap()).unwrap(),
+            b"ONLY-SEGMENT".to_vec()
+        );
+        assert!(audio_cache_query(book_url, 0, "hello", "第一章"));
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 无扩展名 + 错误 Content-Type 的 m3u8 → 内容嗅探识别为 HLS 并合并
+    /// （批 47 真机风险②回归保护：只看后缀/Content-Type 会把它当二进制音频）
+    #[test]
+    fn hls_detected_by_content_sniffing_when_no_extension() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("hls-sniff");
+        set_test_root(&root);
+
+        let playlist = media_playlist(&["#EXTINF:10,", "s0.ts", "#EXTINF:10,", "s1.ts"]);
+        let (port, _seen) = spawn_router_server(move |head| {
+            let target = request_target(head);
+            // 无后缀 + octet-stream：仅能靠内容嗅探
+            if target.starts_with("/stream?id=42") {
+                return HttpReply::ok("application/octet-stream", playlist.clone().into_bytes());
+            }
+            if target.starts_with("/s0.ts") {
+                return HttpReply::ok("video/mp2t", b"S0".to_vec());
+            }
+            if target.starts_with("/s1.ts") {
+                return HttpReply::ok("video/mp2t", b"S1".to_vec());
+            }
+            HttpReply::status(404)
+        });
+
+        let book_url = "https://a.com/book/hls-sniff";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let play_url = format!("http://127.0.0.1:{port}/stream?id=42");
+        let out = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        )
+        .expect("无扩展名 m3u8 应经内容嗅探走 HLS 合并");
+        let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(json["extension"], "ts");
+        assert_eq!(
+            fs::read(json["path"].as_str().unwrap()).unwrap(),
+            b"S0S1".to_vec()
+        );
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 非 HLS 的普通音频经嗅探后不得丢首块（回归保护：嗅探消费首块须写回）
+    #[test]
+    fn non_hls_audio_keeps_sniffed_first_chunk() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("non-hls-sniff");
+        set_test_root(&root);
+
+        let body = vec![0x49u8; 5000]; // 非 #EXTM3U 开头
+        let body_srv = body.clone();
+        let (port, _seen) = spawn_router_server(move |head| {
+            let target = request_target(head);
+            if target.starts_with("/plain.mp3") {
+                return HttpReply::ok("audio/mpeg", body_srv.clone());
+            }
+            HttpReply::status(404)
+        });
+
+        let book_url = "https://a.com/book/non-hls-sniff";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let play_url = format!("http://127.0.0.1:{port}/plain.mp3");
+        let out = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        )
+        .expect("普通音频应正常缓存");
+        let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(json["extension"], "mp3");
+        assert_eq!(
+            fs::read(json["path"].as_str().unwrap()).unwrap(),
+            body,
+            "嗅探消费的首块必须写回，字节不得丢失"
+        );
+
         clear_test_root();
         let _ = fs::remove_dir_all(&root);
     }
