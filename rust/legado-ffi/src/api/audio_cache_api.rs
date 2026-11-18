@@ -56,7 +56,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use legado_core::crypto::AesCrypto;
 use legado_core::{LegadoError, LegadoResult};
 use legado_db::{BookChapterRepository, BookRepository, BookSourceRepository};
-use legado_fetcher::web_book::SourceHeaderSet;
+use legado_fetcher::web_book::{is_login_header_site, SourceHeaderSet};
 use legado_net::{LegadoClient, LegadoRequest, LegadoStreamResponse, Method};
 use legado_parser::{AnalyzeUrl, TemplateContext};
 
@@ -117,6 +117,10 @@ static INJECTED_DIR: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
 /// 进程级环境变量——对齐 image_cache_api 先例）
 #[cfg(test)]
 static TEST_DIR_OVERRIDE: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
+
+/// `cfg(test)` 合并体积上限覆盖槽（P2-5：2 GiB 无法实测，注入小上限）
+#[cfg(test)]
+static TEST_MERGE_MAX_BYTES: OnceLock<Mutex<Option<u64>>> = OnceLock::new();
 
 /// 回落系统 temp 目录时的一次性告警（契约 §2.47，对齐 image_cache 先例）
 static DEFAULT_DIR_WARNED: AtomicBool = AtomicBool::new(false);
@@ -532,7 +536,7 @@ fn is_json_array(s: &str) -> bool {
 /// 空 / JSON 数组多段 → Err（原文案，写入面上抛不降级）。
 ///
 /// **HLS 不再拒绝**（批 2 线 B，契约 §2.48 变更）：`.m3u8`/`.m3u` 走
-/// [`download_hls_merged`] 合并单文件路径；JSON 数组多段本批仍不支持。
+/// [`download_hls_and_install`] 合并单文件路径；JSON 数组多段本批仍不支持。
 fn require_cacheable_play_url(play_url: &str) -> LegadoResult<()> {
     if kotlin_is_blank(play_url) {
         return Err(LegadoError::Ffi("播放链接为空".into()));
@@ -854,7 +858,9 @@ pub fn audio_cache_cancel() -> LegadoResult<bool> {
 ///
 /// 逐条对齐 `AudioCacheManager.cacheChapter:107-199`：
 /// ① 前置校验（bookUrl 空白 / book 不在 DB / chapter 不在 DB / isVolume /
-///    playUrl 空 / JSON 数组 / HLS / 书源不在 DB → Err）
+///    playUrl 空 / JSON 数组 / 书源不在 DB → Err）。
+///    **HLS 不在此列**：`.m3u8`/`.m3u`（或响应 Content-Type / 内容嗅探判定为
+///    HLS）改走 [`download_hls_and_install`] 合并路径，失败同样 Err 上抛。
 /// ②–⑧ 在 `(bookUrl, key16)` 分片锁内串行（[`chapter_lock`]，对齐原版
 ///    `chapterLock(...).withLock`：`AudioCacheManager.kt:44,117,414-416`）：
 /// ② 幂等：已提交缓存（key16 + `.complete` + size>0）→ `already_cached` JSON
@@ -1166,6 +1172,26 @@ const HLS_META_MAX_BYTES: u64 = 1024 * 1024;
 /// 会让坏 playlist（或恶意服务端）把内存/磁盘打满；超限如实报错而非静默截断。
 const HLS_SEGMENT_MAX_BYTES: u64 = 64 * 1024 * 1024;
 
+/// HLS 合并产物总体积上限：2 GiB（P2-5）
+///
+/// 单段 64MB 上限 + 段数无界，1MB playlist 可声明上万段 → 磁盘写满无提示。
+/// 2 GiB 足以覆盖任何有声书单章（典型 20–200MB，超长章节亦远低于此），
+/// 同时把「坏 playlist / 恶意服务端」的破坏面限制在可控范围。
+const HLS_MERGE_MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+
+/// 跨站请求必须剔除的 playUrl 显式头键（P2-1，大小写不敏感）
+///
+/// 这些键承载认证凭据：`Cookie` / `Authorization` / `Proxy-Authorization`。
+/// 防盗链所需的 `Referer` / `User-Agent` 等**不**在此列（跨站照发）。
+const SENSITIVE_EXTRA_HEADERS: &[&str] = &["cookie", "authorization", "proxy-authorization"];
+
+/// playUrl 显式头键是否为敏感凭据键（P2-1，大小写不敏感）
+fn is_sensitive_extra_header(name: &str) -> bool {
+    SENSITIVE_EXTRA_HEADERS
+        .iter()
+        .any(|sensitive| name.eq_ignore_ascii_case(sensitive))
+}
+
 /// HLS 合并产物扩展名：fMP4（有 `EXT-X-MAP`）→ `m4a`；MPEG-TS 分片直拼 → `ts`
 fn hls_merged_extension(has_init_map: bool) -> &'static str {
     if has_init_map {
@@ -1409,7 +1435,7 @@ struct HlsFetchCtx<'a> {
     header_set: &'a SourceHeaderSet,
     /// 书源自身 URL（同站判定基准）
     source_url: &'a str,
-    /// playUrl `,{options}` 显式声明的头（对全部 HLS 资源一致发送）
+    /// playUrl `,{options}` 显式声明的头（同站全量发送；跨站剔除敏感键）
     extra_headers: &'a HashMap<String, String>,
     /// 相对资源 URI 的解析基准（= 真正给出分片清单的 playlist URL）
     playlist_base: String,
@@ -1425,13 +1451,29 @@ impl HlsFetchCtx<'_> {
     /// （`cookies_for_url` 按域取，天然不跨域）→ 剔除代理配置键。
     ///
     /// - 同站资源：静态头 + 登录头（登录后才能听的源不受影响）
-    /// - 跨站资源：仅静态头（UA/Referer）+ playUrl 显式头，**无**登录头
+    /// - 跨站资源：仅静态头（UA/Referer）+ playUrl 显式头中的**非敏感键**
+    ///   （`Referer`/`User-Agent` 等防盗链所需），**无**登录头
+    ///
+    /// **playUrl 显式头的跨站门控（P2-1）**：`extra_headers` 来自
+    /// `AnalyzeUrl.headers()`，其中可能含 playUrl 尾部 `,{"headers":{"Cookie":…}}`
+    /// 或模板 `@Header:{Authorization:…}` 声明的认证键（见
+    /// `legado-parser/src/analyze_url.rs`）。这些是书源作者自带的凭据而非用户
+    /// 登录态，但若随**每个** segment/key 请求发往任意 CDN 主机，仍属凭据外泄。
+    /// 故对跨站目标剔除 [`SENSITIVE_EXTRA_HEADERS`] 中的键（大小写不敏感），
+    /// 其余显式头（`Referer`/`User-Agent` 等防盗链所需）照常发送。
     fn headers_for(&self, url: &str) -> HashMap<String, String> {
         let mut h = self
             .header_set
             .for_request(self.source_url, url, Some(self.playlist_base.as_str()))
             .unwrap_or_default();
-        h.extend(self.extra_headers.clone());
+        // 跨站判定与登录头门控同一真源（`is_login_header_site`），避免两套口径漂移
+        let same_site = is_login_header_site(self.source_url, url, Some(&self.playlist_base));
+        for (name, value) in self.extra_headers {
+            if !same_site && is_sensitive_extra_header(name) {
+                continue;
+            }
+            h.insert(name.clone(), value.clone());
+        }
         legado_js::host_api::cookie_store::merge_js_cookies(&mut h, url);
         legado_fetcher::web_book::strip_proxy_header(&mut h);
         h
@@ -1448,6 +1490,7 @@ impl HlsFetchCtx<'_> {
         key: Option<&HlsKey>,
         writer: &mut impl Write,
         label: &str,
+        written: u64,
     ) -> LegadoResult<u64> {
         let headers = self.headers_for(url);
         let raw = fetch_bytes_capped(
@@ -1484,8 +1527,11 @@ impl HlsFetchCtx<'_> {
                 "HLS {label}解密后为空: {url}"
             )));
         }
+        // P2-5：总体积预算必须在**写盘前**校验——超限即 Err（走既有失败清理路径），
+        // 不把最后一段写进临时文件后再回头发现超限。
+        let total = require_merge_budget(written, bytes.len() as u64, label)?;
         writer.write_all(&bytes)?;
-        Ok(bytes.len() as u64)
+        Ok(total)
     }
 
     /// 拉取并解析 playlist（`url` 为 playlist 自身 URL，用于相对路径绝对化）
@@ -1511,18 +1557,24 @@ impl HlsFetchCtx<'_> {
 ///    （优先独立音频轨，P2-3）后**再拉一次**
 /// 2. **直播门禁**：playlist 无 `#EXT-X-ENDLIST` 即 Err（滑动窗口快照只能得到
 ///    半章，P2-5）；重拉后的 playlist 同样复检
-/// 3. 有 `init_map` → 先写 init segment（同样支持 BYTERANGE + key）
+/// 3. 有 `init_map` → 先写 init segment（同样支持 BYTERANGE + key，且与分片
+///    共用同一「重拉 playlist 后重试一次」逻辑，P3-4）
 /// 4. 逐 segment：key 解密 / BYTERANGE / **边下边拼**追加写临时文件
 /// 5. 拼接完成 → 既有 size 校验 + 五段式安装 + `.complete` + 清理旧版本
 ///
-/// **请求头（P2-6）**：不接收一份复用的 headers，而是接收书源头原料
+/// **总体积预算（P2-5）**：单段 64MB 上限不足以约束合并总量——1MB playlist
+/// 可声明上万段。拼接过程中累计已写字节，超过 [`HLS_MERGE_MAX_BYTES`]
+/// （2 GiB）即 Err（写盘前判定），走既有失败清理路径。
+///
+/// **请求头（P2-6 / P2-1）**：不接收一份复用的 headers，而是接收书源头原料
 /// （[`SourceHeaderSet`] + 源 URL + playUrl 显式头），由
 /// [`HlsFetchCtx::headers_for`] 对每个 playlist/variant/init/segment/key URL
-/// **逐请求**同站门控登录头。
+/// **逐请求**同站门控：登录头仅同站发送；playUrl 显式头中的敏感键
+/// （`Cookie`/`Authorization`/`Proxy-Authorization`）跨站剔除。
 ///
-/// **签名过期**：单段失败时重拉一次 playlist（token 可能刷新）后重试该段；
-/// 重拉目标是**媒体分片清单**的实际地址（master 源为其 variant URL，P1-1），
-/// 且要求该段位置的分片身份（路径 + BYTERANGE）与重拉前一致（P2-7）。
+/// **签名过期**：单段（或 init）失败时重拉一次 playlist（token 可能刷新）后
+/// 重试；重拉目标是**媒体分片清单**的实际地址（master 源为其 variant URL，
+/// P1-1），且要求该段位置的分片身份（路径 + BYTERANGE）与重拉前一致（P2-7）。
 /// 仍失败则整章 Err（不产出残缺文件）。
 /// **取消**：每个 segment 边界检查取消代数；失败删除临时文件与半成品。
 #[allow(clippy::too_many_arguments)] // 入参为下载安装全链路所需（书/章标识 + 请求上下文 + playlist），拆结构体反而掩盖语义
@@ -1613,20 +1665,57 @@ fn download_hls_and_install(
     let result: LegadoResult<u64> = (|| {
         let file = fs::File::create(&staged_path)?;
         let mut writer = io::BufWriter::new(file);
+        // P2-5：已写入字节累计（总体积预算；超限即 Err 走失败清理）
+        let mut written: u64 = 0;
 
-        // ② init segment（fMP4）
-        if let Some(init_map) = media.init_map.as_ref() {
-            ctx.download_part(
-                &init_map.uri,
-                init_map.byte_range,
-                init_map.key.as_ref(),
-                &mut writer,
-                "初始化段",
-            )?;
+        // ② init segment（fMP4）——与分片共用同一重试逻辑（P3-4）
+        let mut current_media = media;
+        if current_media.init_map.is_some() {
+            let mut attempt = 0u32;
+            loop {
+                let init_map = current_media.init_map.clone().expect("已确认存在 init map");
+                match ctx.download_part(
+                    &init_map.uri,
+                    init_map.byte_range,
+                    init_map.key.as_ref(),
+                    &mut writer,
+                    "初始化段",
+                    written,
+                ) {
+                    Ok(total) => {
+                        written = total;
+                        break;
+                    }
+                    Err(err) => {
+                        // 签名过期同样会让 init 403（P3-4：旧实现 init 在重试循环外，
+                        // 一次 403 就让整章直接失败）。仅网络类失败重拉 playlist 重试，
+                        // 且 init 尚未写盘（download_part 整段取回后才写）。
+                        let retryable = matches!(err, LegadoError::Network(_));
+                        if !retryable || attempt >= 1 || cancel_generation_changed(cancel_snapshot)
+                        {
+                            return Err(LegadoError::Network(format!(
+                                "HLS 初始化段下载失败: {err}"
+                            )));
+                        }
+                        attempt += 1;
+                        let refreshed = fetch_refreshed_media(&ctx, &effective_playlist_url)?;
+                        // init 身份（路径 + BYTERANGE，忽略签名查询串）必须一致：
+                        // 变化说明 init 换了内容，重试无意义（且会与已定档的 key 错配）
+                        let before = init_map_identity(current_media.init_map.as_ref());
+                        let after = init_map_identity(refreshed.init_map.as_ref());
+                        if before != after {
+                            return Err(LegadoError::Network(format!(
+                                "HLS 初始化段下载失败: 重拉 playlist 后初始化段已变化（{before:?} → {after:?}）"
+                            )));
+                        }
+                        current_media = refreshed;
+                        // 重拉后 URI 可能已带新 token，重试 init
+                    }
+                }
+            }
         }
 
         // ③ 逐段下载拼接（每段边界检查取消代数；每段至多重拉一次 playlist 后重试）
-        let mut current_media = media;
         let mut index = 0usize;
         while index < current_media.segments.len() {
             if cancel_generation_changed(cancel_snapshot) {
@@ -1642,8 +1731,12 @@ fn download_hls_and_install(
                     segment.key.as_ref(),
                     &mut writer,
                     &label,
+                    written,
                 ) {
-                    Ok(_) => break,
+                    Ok(total) => {
+                        written = total;
+                        break;
+                    }
                     Err(err) => {
                         // 仅**网络类**失败才重拉 playlist 重试（签名过期/token 刷新）。
                         // 段字节先整段取回内存再一次性写盘（`download_part`），故网络
@@ -1658,22 +1751,7 @@ fn download_hls_and_install(
                             )));
                         }
                         attempt += 1;
-                        let refreshed = ctx.fetch_playlist(&effective_playlist_url)?;
-                        let refreshed = match refreshed {
-                            Playlist::Media(m) => m,
-                            Playlist::Master(_) => {
-                                return Err(LegadoError::Parser(format!(
-                                    "HLS 变体播放列表仍为 master（嵌套 master 不支持）: {effective_playlist_url}"
-                                )))
-                            }
-                        };
-                        // 直播门禁复检（P2-5）：重拉可能让 VOD 变 live（服务端切换
-                        // 直播态 / ENDLIST 消失），此时继续拼接同样只能得到半章。
-                        if !refreshed.is_vod() {
-                            return Err(LegadoError::Ffi(format!(
-                                "HLS 直播流不支持离线缓存（playlist 无 EXT-X-ENDLIST，只是当前滑动窗口快照，缓存只能得到半章）: {effective_playlist_url}"
-                            )));
-                        }
+                        let refreshed = fetch_refreshed_media(&ctx, &effective_playlist_url)?;
                         // P2-7：仅比段数不够——直播窗口「进 1 出 1」时数量不变但
                         // 内容整体位移，继续按下标拼接会产出错序文件。故要求该
                         // index 处的分片身份（路径 + BYTERANGE，忽略签名查询串）
@@ -1752,6 +1830,63 @@ fn download_hls_and_install(
         "extension": extension,
     })
     .to_string())
+}
+
+/// 重拉媒体分片清单 playlist（签名过期重试用，P3-4 抽公共）
+///
+/// 三处重试（init / segment）共用同一语义：
+/// - 拉的是 [`effective_playlist_url`]（真正给出分片清单的地址，master 源为
+///   所选 variant，P1-1），而非 master 源本身；
+/// - 嵌套 master → Err（不支持）；
+/// - **直播门禁复检**（P2-5）：重拉可能让 VOD 变 live（服务端切换直播态 /
+///   `ENDLIST` 消失），此时继续拼接同样只能得到半章。
+fn fetch_refreshed_media(ctx: &HlsFetchCtx<'_>, url: &str) -> LegadoResult<MediaPlaylist> {
+    let refreshed = match ctx.fetch_playlist(url)? {
+        Playlist::Media(m) => m,
+        Playlist::Master(_) => {
+            return Err(LegadoError::Parser(format!(
+                "HLS 变体播放列表仍为 master（嵌套 master 不支持）: {url}"
+            )))
+        }
+    };
+    if !refreshed.is_vod() {
+        return Err(LegadoError::Ffi(format!(
+            "HLS 直播流不支持离线缓存（playlist 无 EXT-X-ENDLIST，只是当前滑动窗口快照，缓存只能得到半章）: {url}"
+        )));
+    }
+    Ok(refreshed)
+}
+
+/// 合并体积上限（生产恒为 [`HLS_MERGE_MAX_BYTES`]）
+///
+/// `cfg(test)` 下可经 [`set_test_merge_max_bytes`] 注入小上限——真实 2 GiB
+/// 无法在单元测试里实际下载，注入后可端到端验证「超限即 Err 且无残留」。
+fn merge_max_bytes() -> u64 {
+    #[cfg(test)]
+    {
+        if let Ok(guard) = TEST_MERGE_MAX_BYTES.get_or_init(|| Mutex::new(None)).lock() {
+            if let Some(limit) = *guard {
+                return limit;
+            }
+        }
+    }
+    HLS_MERGE_MAX_BYTES
+}
+
+/// 校验合并总体积预算并返回新的累计值（P2-5）
+///
+/// `written` 为已写盘字节数，`incoming` 为即将追加的字节数。超限返回
+/// `LegadoError::Network`（文案含实际累计值与上限），调用方据此走既有失败清理。
+fn require_merge_budget(written: u64, incoming: u64, label: &str) -> LegadoResult<u64> {
+    let limit = merge_max_bytes();
+    let total = written.saturating_add(incoming);
+    if total > limit {
+        return Err(LegadoError::Network(format!(
+            "HLS 合并产物超出体积上限（{label}写入后累计 {} 字节 > 上限 {} 字节）",
+            total, limit
+        )));
+    }
+    Ok(total)
 }
 
 /// 暂存文件安装（对齐原版 `installStagedFile:232-264`）：优先同目录 rename，
@@ -1855,6 +1990,13 @@ mod tests {
     fn clear_test_root() {
         if let Ok(mut guard) = TEST_DIR_OVERRIDE.get_or_init(|| Mutex::new(None)).lock() {
             *guard = None;
+        }
+    }
+
+    /// 注入合并体积上限（`None` = 恢复生产 2 GiB；持 [`TEST_LOCK`] 使用）
+    fn set_test_merge_max_bytes(limit: Option<u64>) {
+        if let Ok(mut guard) = TEST_MERGE_MAX_BYTES.get_or_init(|| Mutex::new(None)).lock() {
+            *guard = limit;
         }
     }
 
@@ -4054,6 +4196,87 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 
+    /// P3-4：init segment 首次 403（签名过期），重拉 playlist 后成功 → 整章 installed
+    ///
+    /// 旧实现 init 下载在重试循环**之外**，一次 403 就让整章直接失败，而
+    /// segment 却有重拉重试——同一章里 init 的容错等级不该低于分片。
+    #[test]
+    fn hls_init_segment_expired_signature_retries_after_refetch() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("hls-init-expire");
+        set_test_root(&root);
+
+        let old_playlist = media_playlist(&[
+            "#EXT-X-MAP:URI=\"init.mp4?token=old\"",
+            "#EXTINF:10,",
+            "seg0.ts?token=old",
+        ]);
+        let new_playlist = media_playlist(&[
+            "#EXT-X-MAP:URI=\"init.mp4?token=new\"",
+            "#EXTINF:10,",
+            "seg0.ts?token=new",
+        ]);
+        let playlist_hits = std::sync::Arc::new(AtomicUsize::new(0));
+        let playlist_hits_srv = std::sync::Arc::clone(&playlist_hits);
+        let (port, _seen) = spawn_router_server(move |head| {
+            let target = request_target(head);
+            if target.starts_with("/playlist.m3u8") {
+                let n = playlist_hits_srv.fetch_add(1, Ordering::SeqCst);
+                let body = if n == 0 {
+                    old_playlist.clone()
+                } else {
+                    new_playlist.clone()
+                };
+                return HttpReply::ok("application/vnd.apple.mpegurl", body.into_bytes());
+            }
+            // 旧 token 的 init 过期
+            if target.starts_with("/init.mp4?token=old") {
+                return HttpReply::status(403);
+            }
+            if target.starts_with("/init.mp4?token=new") {
+                return HttpReply::ok("video/mp4", b"INIT".to_vec());
+            }
+            if target.starts_with("/seg0.ts") {
+                return HttpReply::ok("video/mp2t", b"SEG0".to_vec());
+            }
+            HttpReply::status(404)
+        });
+
+        let book_url = "https://a.com/book/hls-init-expire";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let play_url = format!("http://127.0.0.1:{port}/playlist.m3u8");
+        let out = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        )
+        .expect("init 首次 403、重拉后应成功");
+        let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(json["extension"], "m4a");
+        assert_eq!(
+            fs::read(json["path"].as_str().unwrap()).unwrap(),
+            b"INITSEG0".to_vec()
+        );
+        assert_eq!(
+            playlist_hits.load(Ordering::SeqCst),
+            2,
+            "init 失败后只应重拉一次 playlist"
+        );
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
     /// 场景 6b（P1-1）：**master 源**签名过期——重试必须重拉 **variant** playlist，
     /// 而不是重拉 master（后者必然再次得到 master → 「嵌套 master」误报，重试死代码）
     #[test]
@@ -4935,6 +5158,153 @@ mod tests {
             Some("Bearer secret"),
             "相对 URI 应经 playlist_base 绝对化为同站，故带登录头"
         );
+    }
+
+    /// P2-1：playUrl 显式头（`AnalyzeUrl.headers()`）里的敏感凭据键跨站必须剔除
+    ///
+    /// 这些键可能来自 playUrl 尾部 `,{"headers":{"Cookie":…}}` 或模板
+    /// `@Header:{Authorization:…}`。书源作者自带而非用户登录态，但同样不该随
+    /// 每个 segment/key 发往任意 CDN。防盗链所需的 `Referer`/`User-Agent`
+    /// 跨站照发。
+    #[test]
+    fn headers_for_strips_sensitive_extra_headers_cross_site() {
+        let header_set = SourceHeaderSet::default();
+        let mut extra_headers = HashMap::new();
+        extra_headers.insert("Cookie".to_string(), "sid=abc".to_string());
+        extra_headers.insert("Authorization".to_string(), "Bearer extra".to_string());
+        extra_headers.insert(
+            "proxy-authorization".to_string(),
+            "Basic cHJveHk=".to_string(),
+        );
+        extra_headers.insert(
+            "Referer".to_string(),
+            "https://www.example.com/player".to_string(),
+        );
+        extra_headers.insert("User-Agent".to_string(), "LegadoTest/2.0".to_string());
+        let client = test_client();
+        let ctx = HlsFetchCtx {
+            client: &client,
+            header_set: &header_set,
+            source_url: "https://www.example.com/book",
+            extra_headers: &extra_headers,
+            playlist_base: "https://www.example.com/media/playlist.m3u8".to_string(),
+            cancel_snapshot: 0,
+            key_cache: HashMap::new(),
+        };
+
+        // 同站：全部显式头照发
+        let same = ctx.headers_for("https://cdn.example.com/seg0.ts");
+        assert_eq!(same.get("Cookie").map(String::as_str), Some("sid=abc"));
+        assert_eq!(
+            same.get("Authorization").map(String::as_str),
+            Some("Bearer extra")
+        );
+        assert_eq!(
+            same.get("proxy-authorization").map(String::as_str),
+            Some("Basic cHJveHk=")
+        );
+        assert_eq!(
+            same.get("Referer").map(String::as_str),
+            Some("https://www.example.com/player")
+        );
+
+        // 跨站：敏感键全部剔除（大小写不敏感），防盗链头仍在
+        let cross = ctx.headers_for("https://cdn3.example-cdn.net/seg0.ts");
+        assert!(
+            !cross.keys().any(|k| k.eq_ignore_ascii_case("cookie")),
+            "跨站不得发送 Cookie: {cross:?}"
+        );
+        assert!(
+            !cross
+                .keys()
+                .any(|k| k.eq_ignore_ascii_case("authorization")),
+            "跨站不得发送 Authorization: {cross:?}"
+        );
+        assert!(
+            !cross
+                .keys()
+                .any(|k| k.eq_ignore_ascii_case("proxy-authorization")),
+            "跨站不得发送 Proxy-Authorization: {cross:?}"
+        );
+        assert_eq!(
+            cross.get("Referer").map(String::as_str),
+            Some("https://www.example.com/player"),
+            "Referer 是防盗链所需，跨站仍须发送"
+        );
+        assert_eq!(
+            cross.get("User-Agent").map(String::as_str),
+            Some("LegadoTest/2.0")
+        );
+    }
+
+    /// P2-5：HLS 合并总体积上限——超限 Err，且目录无残留文件/标记
+    #[test]
+    fn hls_merge_total_size_over_budget_fails_without_residue() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("hls-budget");
+        set_test_root(&root);
+        // 注入小上限：每段 8 字节，上限 20 字节 → 第 3 段写入前超限
+        set_test_merge_max_bytes(Some(20));
+
+        let playlist = media_playlist(&[
+            "#EXTINF:10,",
+            "s0.ts",
+            "#EXTINF:10,",
+            "s1.ts",
+            "#EXTINF:10,",
+            "s2.ts",
+        ]);
+        let (port, _seen) = spawn_router_server(move |head| {
+            let target = request_target(head);
+            if target.starts_with("/playlist.m3u8") {
+                return HttpReply::ok(
+                    "application/vnd.apple.mpegurl",
+                    playlist.clone().into_bytes(),
+                );
+            }
+            if target.starts_with("/s0.ts")
+                || target.starts_with("/s1.ts")
+                || target.starts_with("/s2.ts")
+            {
+                return HttpReply::ok("video/mp2t", b"12345678".to_vec());
+            }
+            HttpReply::status(404)
+        });
+
+        let book_url = "https://a.com/book/hls-budget";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let play_url = format!("http://127.0.0.1:{port}/playlist.m3u8");
+        let err = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("体积上限"), "应报体积上限: {err}");
+        assert!(err.contains("20"), "文案应含上限值: {err}");
+
+        // 恢复生产上限（进程级状态，必须复位）
+        set_test_merge_max_bytes(None);
+
+        let names: Vec<String> = super::read_dir_entries(&book_dir(book_url))
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert!(names.is_empty(), "失败不得残留文件: {names:?}");
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
     }
 
     // ─── P2-5：直播 playlist 拒绝缓存 ──────────────────────────────────────

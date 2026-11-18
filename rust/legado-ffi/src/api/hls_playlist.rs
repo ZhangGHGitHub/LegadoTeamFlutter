@@ -56,7 +56,9 @@
 //!    回落到 0。`EXT-X-MAP` 的 `BYTERANGE` 缺省 offset 取 0（初始化段独立资源，
 //!    不与媒体段共享区间）。
 //! 3. **KEY 继承**：`#EXT-X-KEY` 对其后所有段生效，直到下一个 `#EXT-X-KEY`
-//!    （`METHOD=NONE` 显式终止继承）。
+//!    （`METHOD=NONE` 显式终止继承）。`EXT-X-MAP` 也遵循同一「只向后生效」
+//!    语义（§4.3.2.2）：MAP 出现时以**当时已生效**的 KEY 定格；出现在 MAP
+//!    之后的 `EXT-X-KEY` **不**作用于该 MAP。
 
 use legado_core::{LegadoError, LegadoResult};
 use legado_parser::AnalyzeUrl;
@@ -90,7 +92,7 @@ impl Variant {
     /// 判定依据（任一成立即为视频档）：
     /// - 有 `RESOLUTION`（纯音频档不会声明分辨率）；
     /// - `CODECS` 含视频编码标识（`avc1`/`hvc1`/`hev1`/`av01`/`vp09`/`vp08`/
-    ///   `dvh1`/`dvhe`/`dva1`/`dvav`，大小写不敏感）。
+    ///   `dvh1`/`dvhe`/`dva1`/`dvav`/`mp4v`/`mp4s`/`s263`/`theora`，大小写不敏感）。
     pub fn has_video(&self) -> bool {
         self.resolution.is_some() || self.codecs.as_deref().is_some_and(has_video_codec)
     }
@@ -132,26 +134,40 @@ pub struct AudioRendition {
 }
 
 /// 视频编码标识（`CODECS` 中出现的即视为视频档）
+///
+/// 匹配方式是**逐个 codec token 的 `starts_with`**（不是整串 `contains`）：
+/// `mp4v`（MPEG-4 Part 2 视频）与 `mp4a`（AAC 音频）共享 `mp4` 前缀但语义相反，
+/// 只有按 token 前缀匹配才能安全区分——`CODECS="mp4v.20.9,mp4a.40.2"` 判为含
+/// 视频，`CODECS="mp4a.40.2"` 判为纯音频。
 const VIDEO_CODEC_PREFIXES: &[&str] = &[
-    "avc1", // H.264/AVC
-    "avc3", // H.264/AVC（带内参数集）
-    "hvc1", // H.265/HEVC
-    "hev1", // H.265/HEVC（带内参数集）
-    "av01", // AV1
-    "vp09", // VP9
-    "vp08", // VP8
-    "dvh1", // Dolby Vision（HEVC 基础）
-    "dvhe", // Dolby Vision（HEVC 基础，旧标识）
-    "dva1", // Dolby Vision（AVC 基础）
-    "dvav", // Dolby Vision（AVC 基础，旧标识）
+    "avc1",   // H.264/AVC
+    "avc3",   // H.264/AVC（带内参数集）
+    "hvc1",   // H.265/HEVC
+    "hev1",   // H.265/HEVC（带内参数集）
+    "av01",   // AV1
+    "vp09",   // VP9
+    "vp08",   // VP8
+    "dvh1",   // Dolby Vision（HEVC 基础）
+    "dvhe",   // Dolby Vision（HEVC 基础，旧标识）
+    "dva1",   // Dolby Vision（AVC 基础）
+    "dvav",   // Dolby Vision（AVC 基础，旧标识）
+    "mp4v",   // MPEG-4 Part 2 视觉（Visual）
+    "mp4s",   // MPEG-4 Systems（视觉轨道标识）
+    "s263",   // H.263
+    "theora", // Theora
 ];
 
 /// `CODECS` 原文是否含视频编码标识（大小写不敏感）
+///
+/// 按逗号切分 codec token，逐个做前缀匹配——见 [`VIDEO_CODEC_PREFIXES`] 的
+/// 匹配方式说明。
 fn has_video_codec(codecs: &str) -> bool {
-    let lower = codecs.to_ascii_lowercase();
-    VIDEO_CODEC_PREFIXES
-        .iter()
-        .any(|prefix| lower.contains(prefix))
+    codecs.split(',').any(|token| {
+        let token = token.trim().to_ascii_lowercase();
+        VIDEO_CODEC_PREFIXES
+            .iter()
+            .any(|prefix| token.starts_with(prefix))
+    })
 }
 
 /// media playlist（可播放的分片列表）
@@ -485,8 +501,6 @@ struct MediaState {
     /// 各 URI 最近一次 sub-range 的结束位置（URI, 末尾 offset），用于 §4.3.2.2
     /// 缺省 offset——按「最近一个**同 URI** 段」续接，而非「上一个任意段」
     last_ranges: Vec<(String, u64)>,
-    /// init map 的 key 是否已确定并校验（首个后续段或解析结束时）
-    init_key_resolved: bool,
 }
 
 /// 解析 media playlist
@@ -501,7 +515,6 @@ fn parse_media(text: &str, base_url: &str) -> LegadoResult<MediaPlaylist> {
         pending_byte_range: None,
         pending_discontinuity: false,
         last_ranges: Vec::new(),
-        init_key_resolved: true,
     };
 
     for line in text.lines().map(str::trim) {
@@ -543,8 +556,14 @@ fn parse_media(text: &str, base_url: &str) -> LegadoResult<MediaPlaylist> {
                         "不支持多 period fMP4（多个 EXT-X-MAP）：无法用单一 init map 覆盖全部分片",
                     ));
                 }
-                state.init_map = Some(parse_map(value, base_url, &state.current_key)?);
-                state.init_key_resolved = false;
+                // MAP 的 key **在出现时定格**（§4.3.2.2：`EXT-X-KEY` 只作用于
+                // 它**之后**出现的 `EXT-X-MAP`；MAP 在前、KEY 在后的 KEY 不适用
+                // 于该 MAP）。故此处传当前 key，且**不做**任何后续回填。
+                let map = parse_map(value, base_url, &state.current_key)?;
+                // §4.3.2.5：加密的 init section 必须显式带 IV——key 已定格，
+                // 立即校验（不依赖后续段是否存在）
+                ensure_init_map_key_has_iv(&map)?;
+                state.init_map = Some(map);
             }
             "EXT-X-BYTERANGE" => {
                 state.pending_byte_range = Some(parse_byte_range(value)?);
@@ -573,17 +592,6 @@ fn parse_media(text: &str, base_url: &str) -> LegadoResult<MediaPlaylist> {
 
     if state.pending_duration.is_some() {
         return Err(parse_err("media playlist 畸形：EXTINF 后缺少分片 URI"));
-    }
-
-    // init map 后没有任何分片时，仍需按最终生效的 KEY 做 IV 校验
-    if let Some(map) = state.init_map.as_mut() {
-        if !state.init_key_resolved {
-            if map.key.is_none() {
-                map.key = state.current_key.clone();
-            }
-            ensure_init_map_key_has_iv(map)?;
-            state.init_key_resolved = true;
-        }
     }
 
     Ok(MediaPlaylist {
@@ -656,12 +664,27 @@ fn push_segment(state: &mut MediaState, uri_line: &str, base_url: &str) -> Legad
         None => None,
     };
 
-    match byte_range {
-        Some(range) => record_range_end(state, &uri, range.offset + range.length),
+    // P2-3：`offset + length` 必须在解析期做溢出校验。`#EXT-X-BYTERANGE:1844…615@1`
+    // 这类值在 debug（含 CI `cargo test`）下会直接 panic，release 下静默回绕成
+    // 一个极小的「结束位置」，让后续缺省 offset 段读到错误区间。
+    let end = match byte_range {
+        Some(range) => {
+            let end = range.offset.checked_add(range.length).ok_or_else(|| {
+                parse_err(format!(
+                    "EXT-X-BYTERANGE 偏移与长度之和溢出: {}@{}",
+                    range.length, range.offset
+                ))
+            })?;
+            record_range_end(state, &uri, end);
+            Some(range)
+        }
         // 整资源段（无 BYTERANGE）使「同一资源上一段末尾」的前提失效：
         // 其后的缺省 offset 一律回落到 0（§4.3.2.2 要求前一段是同资源的 sub-range）
-        None => state.last_ranges.clear(),
-    }
+        None => {
+            state.last_ranges.clear();
+            None
+        }
+    };
 
     // §5.2：IV 缺省时用「媒体序列号」= MEDIA-SEQUENCE + 段下标
     let index = state.segments.len() as u64;
@@ -675,23 +698,10 @@ fn push_segment(state: &mut MediaState, uri_line: &str, base_url: &str) -> Legad
         }
     }
 
-    // init map 的 key 在首个后续段时确定（兼容 KEY 出现在 MAP 之后的写法，
-    // RFC 未禁止）。**不得**按序列号补 IV：§4.3.2.5 要求加密的 init section
-    // 必须显式提供 IV，缺省即报错（详见 `ensure_init_map_key_has_iv`）。
-    if let Some(map) = state.init_map.as_mut() {
-        if !state.init_key_resolved {
-            if map.key.is_none() {
-                map.key = state.current_key.clone();
-            }
-            ensure_init_map_key_has_iv(map)?;
-            state.init_key_resolved = true;
-        }
-    }
-
     state.segments.push(Segment {
         uri,
         duration,
-        byte_range,
+        byte_range: end,
         key,
         discontinuity: std::mem::take(&mut state.pending_discontinuity),
     });
@@ -855,11 +865,17 @@ fn normalize_dot_segments(url: &str) -> String {
         return url.to_string();
     };
     let authority_start = scheme_end + 3;
-    let Some(offset) = url[authority_start..].find('/') else {
-        // 无 path（如 `https://host`），无需处理
-        return url.to_string();
+    // path 的起点必须是 authority 之后、**且早于** `?`/`#` 的第一个 `/`。
+    // 若 authority 后先出现 `?`/`#`（`https://host?next=/a/../b`），说明该 URL
+    // 没有 path，query/fragment 里的 `/` 不是路径——绝不能被点段规范化改写
+    // （旧实现直接在 authority 之后找 `/`，会把 `?next=/a/../b` 改成 `?next=/b`）。
+    let path_start = match url[authority_start..].find(['/', '?', '#']) {
+        Some(offset) if url.as_bytes()[authority_start + offset] == b'/' => {
+            authority_start + offset
+        }
+        // 无 path（`https://host`）或先遇到 `?`/`#`：原样返回
+        _ => return url.to_string(),
     };
-    let path_start = authority_start + offset;
     let path_and_rest = &url[path_start..];
     let (path, suffix) = match path_and_rest.find(['?', '#']) {
         Some(pos) => (&path_and_rest[..pos], &path_and_rest[pos..]),
@@ -1112,6 +1128,49 @@ audio.m3u8
         assert!(master.variants[4].is_audio_only());
         let picked = select_variant(&master).expect("应有选中档位");
         assert_eq!(picked.uri, "https://cdn.example.com/media/audio.m3u8");
+    }
+
+    #[test]
+    fn master_legacy_video_codecs_are_not_audio_only() {
+        // P3-1：mp4v（MPEG-4 Part 2）/ mp4s / s263（H.263）/ theora 都是视频编码。
+        // 旧表缺这些前缀 → `CODECS="mp4v.20.9,mp4a.40.2"` 被判纯音频 → 选中
+        // 4Mbps 视频档。
+        let text = "\
+#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=4000000,CODECS=\"mp4v.20.9,mp4a.40.2\"
+mp4v.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=3000000,CODECS=\"s263\"
+h263.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=2000000,CODECS=\"theora,opus\"
+theora.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=1000000,CODECS=\"mp4s\"
+mp4s.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=64000,CODECS=\"mp4a.40.2\"
+audio.m3u8
+";
+        let master = parse_master_only(text);
+        assert!(master.variants[..4].iter().all(|v| v.has_video()));
+        assert!(master.variants[..4].iter().all(|v| !v.is_audio_only()));
+        // mp4a 是 AAC 音频：不得被 mp4v/mp4s 前缀误判
+        assert!(master.variants[4].is_audio_only());
+        let picked = select_variant(&master).expect("应有选中档位");
+        assert_eq!(picked.uri, "https://cdn.example.com/media/audio.m3u8");
+    }
+
+    #[test]
+    fn master_mp4a_only_codecs_is_audio_only() {
+        // P3-1 边界：`mp4a` 与 `mp4v` 共享 `mp4` 前缀但语义相反，必须靠 token
+        // 级 `starts_with` 区分（整串 `contains` 会让 `mp4a` 命中 `mp4v` 反例不成立，
+        // 反之若把 `mp4` 当前缀则 AAC 会被误判为视频）
+        let text = "\
+#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=128000,CODECS=\"mp4a.40.2\"
+audio.m3u8
+";
+        let master = parse_master_only(text);
+        assert!(!master.variants[0].has_video());
+        assert!(master.variants[0].is_audio_only());
+        assert!(master.variants[0].lacks_video_signal());
     }
 
     #[test]
@@ -1566,6 +1625,25 @@ a.ts
         )
         .expect_err("init map 长度 0 必须报错");
         assert!(err.to_string().contains("长度必须大于 0"), "err={err}");
+    }
+
+    #[test]
+    fn byterange_offset_plus_length_overflow_is_error_not_panic() {
+        // P2-3：`offset + length` 溢出。debug 下旧的 `+` 会 panic（CI 直接红），
+        // release 下静默回绕；现要求解析期 Err。
+        let text = "\
+#EXTM3U
+#EXTINF:4,
+#EXT-X-BYTERANGE:18446744073709551615@1
+a.ts
+";
+        let err = parse_playlist(text, BASE).expect_err("偏移与长度之和溢出必须报错");
+        let message = err.to_string();
+        assert!(message.contains("溢出"), "message={message}");
+        assert!(
+            message.contains("18446744073709551615@1"),
+            "message={message}"
+        );
     }
 
     // ---------- media：EXT-X-MAP ----------
@@ -2047,6 +2125,34 @@ seg2.ts
     }
 
     #[test]
+    fn dot_segments_do_not_rewrite_query_or_fragment() {
+        // P3-2：authority 之后先出现 `?`/`#` 时，该 URL 没有 path——query/fragment
+        // 里的 `/` 绝不能被当作路径做点段规范化
+        assert_eq!(
+            normalize_dot_segments("https://h.com?next=/a/../b"),
+            "https://h.com?next=/a/../b"
+        );
+        assert_eq!(
+            normalize_dot_segments("https://h.com#/a/../b"),
+            "https://h.com#/a/../b"
+        );
+        // 有 path 时只规范化 path，query 原样保留
+        assert_eq!(
+            normalize_dot_segments("https://h.com/a/../b?x=/y"),
+            "https://h.com/b?x=/y"
+        );
+        assert_eq!(
+            normalize_dot_segments("https://h.com/a/../b#/z"),
+            "https://h.com/b#/z"
+        );
+        // 无 path 且无点段：原样返回
+        assert_eq!(
+            normalize_dot_segments("https://h.com?next=/a"),
+            "https://h.com?next=/a"
+        );
+    }
+
+    #[test]
     fn dot_segments_trailing_slash_is_preserved() {
         // §5.2.4：以 `/.` 或 `/..` 结尾时，替换产生的 `/` 留在输出末尾
         assert_eq!(
@@ -2101,8 +2207,9 @@ seg2.ts
     }
 
     #[test]
-    fn key_after_map_without_iv_is_error() {
-        // KEY 出现在 MAP 之后（RFC 未禁止）也适用 §4.3.2.5：加密 init section 缺 IV 报错
+    fn key_after_map_does_not_apply_to_init_map_without_iv() {
+        // §4.3.2.2：KEY 只作用于**它之后**出现的 MAP。此处的 AES-128 KEY 在 MAP
+        // 之后，对 MAP 不适用 → MAP 无 key（明文 init），不触发 §4.3.2.5 的 IV 校验
         let text = "\
 #EXTM3U
 #EXT-X-MAP:URI=\"init.mp4\"
@@ -2110,12 +2217,28 @@ seg2.ts
 #EXTINF:4,
 seg0.m4s
 ";
-        let err = parse_playlist(text, BASE).expect_err("MAP 之后的加密 KEY 缺 IV 也必须报错");
-        assert!(err.to_string().contains("EXT-X-MAP"), "err={err}");
+        let media = parse_playlist(text, BASE).expect("KEY 在 MAP 之后不得使合法 playlist 失败");
+        let Playlist::Media(media) = media else {
+            panic!("预期 media");
+        };
+        let map = media.init_map.expect("应有 init map");
+        assert!(
+            map.key.is_none(),
+            "MAP 之后的 KEY 不适用于该 MAP（明文 init 不得被强行解密）"
+        );
+        // 媒体段仍继承该 KEY（KEY 对段生效），IV 按 §5.2 序列号补全
+        assert_eq!(
+            media.segments[0].key.as_ref().map(|k| k.uri.as_str()),
+            Some("https://cdn.example.com/media/k.key")
+        );
+        assert!(media.segments[0].key.as_ref().and_then(|k| k.iv).is_some());
     }
 
     #[test]
-    fn key_after_map_applies_to_init_map() {
+    fn key_after_map_does_not_apply_to_init_map() {
+        // §4.3.2.2：MAP 在前、KEY 在后 → 该 KEY 不适用于该 MAP（即便带 IV）。
+        // 旧实现会把 KEY 回填到 MAP 上，从而对**明文 init** 做 AES 解密：
+        // PKCS7 反填充约 1/256 概率恰好合法 → 静默产出损坏文件。
         let text = "\
 #EXTM3U
 #EXT-X-MAP:URI=\"init.mp4\"
@@ -2125,7 +2248,34 @@ seg0.m4s
 ";
         let media = parse_media_only(text);
         let map = media.init_map.expect("应有 init map");
-        let map_key = map.key.expect("KEY 在 MAP 之后也应生效");
+        assert!(
+            map.key.is_none(),
+            "MAP 之后的 KEY 不适用于该 MAP（不得解密明文 init）"
+        );
+        let segment_key = media.segments[0].key.as_ref().expect("媒体段应继承 KEY");
+        assert_eq!(segment_key.uri, "https://cdn.example.com/media/k.key");
+        assert_eq!(
+            segment_key.iv,
+            Some([
+                0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD,
+                0xEE, 0xFF
+            ])
+        );
+    }
+
+    #[test]
+    fn key_before_map_with_iv_applies_to_init_map() {
+        // §4.3.2.2 正向：KEY 在前（带 IV）、MAP 在后 → KEY 适用于该 MAP
+        let text = "\
+#EXTM3U
+#EXT-X-KEY:METHOD=AES-128,URI=\"k.key\",IV=0x00112233445566778899AABBCCDDEEFF
+#EXT-X-MAP:URI=\"init.mp4\"
+#EXTINF:4,
+seg0.m4s
+";
+        let media = parse_media_only(text);
+        let map = media.init_map.expect("应有 init map");
+        let map_key = map.key.expect("KEY 在 MAP 之前应适用于该 MAP");
         assert_eq!(map_key.uri, "https://cdn.example.com/media/k.key");
         assert_eq!(
             map_key.iv,
@@ -2134,6 +2284,22 @@ seg0.m4s
                 0xEE, 0xFF
             ])
         );
+    }
+
+    #[test]
+    fn key_before_map_without_iv_is_error() {
+        // §4.3.2.5：KEY 在前（无 IV）+ MAP 在后 → 加密 init section 缺 IV，Err
+        let text = "\
+#EXTM3U
+#EXT-X-KEY:METHOD=AES-128,URI=\"k.key\"
+#EXT-X-MAP:URI=\"init.mp4\"
+#EXTINF:4,
+seg0.m4s
+";
+        let err = parse_playlist(text, BASE).expect_err("加密 MAP 缺 IV 必须报错");
+        let message = err.to_string();
+        assert!(message.contains("EXT-X-MAP"), "message={message}");
+        assert!(message.contains("IV"), "message={message}");
     }
 
     // ---------- 属性解析单元测试 ----------
