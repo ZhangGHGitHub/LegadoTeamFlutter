@@ -10,6 +10,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../l10n/app_strings.dart';
 import '../services/platform_bridge_service.dart';
 import '../utils/page_key_codes.dart';
 import 'reader_config_panel.dart';
@@ -112,14 +113,14 @@ class _PageKeyConfigSheetState extends State<PageKeyConfigSheet> {
                     const Icon(Icons.keyboard_outlined),
                     const SizedBox(width: 10),
                     Text(
-                      '自定义翻页键',
+                      AppStrings.customPageKey,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     const Spacer(),
                     IconButton(
-                      tooltip: '关闭',
+                      tooltip: AppStrings.closeLabel,
                       icon: const Icon(Icons.close),
                       onPressed: () => Navigator.pop(context),
                     ),
@@ -141,24 +142,24 @@ class _PageKeyConfigSheetState extends State<PageKeyConfigSheet> {
                   children: [
                     _buildGroup(
                       index: 0,
-                      title: '上一页按键',
+                      title: AppStrings.prevPageKey,
                       codes: _prev,
                     ),
                     const SizedBox(height: 12),
                     _buildGroup(
                       index: 1,
-                      title: '下一页按键',
+                      title: AppStrings.nextPageKey,
                       codes: _next,
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      '按下要设置的按键（可多个）',
+                      AppStrings.pageKeySetHint,
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     if (!_supported) ...[
                       const SizedBox(height: 4),
                       Text(
-                        '仅 Android 生效',
+                        AppStrings.androidOnlyLabel,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: scheme.onSurfaceVariant,
                         ),
@@ -171,13 +172,13 @@ class _PageKeyConfigSheetState extends State<PageKeyConfigSheet> {
                         TextButton(
                           key: const ValueKey('page-key-cancel'),
                           onPressed: () => Navigator.pop(context),
-                          child: const Text('取消'),
+                          child: Text(AppStrings.cancel),
                         ),
                         const SizedBox(width: 8),
                         FilledButton(
                           key: const ValueKey('page-key-confirm'),
                           onPressed: _confirm,
-                          child: const Text('确定'),
+                          child: Text(AppStrings.confirm),
                         ),
                       ],
                     ),
@@ -232,7 +233,7 @@ class _PageKeyConfigSheetState extends State<PageKeyConfigSheet> {
                       _next = [];
                     }
                   }),
-                  child: const Text('清空'),
+                  child: Text(AppStrings.clearHistory),
                 ),
               ],
             ),
@@ -240,7 +241,7 @@ class _PageKeyConfigSheetState extends State<PageKeyConfigSheet> {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Text(
-                  '未设置',
+                  AppStrings.notSetLabel,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),

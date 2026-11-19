@@ -6,6 +6,7 @@ import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/audio/audio_notifier.dart';
 import '../providers/audio/http_tts_seed.dart';
@@ -76,7 +77,7 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
       setState(() => _loading = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('加载朗读引擎失败: ${errorMessage(e)}')),
+          SnackBar(content: Text(AppStrings.raEngineListLoadFailed(errorMessage(e)))),
         );
       }
     }
@@ -89,16 +90,16 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除朗读引擎'),
-        content: Text('确定要删除「${engine.name}」吗？'),
+        title: Text(AppStrings.raDeleteEngineTitle),
+        content: Text(AppStrings.raDeleteEngineConfirm(engine.name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('删除'),
+            child: Text(AppStrings.delete),
           ),
         ],
       ),
@@ -110,11 +111,11 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
       await api.deleteHttpTts(engine.id);
       await _loadEngines();
       messenger.showSnackBar(
-        const SnackBar(content: Text('已删除')),
+        SnackBar(content: Text(AppStrings.deletedLabel)),
       );
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('删除失败: ${errorMessage(e)}')),
+        SnackBar(content: Text(AppStrings.deleteFailed(errorMessage(e)))),
       );
     }
   }
@@ -138,11 +139,14 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
       await api.addHttpTts(result);
       await _loadEngines();
       messenger.showSnackBar(
-        SnackBar(content: Text(existing != null ? '已更新' : '已添加')),
+        SnackBar(
+            content: Text(existing != null
+                ? AppStrings.updatedLabel
+                : AppStrings.addedLabel)),
       );
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('保存失败: ${errorMessage(e)}')),
+        SnackBar(content: Text(AppStrings.saveFailedMsg(errorMessage(e)))),
       );
     }
   }
@@ -161,12 +165,13 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
     if (!mounted) return;
     if (!ok) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('未打开书籍，无法设为本书引擎')),
+        SnackBar(content: Text(AppStrings.noBookCannotSetEngine)),
       );
       return;
     }
     setState(() => _hasBook = true);
-    messenger.showSnackBar(const SnackBar(content: Text('已设为本书引擎')));
+    messenger.showSnackBar(
+        SnackBar(content: Text(AppStrings.raEngineSetForBook)));
   }
 
   /// 「全局」按钮：先清书级覆盖再写全局
@@ -179,7 +184,8 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
     final messenger = ScaffoldMessenger.of(context);
     await ref.read(audioNotifierProvider.notifier).setGlobalTtsEngine(url);
     if (!mounted) return;
-    messenger.showSnackBar(const SnackBar(content: Text('已设为全局引擎')));
+    messenger.showSnackBar(
+        SnackBar(content: Text(AppStrings.raEngineSetGlobal)));
   }
 
   /// 当前选中的引擎对象（按裸 URL 匹配；null = 未选中）
@@ -200,7 +206,7 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
   Future<void> _exportAllEngines() async {
     if (_engines.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('暂无可导出的朗读引擎')),
+        SnackBar(content: Text(AppStrings.raNoEnginesToExport)),
       );
       return;
     }
@@ -212,7 +218,7 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
       fileName: 'httpTts.json',
       // 参考版导出 URL 使用 httpTTS.json
       uploadFileName: 'httpTTS.json',
-      subject: '导出朗读引擎',
+      subject: AppStrings.raExportEngines,
       passphraseType: SourcePassphraseType.ttsRule,
     );
     if (!mounted || result == null) return;
@@ -231,7 +237,7 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
     final engine = _selectedEngine;
     if (engine == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('无法导出系统tts')),
+        SnackBar(content: Text(AppStrings.raCannotExportSystemTts)),
       );
       return;
     }
@@ -240,7 +246,7 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
       context,
       content: json,
       fileName: 'httpTts_${engine.name}.json',
-      subject: '导出朗读引擎',
+      subject: AppStrings.raExportEngines,
       passphraseType: SourcePassphraseType.ttsRule,
     );
     if (!mounted || result == null) return;
@@ -256,21 +262,21 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       topBar: LegadoAppBar(
-        title: const Text('朗读引擎'),
+        title: Text(AppStrings.raSpeakEngine),
         actions: [
           IconButton(
             icon: const Icon(Symbols.help_rounded),
-            tooltip: '帮助',
+            tooltip: AppStrings.helpLabel,
             onPressed: () => showHelp(context, HelpAssets.httpTtsHelp),
           ),
           IconButton(
             icon: const Icon(Symbols.refresh_rounded),
-            tooltip: '刷新',
+            tooltip: AppStrings.refreshAction,
             onPressed: _loadEngines,
           ),
           // 批16e：导出全部 / 导出当前选中（原版 SpeakEngineDialog 菜单）
           PopupMenuButton<String>(
-            tooltip: '更多操作',
+            tooltip: AppStrings.moreOptions,
             icon: const Icon(Symbols.more_vert_rounded),
             onSelected: (value) async {
               switch (value) {
@@ -282,10 +288,15 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
                   await importPassphraseFromClipboard(context);
               }
             },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'import_passphrase', child: Text('口令导入')),
-              PopupMenuItem(value: 'export_all', child: Text('导出全部')),
-              PopupMenuItem(value: 'export_selected', child: Text('导出当前选中')),
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                  value: 'import_passphrase',
+                  child: Text(AppStrings.rssImportToken)),
+              PopupMenuItem(
+                  value: 'export_all', child: Text(AppStrings.exportAll)),
+              PopupMenuItem(
+                  value: 'export_selected',
+                  child: Text(AppStrings.exportCurrentSelection)),
             ],
           ),
         ],
@@ -293,7 +304,7 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _addOrEditEngine(),
         icon: const Icon(Symbols.add_rounded),
-        label: const Text('添加引擎'),
+        label: Text(AppStrings.raAddEngine),
       ),
       // [引擎双持久化 | 2026-10-04] 底部双按钮对齐原版 SpeakEngineDialog
       // 页脚（dialog_recycler_view.xml:94-141 左侧「书」/ 右侧「全局」）与
@@ -309,12 +320,12 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
                 onPressed: (_selectedUrl == null || !_hasBook)
                     ? null
                     : _applyBookEngine,
-                child: const Text('书'),
+                child: Text(AppStrings.ttsBookButton),
               ),
               const Spacer(),
               TextButton(
                 onPressed: _selectedUrl == null ? null : _applyGlobalEngine,
-                child: const Text('全局'),
+                child: Text(AppStrings.globalSection),
               ),
             ],
           ),
@@ -332,14 +343,14 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
                           size: 64, color: theme.colorScheme.outline),
                       const SizedBox(height: 16),
                       Text(
-                        '暂无朗读引擎',
+                        AppStrings.raNoEngines,
                         style: theme.textTheme.titleMedium?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        '点击右下角按钮添加 HTTP TTS 引擎',
+                        AppStrings.raNoEnginesHint,
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: theme.colorScheme.outline,
                         ),
@@ -394,13 +405,13 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
                           children: [
                             IconButton(
                               icon: const Icon(Symbols.edit_rounded, size: 20),
-                              tooltip: '编辑',
+                              tooltip: AppStrings.edit,
                               onPressed: () => _addOrEditEngine(engine),
                             ),
                             IconButton(
                               icon: Icon(Symbols.delete_rounded,
                                   size: 20, color: theme.colorScheme.error),
-                              tooltip: '删除',
+                              tooltip: AppStrings.delete,
                               onPressed: () => _deleteEngine(engine),
                             ),
                           ],
@@ -468,7 +479,9 @@ class _TtsEditDialogState extends State<_TtsEditDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.engine != null ? '编辑朗读引擎' : '添加朗读引擎'),
+      title: Text(widget.engine != null
+          ? AppStrings.raEditEngineTitle
+          : AppStrings.raAddEngineTitle),
       content: SizedBox(
         width: 400,
         child: Form(
@@ -478,44 +491,49 @@ class _TtsEditDialogState extends State<_TtsEditDialog> {
             children: [
               TextFormField(
                 controller: _nameCtrl,
-                decoration: const InputDecoration(
-                  labelText: '名称 *',
-                  hintText: '例如：Edge TTS',
+                decoration: InputDecoration(
+                  labelText: AppStrings.raEngineNameLabel,
+                  hintText: AppStrings.raEngineNameHint,
                   isDense: true,
                 ),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? '请输入名称' : null,
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? AppStrings.raEngineNameRequired
+                    : null,
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _urlCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'URL *',
+                decoration: InputDecoration(
+                  labelText: AppStrings.raEngineUrlLabel,
                   hintText: 'http://localhost:1234/tts?text={{text}}',
                   isDense: true,
                 ),
                 keyboardType: TextInputType.url,
                 validator: (v) {
-                  if (v == null || v.trim().isEmpty) return '请输入 URL';
-                  if (!v.trim().startsWith('http')) return 'URL 必须以 http(s) 开头';
+                  if (v == null || v.trim().isEmpty) {
+                    return AppStrings.raEngineUrlRequired;
+                  }
+                  if (!v.trim().startsWith('http')) {
+                    return AppStrings.raEngineUrlSchemeRequired;
+                  }
                   return null;
                 },
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _contentTypeCtrl,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Content-Type',
-                  hintText: '可选，例如 audio/mpeg',
+                  hintText: AppStrings.raContentTypeHint,
                   isDense: true,
                 ),
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _headerCtrl,
-                decoration: const InputDecoration(
-                  labelText: '请求头 (JSON)',
-                  hintText: '可选，例如 {"Authorization":"Bearer xxx"}',
+                decoration: InputDecoration(
+                  labelText: AppStrings.raHeaderLabel,
+                  hintText: AppStrings.raHeaderHint,
                   isDense: true,
                 ),
                 maxLines: 2,
@@ -527,11 +545,11 @@ class _TtsEditDialogState extends State<_TtsEditDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         FilledButton(
           onPressed: _submit,
-          child: const Text('保存'),
+          child: Text(AppStrings.save),
         ),
       ],
     );

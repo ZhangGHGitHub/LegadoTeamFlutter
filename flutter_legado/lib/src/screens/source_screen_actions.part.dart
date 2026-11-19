@@ -136,18 +136,18 @@ extension _SourceActions on _SourceScreenState {
               color: Theme.of(context).colorScheme.primary,
             ),
             const SizedBox(width: 8),
-            const Text('降序'),
+            Text(AppStrings.sortDescending),
           ],
         ),
       ),
       const PillMenuDivider(),
-      sortItem(SourceSort.manual, '手动排序'),
-      sortItem(SourceSort.weight, '自动排序（权重）'),
-      sortItem(SourceSort.name, '按名称'),
-      sortItem(SourceSort.url, '按 URL'),
-      sortItem(SourceSort.update, '按更新时间'),
-      sortItem(SourceSort.enable, '按启用状态'),
-      sortItem(SourceSort.respond, '按响应时间'),
+      sortItem(SourceSort.manual, AppStrings.sortManual),
+      sortItem(SourceSort.weight, AppStrings.sortAutoWeight),
+      sortItem(SourceSort.name, AppStrings.sortByName),
+      sortItem(SourceSort.url, AppStrings.sortByUrl),
+      sortItem(SourceSort.update, AppStrings.sortByUpdateTime),
+      sortItem(SourceSort.enable, AppStrings.sortByEnabledState),
+      sortItem(SourceSort.respond, AppStrings.sortByResponseTime),
     ];
   }
 
@@ -173,7 +173,7 @@ extension _SourceActions on _SourceScreenState {
     final state = ref.read(sourceNotifierProvider);
     if (state.selectedCount == 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先选择书源')),
+        SnackBar(content: Text(AppStrings.selectSourceFirst)),
       );
       return;
     }
@@ -183,7 +183,7 @@ extension _SourceActions on _SourceScreenState {
         await notifier.batchEnable();
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('已启用所选书源')),
+            SnackBar(content: Text(AppStrings.selectedSourcesEnabled)),
           );
         }
         break;
@@ -191,7 +191,7 @@ extension _SourceActions on _SourceScreenState {
         await notifier.batchDisable();
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('已禁用所选书源')),
+            SnackBar(content: Text(AppStrings.selectedSourcesDisabled)),
           );
         }
         break;
@@ -205,7 +205,7 @@ extension _SourceActions on _SourceScreenState {
         await notifier.batchToggleExplore(true);
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('已启用所选书源发现')),
+            SnackBar(content: Text(AppStrings.selectedSourcesExploreEnabled)),
           );
         }
         break;
@@ -213,7 +213,7 @@ extension _SourceActions on _SourceScreenState {
         await notifier.batchToggleExplore(false);
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('已禁用所选书源发现')),
+            SnackBar(content: Text(AppStrings.selectedSourcesExploreDisabled)),
           );
         }
         break;
@@ -221,7 +221,7 @@ extension _SourceActions on _SourceScreenState {
         await notifier.batchMoveSelection(toTop: true);
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('已置顶所选书源')),
+            SnackBar(content: Text(AppStrings.selectedSourcesPinnedTop)),
           );
         }
         break;
@@ -229,7 +229,7 @@ extension _SourceActions on _SourceScreenState {
         await notifier.batchMoveSelection(toTop: false);
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('已置底所选书源')),
+            SnackBar(content: Text(AppStrings.selectedSourcesPinnedBottom)),
           );
         }
         break;
@@ -249,16 +249,16 @@ extension _SourceActions on _SourceScreenState {
         if (!context.mounted) return;
         final confirmed = await showConfirmDialog(
           context,
-          title: '删除书源',
-          content: '确定要删除选中的 ${state.selectedCount} 个书源吗？',
-          confirmText: '删除',
+          title: AppStrings.deleteBookSource,
+          content: AppStrings.deleteSelectedSourcesConfirm(state.selectedCount),
+          confirmText: AppStrings.delete,
           isDestructive: true,
         );
         if (confirmed && context.mounted) {
           await notifier.batchDelete();
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('已删除所选书源')),
+              SnackBar(content: Text(AppStrings.selectedSourcesDeleted)),
             );
           }
         }
@@ -271,14 +271,14 @@ extension _SourceActions on _SourceScreenState {
     final state = ref.read(sourceNotifierProvider);
     if (state.selectedCount == 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先选择要校验的书源')),
+        SnackBar(content: Text(AppStrings.selectSourcesToCheckFirst)),
       );
       return;
     }
     final checkNotifier = ref.read(checkSourceNotifierProvider.notifier);
     if (ref.read(checkSourceNotifierProvider).checking) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('校验进行中，请先取消当前校验')),
+        SnackBar(content: Text(AppStrings.checkInProgressCancelFirst)),
       );
       return;
     }
@@ -289,9 +289,9 @@ extension _SourceActions on _SourceScreenState {
     final keyword = await showDialog<String>(
       context: context,
       builder: (_) => _TextPromptDialog(
-        title: '校验所选书源',
-        hintText: '输入校验关键词',
-        confirmLabel: '开始校验',
+        title: AppStrings.checkSelectedSourcesTitle,
+        hintText: AppStrings.checkKeywordHint,
+        confirmLabel: AppStrings.startCheck,
         autofocus: true,
         initialText: initial,
       ),
@@ -310,10 +310,10 @@ extension _SourceActions on _SourceScreenState {
     // controller 由对话框内容组件自持（随子树卸载释放）
     final group = await showDialog<String>(
       context: context,
-      builder: (_) => const _TextPromptDialog(
-        title: '添加分组',
-        hintText: '输入分组名称',
-        confirmLabel: '确定',
+      builder: (_) => _TextPromptDialog(
+        title: AppStrings.addGroup,
+        hintText: AppStrings.enterGroupName,
+        confirmLabel: AppStrings.confirm,
         autofocus: true,
       ),
     );
@@ -323,7 +323,7 @@ extension _SourceActions on _SourceScreenState {
     await notifier.batchAddGroup(group);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已为所选书源添加分组「$group」')),
+        SnackBar(content: Text(AppStrings.groupAddedToSelectedSources(group))),
       );
     }
   }
@@ -344,7 +344,7 @@ extension _SourceActions on _SourceScreenState {
     }
     if (groups.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('所选书源没有可移除的分组')),
+        SnackBar(content: Text(AppStrings.noRemovableGroupForSelectedSources)),
       );
       return;
     }
@@ -352,7 +352,7 @@ extension _SourceActions on _SourceScreenState {
     final group = await showDialog<String>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: const Text('移除分组'),
+        title: Text(AppStrings.removeGroup),
         children: [
           for (final g in groups.toList()..sort())
             SimpleDialogOption(
@@ -368,7 +368,7 @@ extension _SourceActions on _SourceScreenState {
     await notifier.batchRemoveGroup(group);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已从所选书源移除分组「$group」')),
+        SnackBar(content: Text(AppStrings.groupRemovedFromSelectedSources(group))),
       );
     }
   }
@@ -388,12 +388,12 @@ extension _SourceActions on _SourceScreenState {
       await file.writeAsString(json);
       await Share.shareXFiles(
         [XFile(file.path, mimeType: 'application/json')],
-        text: '书源分享（${state.selectedCount} 个）',
+        text: AppStrings.shareSourcesCount(state.selectedCount),
       );
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('分享失败：${errorMessage(e)}')),
+          SnackBar(content: Text(AppStrings.shareFailed(errorMessage(e)))),
         );
       }
     }
@@ -405,10 +405,10 @@ extension _SourceActions on _SourceScreenState {
     // 它，会触发 "used after disposed" 及 _dependents 断言级联
     final url = await showDialog<String>(
       context: context,
-      builder: (_) => const _TextPromptDialog(
-        title: '从 URL 导入书源',
-        hintText: '输入书源 URL 地址',
-        confirmLabel: '导入',
+      builder: (_) => _TextPromptDialog(
+        title: AppStrings.importSourceFromUrlTitle,
+        hintText: AppStrings.importSourceUrlHint,
+        confirmLabel: AppStrings.importLabel,
         requireNonEmpty: true,
       ),
     );
@@ -433,7 +433,7 @@ extension _SourceActions on _SourceScreenState {
       final path = picked.files.single.path;
       if (path == null) {
         messenger.showSnackBar(
-          const SnackBar(content: Text('无法获取文件路径')),
+          SnackBar(content: Text(AppStrings.rssCannotGetFilePath)),
         );
         return;
       }
@@ -447,7 +447,7 @@ extension _SourceActions on _SourceScreenState {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('从文件导入失败：${errorMessage(e)}')),
+          SnackBar(content: Text(AppStrings.rssImportFileFailed(errorMessage(e)))),
         );
       }
     }
@@ -497,7 +497,7 @@ extension _SourceActions on _SourceScreenState {
     }
 
     messenger.showSnackBar(
-      const SnackBar(content: Text('扫码内容不是可识别的书源数据')),
+      SnackBar(content: Text(AppStrings.scannedNotRecognizableSource)),
     );
   }
 
@@ -520,7 +520,7 @@ extension _SourceActions on _SourceScreenState {
         Navigator.of(context).pop();
       }
       messenger.showSnackBar(
-        SnackBar(content: Text('获取书源失败：${errorMessage(e)}')),
+        SnackBar(content: Text(AppStrings.sourceFetchFailedWithReason(errorMessage(e)))),
       );
       return;
     }
@@ -529,7 +529,7 @@ extension _SourceActions on _SourceScreenState {
 
     if (sources.isEmpty) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('格式错误，未解析到书源')),
+        SnackBar(content: Text(AppStrings.noSourcesParsed)),
       );
       return;
     }
@@ -544,7 +544,7 @@ extension _SourceActions on _SourceScreenState {
       ),
     );
     if (ok == true && mounted) {
-      messenger.showSnackBar(const SnackBar(content: Text('导入完成')));
+      messenger.showSnackBar(SnackBar(content: Text(AppStrings.webdavImportDone)));
     }
   }
 
@@ -567,7 +567,7 @@ extension _SourceActions on _SourceScreenState {
         .toList();
     if (selected.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先选择书源')),
+        SnackBar(content: Text(AppStrings.selectSourceFirst)),
       );
       return;
     }
@@ -592,7 +592,7 @@ extension _SourceActions on _SourceScreenState {
           filePath: temp.path,
           fileName: jsName,
           contentType: 'text/javascript',
-          subject: '导出书源',
+          subject: AppStrings.exportSources,
           // 临时文件由本页创建：Sheet 关闭（含另存取消/上传失败放弃）时清理
           deleteTempFileOnClose: true,
           fileService: fileService,
@@ -607,7 +607,7 @@ extension _SourceActions on _SourceScreenState {
           fileName: _bookSourceExportFileName(selected),
           // 参考版 BookSourceViewModel.uploadSources 固定上传 bookSource.json
           uploadFileName: 'bookSource.json',
-          subject: '导出书源',
+          subject: AppStrings.exportSources,
           fileService: fileService,
           passphraseType: SourcePassphraseType.bookSource,
         );
@@ -615,7 +615,7 @@ extension _SourceActions on _SourceScreenState {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导出失败：${errorMessage(e)}')),
+          SnackBar(content: Text(AppStrings.exportFailedWithReason(errorMessage(e)))),
         );
       }
       return;

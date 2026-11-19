@@ -6,6 +6,7 @@ import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../providers/providers.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
@@ -90,11 +91,13 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
     final keyword = _keywordCtrl.text.trim();
 
     if (sourceUrl.isEmpty) {
-      _appendLog('错误：请输入书源 URL', level: _DebugLogLevel.error);
+      _appendLog(AppStrings.sourceDebugErrorUrlRequired,
+          level: _DebugLogLevel.error);
       return;
     }
     if (keyword.isEmpty) {
-      _appendLog('错误：请输入搜索关键词', level: _DebugLogLevel.error);
+      _appendLog(AppStrings.sourceDebugErrorKeywordRequired,
+          level: _DebugLogLevel.error);
       return;
     }
 
@@ -103,7 +106,7 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
       _logs.clear();
     });
 
-    _appendLog('⇒开始调试');
+    _appendLog(AppStrings.sourceDebugStart);
 
     StreamSubscription<Map<String, dynamic>>? sub;
     try {
@@ -125,7 +128,8 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
         },
         onError: (Object e) {
           if (!mounted) return;
-          _appendLog('异常: ${_errMsg(e)}', level: _DebugLogLevel.error);
+          _appendLog(AppStrings.exceptionWithMessage(_errMsg(e)),
+              level: _DebugLogLevel.error);
         },
         onDone: () {
           if (!mounted) return;
@@ -135,7 +139,8 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
       );
       await sub.asFuture<void>();
     } catch (e) {
-      _appendLog('异常: ${_errMsg(e)}', level: _DebugLogLevel.error);
+      _appendLog(AppStrings.exceptionWithMessage(_errMsg(e)),
+          level: _DebugLogLevel.error);
     } finally {
       await sub?.cancel();
       if (mounted) {
@@ -161,17 +166,17 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       topBar: LegadoAppBar(
-        title: const Text('书源调试'),
+        title: Text(AppStrings.sourceDebugTitle),
         actions: [
           IconButton(
             icon: const Icon(Symbols.help_rounded),
-            tooltip: '帮助',
+            tooltip: AppStrings.helpLabel,
             onPressed: () => showHelp(context, HelpAssets.debugHelp),
           ),
           // 清除日志按钮
           IconButton(
             icon: const Icon(Symbols.delete_rounded),
-            tooltip: '清空日志',
+            tooltip: AppStrings.clearLog,
             onPressed: _logs.isEmpty
                 ? null
                 : () => setState(() => _logs.clear()),
@@ -189,10 +194,10 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
                 TextField(
                   controller: _sourceUrlCtrl,
                   // [LAYOUT_PLAN P2] 输入框走 inputDecorationTheme，不手写边框
-                  decoration: const InputDecoration(
-                    labelText: '书源 URL',
-                    hintText: '输入要调试的书源地址',
-                    prefixIcon: Icon(Symbols.link_rounded),
+                  decoration: InputDecoration(
+                    labelText: AppStrings.sourceUrlLabel,
+                    hintText: AppStrings.sourceDebugUrlHint,
+                    prefixIcon: const Icon(Symbols.link_rounded),
                     isDense: true,
                   ),
                 ),
@@ -203,10 +208,10 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
                       child: TextField(
                         controller: _keywordCtrl,
                         // [LAYOUT_PLAN P2] 输入框走 inputDecorationTheme，不手写边框
-                        decoration: const InputDecoration(
-                          labelText: '搜索关键词',
-                          hintText: '关键词 / URL / ++目录 / --正文',
-                          prefixIcon: Icon(Symbols.search_rounded),
+                        decoration: InputDecoration(
+                          labelText: AppStrings.searchKeywordLabel,
+                          hintText: AppStrings.sourceDebugKeywordHint,
+                          prefixIcon: const Icon(Symbols.search_rounded),
                           isDense: true,
                         ),
                         onSubmitted: (_) => _runDebug(),
@@ -222,7 +227,7 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Symbols.play_arrow_rounded),
-                      label: Text(_running ? '停止' : '调试'),
+                      label: Text(_running ? AppStrings.stop : AppStrings.debugLabel),
                     ),
                   ],
                 ),
@@ -257,8 +262,8 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
                   ),
                   child: Text(
                     _enabledLevels.length == _DebugLogLevel.values.length
-                        ? '全不选'
-                        : '全选',
+                        ? AppStrings.deselectAll
+                        : AppStrings.selectAll,
                     style: theme.textTheme.labelSmall,
                   ),
                 ),
@@ -302,11 +307,15 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                // 日志计数
-                Text(
-                  '${filteredLogs.length} / ${_logs.length} 条',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                // 日志计数（en 文案较 zh 长，限宽省略防 360dp 右溢）
+                Flexible(
+                  child: Text(
+                    AppStrings.logCountRatio(filteredLogs.length, _logs.length),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
               ],
@@ -318,7 +327,7 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
             child: _logs.isEmpty
                 ? Center(
                     child: Text(
-                      '输入书源 URL 和关键词后点击"调试"开始',
+                      AppStrings.sourceDebugEmptyHint,
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -327,7 +336,7 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
                 : filteredLogs.isEmpty
                     ? Center(
                         child: Text(
-                          '没有匹配的日志条目',
+                          AppStrings.noMatchingLogEntries,
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
@@ -426,7 +435,7 @@ enum _DebugLogLevel {
       case _DebugLogLevel.info:
         return 'INFO';
       case _DebugLogLevel.success:
-        return '成功';
+        return AppStrings.debugLevelSuccess;
       case _DebugLogLevel.warn:
         return 'WARN';
       case _DebugLogLevel.error:

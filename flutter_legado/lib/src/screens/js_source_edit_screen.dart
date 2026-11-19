@@ -8,6 +8,7 @@ import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../providers/source/source_notifier.dart';
@@ -84,7 +85,7 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
   Future<void> _save({bool openDebug = false}) async {
     final content = _controller.text;
     if (content.trim().isEmpty) {
-      _toast('脚本不能为空');
+      _toast(AppStrings.jsScriptEmpty);
       return;
     }
     setState(() => _saving = true);
@@ -95,19 +96,20 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
         final checkRaw = await api.checkJsSourceSyntax(content);
         final check = jsonDecode(checkRaw) as Map<String, dynamic>;
         if (check['valid'] == false) {
-          final msg = check['message']?.toString() ?? '语法错误';
+          final msg = check['message']?.toString() ?? AppStrings.syntaxError;
           final line = check['line'];
           final lineNum = line is int
               ? line
               : int.tryParse(line?.toString() ?? '');
           if (mounted) {
             setState(() {
-              _syntaxBanner =
-                  lineNum != null ? '语法警告 L$lineNum：$msg' : '语法警告：$msg';
+              _syntaxBanner = lineNum != null
+                  ? AppStrings.syntaxWarningWithLine(lineNum, msg)
+                  : AppStrings.syntaxWarning(msg);
               _syntaxLine = lineNum;
             });
           }
-          _toast(_syntaxBanner ?? '语法警告：$msg');
+          _toast(_syntaxBanner ?? AppStrings.syntaxWarning(msg));
         } else if (mounted) {
           setState(() {
             _syntaxBanner = null;
@@ -123,7 +125,7 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
       final source = BookSource.fromJson(map);
       if (source.bookSourceUrl.trim().isEmpty ||
           source.bookSourceName.trim().isEmpty) {
-        _toast('配置缺少 bookSourceUrl 或 bookSourceName');
+        _toast(AppStrings.jsSourceConfigMissing);
         return;
       }
 
@@ -149,11 +151,11 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
           ),
         );
       } else {
-        _toast('已保存：${source.bookSourceName}');
+        _toast(AppStrings.savedNamed(source.bookSourceName));
         Navigator.of(context).pop(true);
       }
     } catch (e) {
-      if (mounted) _toast('保存失败：${errorMessage(e)}');
+      if (mounted) _toast(AppStrings.saveFailedMsg(errorMessage(e)));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -173,7 +175,7 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
   Future<void> _openCodeEdit() async {
     final result = await CodeEditScreen.openExtended(
       context,
-      title: 'JS 书源',
+      title: AppStrings.jsSourceTitle,
       initialText: _controller.text,
       cursorPosition: _controller.selection.baseOffset.clamp(
         0,
@@ -212,7 +214,7 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
   Future<void> _checkSyntaxOnly() async {
     final content = _controller.text;
     if (content.trim().isEmpty) {
-      _toast('脚本不能为空');
+      _toast(AppStrings.jsScriptEmpty);
       return;
     }
     try {
@@ -220,13 +222,14 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
           await ref.read(bookApiProvider).checkJsSourceSyntax(content);
       final check = jsonDecode(checkRaw) as Map<String, dynamic>;
       if (check['valid'] == false) {
-        final msg = check['message']?.toString() ?? '语法错误';
+        final msg = check['message']?.toString() ?? AppStrings.syntaxError;
         final line = check['line'];
         final lineNum =
             line is int ? line : int.tryParse(line?.toString() ?? '');
         setState(() {
-          _syntaxBanner =
-              lineNum != null ? '语法警告 L$lineNum：$msg' : '语法警告：$msg';
+          _syntaxBanner = lineNum != null
+              ? AppStrings.syntaxWarningWithLine(lineNum, msg)
+              : AppStrings.syntaxWarning(msg);
           _syntaxLine = lineNum;
         });
         _jumpToSyntaxLine();
@@ -236,10 +239,10 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
           _syntaxBanner = null;
           _syntaxLine = null;
         });
-        _toast('语法检查通过');
+        _toast(AppStrings.syntaxCheckPassed);
       }
     } catch (e) {
-      _toast('语法检查失败：${errorMessage(e)}');
+      _toast(AppStrings.syntaxCheckFailed(errorMessage(e)));
     }
   }
 
@@ -274,32 +277,32 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
       topBar: LegadoAppBar(
         title: Text(
           _openedSourceUrl == null || _openedSourceUrl!.isEmpty
-              ? '新建 JS 书源'
-              : '编辑 JS 书源',
+              ? AppStrings.jsSourceNewTitle
+              : AppStrings.jsSourceEditTitle,
         ),
         actions: [
           IconButton(
-            tooltip: '语法检查',
+            tooltip: AppStrings.syntaxCheck,
             onPressed: _loading || _saving ? null : _checkSyntaxOnly,
             icon: const Icon(Symbols.spellcheck_rounded),
           ),
           IconButton(
-            tooltip: '代码编辑',
+            tooltip: AppStrings.sourceCodeEdit,
             onPressed: _loading || _saving ? null : _openCodeEdit,
             icon: const Icon(Symbols.code_rounded),
           ),
           IconButton(
-            tooltip: 'cURL 转换',
+            tooltip: AppStrings.curlConvert,
             onPressed: _loading || _saving ? null : _openCurl,
             icon: const Icon(Symbols.swap_horiz_rounded),
           ),
           IconButton(
-            tooltip: '调试',
+            tooltip: AppStrings.debugLabel,
             onPressed: _saving ? null : () => _save(openDebug: true),
             icon: const Icon(Symbols.bug_report_rounded),
           ),
           IconButton(
-            tooltip: '规则语法帮助',
+            tooltip: AppStrings.sourceRuleHelpTitle,
             onPressed: _loading || _saving ? null : _openRuleHelp,
             icon: const Icon(Symbols.help_outline_rounded),
           ),
@@ -312,7 +315,7 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
                     height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text('保存'),
+                : Text(AppStrings.save),
           ),
         ],
       ),
@@ -328,7 +331,7 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
                       // [LAYOUT_PLAN P2] 页面水平边距统一 16dp（全局标尺）
                       padding: const EdgeInsets.all(16),
                       child: Text(
-                        '加载已有脚本失败，已回退模板：$_error',
+                        AppStrings.jsTemplateLoadFailed('$_error'),
                         style: TextStyle(
                           color: cs.onErrorContainer,
                           fontSize: 13,
@@ -367,7 +370,7 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
                             ),
                             if (_syntaxLine != null)
                               Text(
-                                '跳转',
+                                AppStrings.jumpLabel,
                                 style: TextStyle(
                                   color: cs.primary,
                                   fontSize: 13,
@@ -408,13 +411,13 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
                           // [UI_MD3_ALIGNMENT_PLAN.md Batch B B4] 编辑文字走 tonal
                           color: cs.onSurface,
                         ),
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           // [B3] 沉浸 JS 编辑区：三态显式无边框，防主题底线式渗入
                           border: InputBorder.none,
                           enabledBorder: InputBorder.none,
                           focusedBorder: InputBorder.none,
-                          contentPadding: EdgeInsets.all(14),
-                          hintText: '在此编写 JS 书源脚本…',
+                          contentPadding: const EdgeInsets.all(14),
+                          hintText: AppStrings.jsSourceEditorHint,
                         ),
                       ),
                     ),

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../l10n/app_strings.dart';
+
 /// 阅读记录「按天」视图与成就卡（差异清单 C5，低优增强）
 ///
 /// 参考版形态：累计成就卡 + 按天时间线（今天/昨天/更早分组，每行=日期+当日时长）。
@@ -34,14 +36,16 @@ class ReadAchievementCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final booksText = pending ? '已读 — 本' : '已读 $readBooks 本';
+    final booksText = pending
+        ? AppStrings.readBooksPending
+        : AppStrings.readBooksCount(readBooks);
     // 文案只说「未解锁内容」而非强调私密身份：解释被剔除的口径即可
     //（锁定行本身在列表里已可见）。
     final durationText = pending
-        ? '累计 —'
+        ? AppStrings.readTotalPending
         : masked
-        ? '累计 $totalDurationText（不含未解锁内容）'
-        : '累计 $totalDurationText';
+        ? AppStrings.readTotalMasked(totalDurationText)
+        : AppStrings.readTotal(totalDurationText);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Card(
@@ -76,7 +80,8 @@ class ReadAchievementCard extends StatelessWidget {
                 ),
               ),
               if (onClearAll != null)
-                TextButton(onPressed: onClearAll, child: const Text('清空')),
+                TextButton(
+                    onPressed: onClearAll, child: Text(AppStrings.clearHistory)),
             ],
           ),
         ),
@@ -126,24 +131,31 @@ List<({String label, List<DailyReadEntry> entries})> groupDailyByDay(
 ) {
   final today = DateTime(now.year, now.month, now.day);
   final yesterday = today.subtract(const Duration(days: 1));
-  final groups = <String, List<DailyReadEntry>>{'今天': [], '昨天': [], '更早': []};
+  final labelToday = AppStrings.dayGroupToday;
+  final labelYesterday = AppStrings.dayGroupYesterday;
+  final labelEarlier = AppStrings.dayGroupEarlier;
+  final groups = <String, List<DailyReadEntry>>{
+    labelToday: [],
+    labelYesterday: [],
+    labelEarlier: [],
+  };
   for (final e in daily) {
     final seconds = (e['seconds'] as num?)?.toInt() ?? 0;
     if (seconds <= 0) continue;
     final d = parseDailyDate((e['date'] ?? '').toString());
     if (d == null) continue;
     final label = d == today
-        ? '今天'
+        ? labelToday
         : d == yesterday
-            ? '昨天'
-            : '更早';
+            ? labelYesterday
+            : labelEarlier;
     groups[label]!.add(DailyReadEntry(date: d, seconds: seconds));
   }
   for (final list in groups.values) {
     list.sort((a, b) => b.date.compareTo(a.date));
   }
   return [
-    for (final label in ['今天', '昨天', '更早'])
+    for (final label in [labelToday, labelYesterday, labelEarlier])
       if (groups[label]!.isNotEmpty) (label: label, entries: groups[label]!),
   ];
 }
@@ -180,18 +192,18 @@ class ReadRecordDailyView extends StatelessWidget {
     // [A3] 首帧竞态：策略/标记未就绪时绝不先渲染真实时长（空快照会把
     // 私密书判成非私密，fail-open）；先给中性占位。
     if (privacyPending) {
-      return const ReadStatsPrivacyPlaceholder(
-        key: ValueKey('readRecordDailyPrivacyPending'),
-        message: '正在准备阅读统计…',
+      return ReadStatsPrivacyPlaceholder(
+        key: const ValueKey('readRecordDailyPrivacyPending'),
+        message: AppStrings.readStatsPreparing,
       );
     }
     // [A3] readRecordDaily 只有「日期 + 秒数」两列，无法从聚合值里剔除
     // 私密书贡献的秒数 → 存在私密未授权记录时整段时长不可展示
     //（fail-closed：宁可少展示，也不泄漏私密阅读时长）。
     if (privacyMasked) {
-      return const ReadStatsPrivacyPlaceholder(
-        key: ValueKey('readRecordDailyPrivacyMasked'),
-        message: '私密书籍未验证，暂不显示每日阅读时长',
+      return ReadStatsPrivacyPlaceholder(
+        key: const ValueKey('readRecordDailyPrivacyMasked'),
+        message: AppStrings.readStatsPrivateMasked,
       );
     }
     final data = daily;
@@ -207,10 +219,11 @@ class ReadRecordDailyView extends StatelessWidget {
             Text('(╮_╰)',
                 style: TextStyle(fontSize: 40, color: cs.outline)),
             const SizedBox(height: 16),
-            const Text('暂无阅读记录'),
+            Text(AppStrings.noReadRecords),
             if (onRetry != null) ...[
               const SizedBox(height: 12),
-              TextButton(onPressed: onRetry, child: const Text('重新加载')),
+              TextButton(
+                  onPressed: onRetry, child: Text(AppStrings.reload)),
             ],
           ],
         ),

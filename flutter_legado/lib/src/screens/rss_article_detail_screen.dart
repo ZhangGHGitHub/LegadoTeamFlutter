@@ -192,11 +192,11 @@ class _RssArticleDetailScreenState
   /// 「文章详情」。WebView 页面标题有效时按原版 `onPageFinished` 覆盖
   /// （见 [_refreshWebViewTitle]）。普通文章详情沿用既有文案。
   String get _title {
-    if (!widget.singleUrlDirect) return '文章详情';
+    if (!widget.singleUrlDirect) return AppStrings.articleDetail;
     final webTitle = _webViewTitle?.trim() ?? '';
     if (webTitle.isNotEmpty) return webTitle;
     final sourceName = widget.sourceName.trim();
-    return sourceName.isEmpty ? '文章详情' : sourceName;
+    return sourceName.isEmpty ? AppStrings.articleDetail : sourceName;
   }
 
   /// 是否处于 `startHtml` 起始页模式（批15f 审查 P0-1）
@@ -375,8 +375,9 @@ class _RssArticleDetailScreenState
       if (hasFallback) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('正文加载失败，已显示文章自带内容'),
-            action: SnackBarAction(label: '重试', onPressed: _loadRuleContent),
+            content: Text(AppStrings.rssContentFallbackNotice),
+            action: SnackBarAction(
+                label: AppStrings.retry, onPressed: _loadRuleContent),
           ),
         );
       }
@@ -426,12 +427,17 @@ class _RssArticleDetailScreenState
       if (!mounted) return;
       setState(() => _isStarred = !_isStarred);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_isStarred ? '已收藏' : '已取消收藏')),
+        SnackBar(
+            content: Text(_isStarred
+                ? AppStrings.rssStarred
+                : AppStrings.rssUnstarred)),
       );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('收藏操作失败：${errorMessage(e)}')),
+          SnackBar(
+              content:
+                  Text(AppStrings.rssStarActionFailed(errorMessage(e)))),
         );
       }
     } finally {
@@ -578,7 +584,7 @@ class _RssArticleDetailScreenState
           if (mounted) {
             setState(() {
               _isWebLoading = false;
-              _webError = '无效的文章链接';
+              _webError = AppStrings.invalidArticleLink;
             });
           }
           return;
@@ -943,7 +949,8 @@ class _RssArticleDetailScreenState
       if (!mounted) return;
       if (existing != null) {
         _showBridgeSnack(
-          '《${existing.name.isEmpty ? bookUrl : existing.name}》已在书架',
+          AppStrings.bookAlreadyInShelf(
+              existing.name.isEmpty ? bookUrl : existing.name),
         );
         return;
       }
@@ -969,7 +976,7 @@ class _RssArticleDetailScreenState
       if (!mounted) return;
       if (matched == null) {
         // 原版文案「未找到匹配书源」
-        _showBridgeSnack('未找到匹配书源：$bookUrl');
+        _showBridgeSnack(AppStrings.noMatchingSourceWithUrl(bookUrl));
         return;
       }
       // 4. 抓详情入库（原版 `WebBook.getBookInfoAwait(source, book)`）
@@ -997,11 +1004,11 @@ class _RssArticleDetailScreenState
       }
       await api.addBook(book);
       if (!mounted) return;
-      _showBridgeSnack('已加入书架：《${book.name}》');
+      _showBridgeSnack(AppStrings.addedToBookshelfNamed(book.name));
     } catch (e) {
       if (!mounted) return;
       CrashLogService.instance.put('[RSS WebView] java.addBook 失败（$bookUrl）：$e');
-      _showBridgeSnack('加入书架失败：${errorMessage(e)}');
+      _showBridgeSnack(AppStrings.addToShelfFailed(errorMessage(e)));
     }
   }
 
@@ -1011,7 +1018,7 @@ class _RssArticleDetailScreenState
     final target = await _resolveBridgeSource(action.origin);
     if (!mounted) return;
     if (target == null) {
-      _showBridgeSnack('未找到指定源');
+      _showBridgeSnack(AppStrings.noSpecifiedSourceFound);
       return;
     }
     switch (name) {
@@ -1157,7 +1164,7 @@ class _RssArticleDetailScreenState
   /// `java.open('login')`：源配置了 loginUrl/loginUi 才进入登录页
   Future<void> _openBridgeLogin(RssSource target) async {
     if (!rssSourceHasLogin(target)) {
-      _showBridgeSnack('源未配置登录');
+      _showBridgeSnack(AppStrings.sourceLoginNotConfigured);
       return;
     }
     if (!mounted) return;
@@ -1165,7 +1172,7 @@ class _RssArticleDetailScreenState
     // 三路分流；此前固定打开手动凭据页，表单与 V2 源无从执行）。
     final ok = await showRssSourceLogin(context, ref, target);
     if (!mounted) return;
-    if (ok) _showBridgeSnack('登录成功');
+    if (ok) _showBridgeSnack(AppStrings.rssLoginSuccess);
   }
 
   void _showBridgeSnack(
@@ -1424,7 +1431,9 @@ $htmlContent
               icon: Icon(
                 _isStarred ? Symbols.star_rounded : Symbols.star_rounded,
               ),
-              tooltip: _isStarred ? '取消收藏' : '收藏',
+              tooltip: _isStarred
+                  ? AppStrings.rssUnstar
+                  : AppStrings.rssStarAction,
               onPressed: _starBusy ? null : _toggleStar,
             ),
           // 切换渲染模式按钮（仅在支持 WebView、有正文且非起始页时显示）
@@ -1433,17 +1442,19 @@ $htmlContent
               icon: Icon(
                 _useWebView ? Symbols.article_rounded : Symbols.web_rounded,
               ),
-              tooltip: _useWebView ? '切换为纯文本' : '切换为 WebView',
+              tooltip: _useWebView
+                  ? AppStrings.switchToPlainText
+                  : AppStrings.switchToWebView,
               onPressed: _toggleViewMode,
             ),
           IconButton(
             icon: const Icon(Symbols.open_in_browser_rounded),
-            tooltip: '在浏览器中打开',
+            tooltip: AppStrings.openInBrowserLabel,
             onPressed: _openInBrowser,
           ),
           IconButton(
             icon: const Icon(Symbols.share_rounded),
-            tooltip: '分享',
+            tooltip: AppStrings.shareAction,
             onPressed: () async {
               final uri = Uri.tryParse(widget.article.url);
               if (uri != null && await canLaunchUrl(uri)) {
@@ -1623,7 +1634,7 @@ $htmlContent
             ),
             const SizedBox(height: 12),
             Text(
-              '正在加载正文…',
+              AppStrings.rssContentLoading,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -1644,7 +1655,7 @@ $htmlContent
               Icon(Symbols.error_rounded, size: 48, color: colorScheme.error),
               const SizedBox(height: 12),
               Text(
-                '加载正文失败',
+                AppStrings.rssContentLoadFailed,
                 style: theme.textTheme.titleMedium?.copyWith(
                   color: colorScheme.error,
                 ),
@@ -1663,13 +1674,13 @@ $htmlContent
               FilledButton.icon(
                 onPressed: _loadRuleContent,
                 icon: const Icon(Symbols.refresh_rounded),
-                label: const Text('重试'),
+                label: Text(AppStrings.retry),
               ),
               const SizedBox(height: 8),
               OutlinedButton.icon(
                 onPressed: _openInBrowser,
                 icon: const Icon(Symbols.open_in_browser_rounded),
-                label: const Text('在浏览器中查看原文'),
+                label: Text(AppStrings.viewOriginalInBrowser),
               ),
             ],
           ),
@@ -1703,14 +1714,14 @@ $htmlContent
     if (html == null) {
       return EmptyState(
         icon: Symbols.article_rounded,
-        title: '暂无内容',
+        title: AppStrings.noContent,
         // 无链接（空串/legacy 伪主键）时没有可打开的原文
         action: widget.article.url.isEmpty
             ? null
             : OutlinedButton.icon(
                 onPressed: _openInBrowser,
                 icon: const Icon(Symbols.open_in_browser_rounded),
-                label: const Text('在浏览器中查看原文'),
+                label: Text(AppStrings.viewOriginalInBrowser),
               ),
       );
     }
@@ -1730,13 +1741,13 @@ $htmlContent
     if (controller == null) {
       return EmptyState(
         icon: Symbols.article_rounded,
-        title: '暂无内容',
+        title: AppStrings.noContent,
         action: widget.article.url.isEmpty
             ? null
             : OutlinedButton.icon(
                 onPressed: _openInBrowser,
                 icon: const Icon(Symbols.open_in_browser_rounded),
-                label: const Text('在浏览器中查看原文'),
+                label: Text(AppStrings.viewOriginalInBrowser),
               ),
       );
     }
@@ -1752,7 +1763,7 @@ $htmlContent
                   size: 48, color: colorScheme.error),
               const SizedBox(height: 12),
               Text(
-                'WebView 加载失败',
+                AppStrings.webViewLoadFailed,
                 style: theme.textTheme.titleMedium?.copyWith(
                   color: colorScheme.error,
                 ),
@@ -1778,19 +1789,19 @@ $htmlContent
                     unawaited(_initWebView());
                   },
                   icon: const Icon(Symbols.refresh_rounded),
-                  label: const Text('重试'),
+                  label: Text(AppStrings.retry),
                 )
               else
                 FilledButton.icon(
                   onPressed: _toggleViewMode,
                   icon: const Icon(Symbols.article_rounded),
-                  label: const Text('切换为纯文本'),
+                  label: Text(AppStrings.switchToPlainText),
                 ),
               const SizedBox(height: 8),
               OutlinedButton.icon(
                 onPressed: _openInBrowser,
                 icon: const Icon(Symbols.open_in_browser_rounded),
-                label: const Text('在浏览器中打开'),
+                label: Text(AppStrings.openInBrowserLabel),
               ),
             ],
           ),
@@ -1845,7 +1856,7 @@ $htmlContent
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '当前平台不支持 WebView，已降级为纯文本显示',
+                      AppStrings.webViewUnsupportedFallback,
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -1869,7 +1880,7 @@ $htmlContent
               child: FilledButton.icon(
                 onPressed: _openInBrowser,
                 icon: const Icon(Symbols.open_in_new_rounded),
-                label: const Text('查看原文链接'),
+                label: Text(AppStrings.viewOriginalLink),
               ),
             ),
           const SizedBox(height: 16),

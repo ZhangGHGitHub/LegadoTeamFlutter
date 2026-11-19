@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/association/association_notifier.dart';
 import '../providers/providers.dart';
@@ -161,7 +162,7 @@ class _AssociationImportDialogState
     final url = _urlController.text.trim();
     if (url.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先输入内容地址')),
+        SnackBar(content: Text(AppStrings.pleaseEnterContentUrl)),
       );
       return;
     }
@@ -172,7 +173,7 @@ class _AssociationImportDialogState
 
   Future<void> _pickFile() async {
     final result = await FilePicker.platform.pickFiles(
-      dialogTitle: '选择导入文件',
+      dialogTitle: AppStrings.chooseImportFile,
       type: FileType.any,
       allowedExtensions: ['json', 'txt'],
     );
@@ -269,15 +270,15 @@ class _AssociationImportDialogState
               await Clipboard.setData(ClipboardData(text: json));
               if (ctx.mounted) {
                 ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(content: Text('已复制到剪贴板')),
+                  SnackBar(content: Text(AppStrings.sourceCopied)),
                 );
               }
             },
-            child: const Text('复制'),
+            child: Text(AppStrings.copyAction),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('关闭'),
+            child: Text(AppStrings.closeLabel),
           ),
         ],
       ),
@@ -399,7 +400,7 @@ class _AssociationImportDialogState
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('导入完成'),
+        title: Text(AppStrings.webdavImportDone),
         content: SizedBox(
           width: double.maxFinite,
           child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: contentChildren)),
@@ -407,7 +408,7 @@ class _AssociationImportDialogState
         actions: [
           FilledButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('确定'),
+            child: Text(AppStrings.confirm),
           ),
         ],
       ),
@@ -502,52 +503,52 @@ class _AssociationImportDialogState
             TextButton(
               onPressed: _showCustomGroupDialog,
               child: Text(_groupName == null
-                  ? '自定义分组'
+                  ? AppStrings.customGroup
                   : '${_isAddGroup ? '+' : ''}$_groupName'),
             ),
           // bookSource 更多选项（对标 import_source.xml）
           if (state.phase == AssociationPhase.ready &&
               state.type == ImportType.bookSource)
             PopupMenuButton<String>(
-              tooltip: '更多选项',
+              tooltip: AppStrings.rssMoreOptions,
               // [LAYOUT_PLAN P3] 菜单在顶栏下方展开，不覆盖顶栏（对齐 P2 规范）
               position: PopupMenuPosition.under,
               onSelected: _handleMenu,
               itemBuilder: (_) => [
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'select_new',
-                  child: Text('选中新增源'),
+                  child: Text(AppStrings.selectNewSources),
                 ),
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'select_update',
-                  child: Text('选中更新源'),
+                  child: Text(AppStrings.selectUpdatedSources),
                 ),
                 const PillMenuDivider(),
                 CheckedPopupMenuItem(
                   value: 'keep_name',
                   checked: _keepName,
-                  child: const Text('保留原名'),
+                  child: Text(AppStrings.keepOriginalName),
                 ),
                 CheckedPopupMenuItem(
                   value: 'keep_group',
                   checked: _keepGroup,
-                  child: const Text('保留分组'),
+                  child: Text(AppStrings.keepGroup),
                 ),
                 CheckedPopupMenuItem(
                   value: 'keep_enable',
                   checked: _keepEnable,
-                  child: const Text('保留启用状态'),
+                  child: Text(AppStrings.keepEnabledState),
                 ),
                 CheckedPopupMenuItem(
                   value: 'show_comment',
                   checked: _showComment,
-                  child: const Text('显示源注释'),
+                  child: Text(AppStrings.showSourceComment),
                 ),
               ],
             ),
           IconButton(
             icon: const Icon(Symbols.refresh_rounded),
-            tooltip: '重置',
+            tooltip: AppStrings.resetLabel,
             onPressed: () {
               _urlController.clear();
               _exampleExpanded.clear();
@@ -571,12 +572,12 @@ class _AssociationImportDialogState
             controller: _urlController,
             decoration: InputDecoration(
               prefixIcon: const Icon(Symbols.link_rounded),
-              labelText: '内容地址',
+              labelText: AppStrings.contentUrl,
               hintText: 'https://example.com/sources.json',
               // 扫码导入（对应原版管理页扫码入口；本轨手动路径保留）
               suffixIcon: IconButton(
                 icon: const Icon(Symbols.qr_code_scanner_rounded),
-                tooltip: '扫码导入',
+                tooltip: AppStrings.importQrAction,
                 onPressed: () async {
                   final navigator = Navigator.of(context);
                   // [fix Task#24 | 2026-08-08] 去掉 <String> 泛型，避免 routes 表
@@ -598,7 +599,7 @@ class _AssociationImportDialogState
                 child: OutlinedButton.icon(
                   onPressed: _pickFile,
                   icon: const Icon(Symbols.folder_open_rounded),
-                  label: const Text('从文件'),
+                  label: Text(AppStrings.fromFile),
                 ),
               ),
               const SizedBox(width: 8),
@@ -606,7 +607,7 @@ class _AssociationImportDialogState
                 child: OutlinedButton.icon(
                   onPressed: _loadFromClipboard,
                   icon: const Icon(Symbols.content_paste_rounded),
-                  label: const Text('从剪贴板'),
+                  label: Text(AppStrings.fromClipboard),
                 ),
               ),
             ],
@@ -616,12 +617,12 @@ class _AssociationImportDialogState
             width: double.infinity,
             child: FilledButton(
               onPressed: _loadFromInput,
-              child: const Text('加载'),
+              child: Text(AppStrings.load),
             ),
           ),
           const SizedBox(height: 16),
           Text(
-            '导入类型由内容格式自动识别：书源 / RSS 源 / 替换规则 / 主题配置 / HTTP TTS / 字典规则 / TXT 目录规则 / 高亮规则 / 自动任务',
+            AppStrings.importTypeAutoDetectHint,
             style: TextStyle(
               fontSize: 13,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -655,7 +656,7 @@ class _AssociationImportDialogState
             const SizedBox(height: 24),
             FilledButton.tonal(
               onPressed: _lastLoad != null ? () => _lastLoad!() : null,
-              child: const Text('重试'),
+              child: Text(AppStrings.retry),
             ),
           ],
         ),
@@ -670,9 +671,11 @@ class _AssociationImportDialogState
 
     // 状态色取 colorScheme 角色（M3 token）：新增 tertiary / 更新 secondary / 已存在 onSurfaceVariant
     final (label, color) = switch (item.status) {
-      ImportItemStatus.isNew => ('新增', colorScheme.tertiary),
-      ImportItemStatus.isUpdate => ('更新', colorScheme.secondary),
-      ImportItemStatus.exists => ('已存在', colorScheme.onSurfaceVariant),
+      ImportItemStatus.isNew => (AppStrings.importStatusNew, colorScheme.tertiary),
+      ImportItemStatus.isUpdate =>
+        (AppStrings.importStatusUpdate, colorScheme.secondary),
+      ImportItemStatus.exists =>
+        (AppStrings.importStatusExistsLong, colorScheme.onSurfaceVariant),
       ImportItemStatus.none => ('', Colors.transparent),
     };
 
@@ -751,7 +754,7 @@ class _AssociationImportDialogState
               ),
             TextButton(
               onPressed: () => _showItemJson(item),
-              child: const Text('打开'),
+              child: Text(AppStrings.open),
             ),
           ],
         ),
@@ -783,8 +786,10 @@ class _AssociationImportDialogState
               },
               child: Text(
                 _isSelectAll
-                    ? '取消全选（$_selectCount/${state.items.length}）'
-                    : '全选（$_selectCount/${state.items.length}）',
+                    ? AppStrings.deselectAllCount(
+                        _selectCount, state.items.length)
+                    : AppStrings.selectAllCount(
+                        _selectCount, state.items.length),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -797,7 +802,7 @@ class _AssociationImportDialogState
             ),
             onPressed:
                 _importing ? null : () => Navigator.of(context).pop(),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           const SizedBox(width: 8),
           FilledButton(
@@ -814,7 +819,7 @@ class _AssociationImportDialogState
                     height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : Text('确认（$_selectCount）'),
+                : Text(AppStrings.confirmWithCount(_selectCount)),
           ),
         ],
       ),

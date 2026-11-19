@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../providers/app_log/app_log_notifier.dart';
 import '../utils/error_message.dart';
 
@@ -23,7 +24,11 @@ class AppLogScreen extends ConsumerStatefulWidget {
 class _AppLogScreenState extends ConsumerState<AppLogScreen>
     with SingleTickerProviderStateMixin {
   /// 页签显示名（与 AppLogNotifier.levels 一一对应）
-  static const _tabLabels = ['消息', '崩溃', 'HTTP'];
+  static List<String> get _tabLabels => [
+        AppStrings.logTabMessage,
+        AppStrings.logTabCrash,
+        AppStrings.logTabHttp,
+      ];
 
   late final TabController _tabController;
 
@@ -64,16 +69,20 @@ class _AppLogScreenState extends ConsumerState<AppLogScreen>
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(28),
         ),
-        title: Text(all ? '清空全部日志' : '清空当前级别日志'),
-        content: Text(all ? '将清空 message/crash/http 全部级别日志，确定吗？' : '确定清空当前级别的日志吗？'),
+        title: Text(all
+            ? AppStrings.clearAllLogsTitle
+            : AppStrings.clearCurrentLevelLogsTitle),
+        content: Text(all
+            ? AppStrings.clearAllLogsConfirm
+            : AppStrings.clearCurrentLevelLogsConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('确定'),
+            child: Text(AppStrings.confirm),
           ),
         ],
       ),
@@ -83,7 +92,9 @@ class _AppLogScreenState extends ConsumerState<AppLogScreen>
     await (all ? notifier.clearAll() : notifier.clearCurrentLevel());
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(all ? '已清空全部日志' : '已清空当前级别日志')),
+        SnackBar(content: Text(all
+            ? AppStrings.logsClearedAll
+            : AppStrings.logsClearedCurrentLevel)),
       );
     }
   }
@@ -95,19 +106,22 @@ class _AppLogScreenState extends ConsumerState<AppLogScreen>
       if (text.isEmpty) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('暂无日志可导出')));
+        ).showSnackBar(
+            SnackBar(content: Text(AppStrings.noLogsToExport)));
         return;
       }
       await Clipboard.setData(ClipboardData(text: text));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('日志已复制到剪贴板（${text.length} 字符）')),
+        SnackBar(
+            content: Text(AppStrings.logsCopiedToClipboard(text.length))),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('导出失败：${errorMessage(e)}')));
+      ).showSnackBar(
+          SnackBar(content: Text(AppStrings.exportFailedWithReason(errorMessage(e)))));
     }
   }
 
@@ -117,7 +131,7 @@ class _AppLogScreenState extends ConsumerState<AppLogScreen>
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       topBar: LegadoAppBar(
-        title: const Text('应用日志'),
+        title: Text(AppStrings.appLogTitle),
         // [MD3 Batch 6] 前景走全局 tabBarTheme（onSurface/onSurfaceVariant +
         // primary 指示器），与 M3 AppBar surface 背景配对（原白色系前瞻
         // 在 iOS 深色 AppBar 时期成立，M3 化后不可见）
@@ -131,13 +145,13 @@ class _AppLogScreenState extends ConsumerState<AppLogScreen>
         actions: [
           IconButton(
             icon: const Icon(Symbols.refresh_rounded),
-            tooltip: '刷新',
+            tooltip: AppStrings.refreshAction,
             onPressed: () => ref
                 .read(appLogNotifierProvider.notifier)
                 .load(state.currentLevel),
           ),
           PopupMenuButton<String>(
-            tooltip: '日志操作',
+            tooltip: AppStrings.logActions,
             onSelected: (value) {
               switch (value) {
                 case 'clear_level':
@@ -148,10 +162,15 @@ class _AppLogScreenState extends ConsumerState<AppLogScreen>
                   _export();
               }
             },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'clear_level', child: Text('清空当前级别')),
-              PopupMenuItem(value: 'clear_all', child: Text('清空全部')),
-              PopupMenuItem(value: 'export', child: Text('导出到剪贴板')),
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                  value: 'clear_level',
+                  child: Text(AppStrings.clearCurrentLevel)),
+              PopupMenuItem(
+                  value: 'clear_all', child: Text(AppStrings.clearAllLogs)),
+              PopupMenuItem(
+                  value: 'export',
+                  child: Text(AppStrings.exportToClipboard)),
             ],
           ),
         ],
@@ -170,7 +189,7 @@ class _AppLogScreenState extends ConsumerState<AppLogScreen>
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            '加载失败：${state.error}',
+            AppStrings.loadFailedWithReason('${state.error}'),
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.error,
             ),
@@ -182,7 +201,7 @@ class _AppLogScreenState extends ConsumerState<AppLogScreen>
     if (state.logs.isEmpty) {
       return Center(
         child: Text(
-          '暂无 ${state.currentLevel} 级别日志',
+          AppStrings.noLogsForLevel(state.currentLevel),
           style: theme.textTheme.bodyMedium?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),

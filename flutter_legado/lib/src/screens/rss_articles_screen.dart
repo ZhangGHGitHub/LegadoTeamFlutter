@@ -13,6 +13,7 @@ import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../models/main_tab.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
@@ -215,30 +216,30 @@ Future<String?> saveRssImageBytes({
         (name, data) =>
             PlatformBridgeService.instance.saveImageToDownloads(name, data);
     final saved = await downloads(fileName, bytes);
-    if (saved != null) return '已保存: $saved';
+    if (saved != null) return AppStrings.savedAt(saved);
     // [D1 回修] Android 禁止回退 file_picker：直接写应用文档目录并提示位置
     final dir = await docsDir();
     final file = File('${dir.path}${Platform.pathSeparator}$fileName')
       ..writeAsBytesSync(bytes, flush: true);
-    return '已保存到文档目录: ${file.path}';
+    return AppStrings.savedToDocumentsDir(file.path);
   }
 
   final picker = pickSaveFile ??
       (name, data) => FilePicker.platform.saveFile(
-            dialogTitle: '保存图片',
+            dialogTitle: AppStrings.saveImageTitle,
             fileName: name,
             bytes: data,
           );
   final path = await picker(fileName, bytes);
   if (path != null) {
     final file = File(path)..writeAsBytesSync(bytes);
-    return '已保存: ${file.path}';
+    return AppStrings.savedAt(file.path);
   }
   // iOS/桌面取消选择 → 文档目录兜底（既有行为）
   final dir = await docsDir();
   final file = File('${dir.path}${Platform.pathSeparator}$fileName')
     ..writeAsBytesSync(bytes);
-  return '已保存到文档目录: ${file.path}';
+  return AppStrings.savedToDocumentsDir(file.path);
 }
 
 /// 全屏图片查看器（`InteractiveViewer` 缩放 + MediaStore/文件选择器保存）
@@ -390,7 +391,7 @@ class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
         }
       }
       if (image != null) return image.bytes;
-      throw ImageDataUriException(_dataError ?? '图片数据无效');
+      throw ImageDataUriException(_dataError ?? AppStrings.imageDataInvalid);
     }
     final api = ref.read(bookApiProvider);
     final data = await bridgeHttpGetBytes(
@@ -402,7 +403,7 @@ class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
       throw Exception('HTTP ${data.statusCode}');
     }
     if (data.bytes.isEmpty) {
-      throw Exception('图片为空');
+      throw Exception(AppStrings.imageEmpty);
     }
     return data.bytes;
   }
@@ -427,7 +428,7 @@ class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
     } catch (e) {
       if (!mounted) return;
       messenger?.showSnackBar(
-        SnackBar(content: Text('保存图片失败：${errorMessage(e)}')),
+        SnackBar(content: Text(AppStrings.saveImageFailed(errorMessage(e)))),
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -447,7 +448,7 @@ class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
       if (image == null) {
         return Center(
           child: Text(
-            _dataError ?? '图片数据无效',
+            _dataError ?? AppStrings.imageDataInvalid,
             style: const TextStyle(color: Colors.white70),
             textAlign: TextAlign.center,
           ),
@@ -456,12 +457,12 @@ class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
       // 批19 审查 P3-2：Flutter 的 Image.memory 不能渲染 SVG，明确提示
       // 不支持直接查看，但仍允许右上角保存为 `.svg`（保留原始 MIME 后缀）
       if (image.mimeType == 'image/svg+xml') {
-        return const Center(
+        return Center(
           child: Padding(
-            padding: EdgeInsets.all(24),
+            padding: const EdgeInsets.all(24),
             child: Text(
-              '当前平台不支持直接查看 SVG 图片，可点击右上角保存',
-              style: TextStyle(color: Colors.white70),
+              AppStrings.svgUnsupportedHint,
+              style: const TextStyle(color: Colors.white70),
               textAlign: TextAlign.center,
             ),
           ),
@@ -476,10 +477,10 @@ class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
         // **2× 屏宽** 解码（放大到 2× 仍清晰）；再按 maxScale=5 解码
         // 内存为 2× 口径的 6.25 倍且收益有限，故取 2× 折中。
         cacheWidth: _decodeWidth(context),
-        errorBuilder: (_, _, _) => const Center(
+        errorBuilder: (_, _, _) => Center(
           child: Text(
-            '图片加载失败',
-            style: TextStyle(color: Colors.white70),
+            AppStrings.imageLoadFailed,
+            style: const TextStyle(color: Colors.white70),
           ),
         ),
       );
@@ -494,10 +495,10 @@ class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
       placeholder: (_, _) => const Center(
         child: CircularProgressIndicator(),
       ),
-      errorWidget: (_, _, _) => const Center(
+      errorWidget: (_, _, _) => Center(
         child: Text(
-          '图片加载失败',
-          style: TextStyle(color: Colors.white70),
+          AppStrings.imageLoadFailed,
+          style: const TextStyle(color: Colors.white70),
         ),
       ),
     );
@@ -537,7 +538,7 @@ class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
                   IconButton(
                     onPressed: () => Navigator.pop(context),
                     icon: const Icon(Icons.close, color: Colors.white),
-                    tooltip: '关闭',
+                    tooltip: AppStrings.closeLabel,
                   ),
                   Flexible(
                     child: Text(
@@ -566,7 +567,7 @@ class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
                         ),
                       )
                     : const Icon(Icons.download, color: Colors.white),
-                tooltip: '保存图片',
+                    tooltip: AppStrings.saveImageTitle,
               ),
             ),
           ),
@@ -728,7 +729,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
           unselectedLabelStyle: labelStyle,
           tabs: [
             for (final sort in sorts)
-              Tab(text: sort.name.isEmpty ? '默认' : sort.name),
+              Tab(text: sort.name.isEmpty ? AppStrings.defaultLabel : sort.name),
           ],
         ),
       ),
@@ -819,7 +820,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
           children: [
             Flexible(
               child: Text(
-                state.error ?? '加载更多失败',
+                state.error ?? AppStrings.loadMoreFailed,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: labelStyle,
@@ -827,7 +828,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
             ),
             TextButton(
               onPressed: notifier.retryLoadMore,
-              child: const Text('重试'),
+              child: Text(AppStrings.retry),
             ),
           ],
         ),
@@ -847,7 +848,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
             ),
             const SizedBox(width: 8),
             Text(
-              '加载中…',
+              AppStrings.loadingDots,
               style: labelStyle,
             ),
           ],
@@ -872,7 +873,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
             ),
             TextButton(
               onPressed: notifier.refreshArticles,
-              child: const Text('重试'),
+              child: Text(AppStrings.retry),
             ),
           ],
         ),
@@ -886,7 +887,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
         child: Center(
           child: TextButton(
             onPressed: notifier.loadMore,
-            child: const Text('加载更多'),
+            child: Text(AppStrings.loadMore),
           ),
         ),
       );
@@ -895,7 +896,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 16),
       child: Center(
-        child: Text('已经到底了~', style: labelStyle),
+        child: Text(AppStrings.noMoreContent, style: labelStyle),
       ),
     );
   }
@@ -946,7 +947,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
         title: Text(_screenTitle(state)),
         leading: IconButton(
           icon: const Icon(Symbols.arrow_back_ios_new_rounded),
-          tooltip: state.isSearching ? '退出搜索' : '返回',
+          tooltip: state.isSearching ? AppStrings.exitSearch : AppStrings.back,
           onPressed: () {
             // 对齐原版返回键：搜索态先退出搜索，非搜索态返回列表
             if (state.isSearching) {
@@ -964,33 +965,38 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
           if (hasSearch)
             IconButton(
               icon: const Icon(Symbols.search_rounded),
-              tooltip: '搜索',
+              tooltip: AppStrings.search,
               onPressed: _showSearchDialog,
             ),
           IconButton(
             icon: const Icon(Symbols.refresh_rounded),
-            tooltip: '刷新',
+            tooltip: AppStrings.refreshAction,
             onPressed: () => notifier.refreshArticles(),
           ),
           // [UI-fix v2.0.2 | 2026-08-06] 文章列表菜单（对标原版
           // rss_articles.xml：登录/刷新排序/设置源变量/编辑源/切换布局/
           // 阅读记录/清空；搜索入口另位于顶栏） — Qoder
           PopupMenuButton<String>(
-            tooltip: '更多',
+            tooltip: AppStrings.moreActions,
             onSelected: _handleMenu,
             itemBuilder: (_) => [
               // 对标原版 onMenuOpened：仅 loginUrl 非空时显示登录
               if ((widget.source.loginUrl ?? '').trim().isNotEmpty)
-                const PopupMenuItem(value: 'login', child: Text('登录')),
-              const PopupMenuItem(value: 'refreshSort', child: Text('刷新排序')),
-              const PopupMenuItem(
+                PopupMenuItem(value: 'login', child: Text(AppStrings.rssLogin)),
+              PopupMenuItem(
+                  value: 'refreshSort', child: Text(AppStrings.refreshSort)),
+              PopupMenuItem(
                 value: 'setVariable',
-                child: Text('设置源变量'),
+                child: Text(AppStrings.sourceSetVariable),
               ),
-              const PopupMenuItem(value: 'editSource', child: Text('编辑源')),
-              const PopupMenuItem(value: 'switchLayout', child: Text('切换布局')),
-              const PopupMenuItem(value: 'readRecord', child: Text('阅读记录')),
-              const PopupMenuItem(value: 'clear', child: Text('清空')),
+              PopupMenuItem(
+                  value: 'editSource', child: Text(AppStrings.editSource)),
+              PopupMenuItem(
+                  value: 'switchLayout',
+                  child: Text(AppStrings.switchLayout)),
+              PopupMenuItem(
+                  value: 'readRecord', child: Text(AppStrings.readRecordLabel)),
+              PopupMenuItem(value: 'clear', child: Text(AppStrings.clearHistory)),
             ],
           ),
         ],
@@ -998,7 +1004,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
       body: Builder(
         builder: (context) {
           if (state.isLoadingArticles && state.articles.isEmpty) {
-            return const LoadingIndicator(message: '加载文章...');
+            return LoadingIndicator(message: AppStrings.loadingArticles);
           }
 
           if (state.error != null && state.articles.isEmpty) {
@@ -1009,10 +1015,10 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
           }
 
           if (state.articles.isEmpty) {
-            return const EmptyState(
+            return EmptyState(
               icon: Symbols.article_rounded,
-              title: '暂无文章',
-              subtitle: '下拉刷新获取最新内容',
+              title: AppStrings.noArticles,
+              subtitle: AppStrings.noArticlesHint,
             );
           }
 
@@ -1211,7 +1217,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
                             size: 12, color: colorScheme.primary),
                         const SizedBox(width: 2),
                         Text(
-                          '已读',
+                          AppStrings.readLabel,
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: colorScheme.primary,
                           ),
@@ -1431,12 +1437,12 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
     if (!mounted) return;
     final ctrl = TextEditingController(text: initial ?? '');
     final comment = (widget.source.variableComment ?? '').isEmpty
-        ? '源变量可在 JS 中通过 source.getVariable() 获取'
+        ? AppStrings.sourceVariableHint
         : widget.source.variableComment!;
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('设置源变量'),
+        title: Text(AppStrings.sourceSetVariable),
         content: TextField(
           controller: ctrl,
           autofocus: false,
@@ -1449,11 +1455,11 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            child: const Text('保存'),
+            child: Text(AppStrings.save),
           ),
         ],
       ),
@@ -1470,13 +1476,15 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
       } catch (_) {}
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('源变量已保存')),
+          SnackBar(content: Text(AppStrings.sourceVariableSaved)),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('保存源变量失败：${errorMessage(e)}')),
+          SnackBar(
+              content:
+                  Text(AppStrings.saveSourceVariableFailed(errorMessage(e)))),
         );
       }
     }
@@ -1492,7 +1500,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('布局保存失败：${errorMessage(e)}')),
+          SnackBar(content: Text(AppStrings.saveLayoutFailed(errorMessage(e)))),
         );
       }
     }
@@ -1503,16 +1511,16 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('清空'),
-        content: const Text('将清空本源本地缓存的文章列表，确定继续吗？'),
+        title: Text(AppStrings.clearHistory),
+        content: Text(AppStrings.clearArticlesConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('清空'),
+            child: Text(AppStrings.clearHistory),
           ),
         ],
       ),
@@ -1523,13 +1531,13 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
       ref.read(rssNotifierProvider.notifier).refreshArticles();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('本源文章缓存已清空')),
+          SnackBar(content: Text(AppStrings.sourceArticleCacheCleared)),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('清空失败：${errorMessage(e)}')),
+          SnackBar(content: Text(AppStrings.clearArticlesFailed(errorMessage(e)))),
         );
       }
     }
@@ -1564,25 +1572,25 @@ class _RssSearchDialogState extends State<_RssSearchDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('搜索'),
+      title: Text(AppStrings.search),
       content: TextField(
         controller: _controller,
         autofocus: true,
         textInputAction: TextInputAction.search,
-        decoration: const InputDecoration(
-          hintText: '输入搜索关键词',
-          border: OutlineInputBorder(),
+        decoration: InputDecoration(
+          hintText: AppStrings.searchKeywordInputHint,
+          border: const OutlineInputBorder(),
         ),
         onSubmitted: (_) => _submit(),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         FilledButton(
           onPressed: _submit,
-          child: const Text('搜索'),
+          child: Text(AppStrings.search),
         ),
       ],
     );
@@ -1618,7 +1626,7 @@ class _RssReadRecordDialogState extends ConsumerState<_RssReadRecordDialog> {
     final records = state.records;
     final recordEnabled = ref.watch(rssReadRecordPrefProvider);
     return AlertDialog(
-      title: const Text('阅读记录'),
+      title: Text(AppStrings.readRecordLabel),
       content: SizedBox(
         width: double.maxFinite,
         child: Column(
@@ -1630,7 +1638,7 @@ class _RssReadRecordDialogState extends ConsumerState<_RssReadRecordDialog> {
             SwitchListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              title: const Text('记录阅读历史'),
+              title: Text(AppStrings.recordReadHistory),
               value: recordEnabled,
               onChanged: (value) {
                 ref
@@ -1655,10 +1663,10 @@ class _RssReadRecordDialogState extends ConsumerState<_RssReadRecordDialog> {
                           ),
                         )
                       : records.isEmpty
-                          ? const Center(
+                          ? Center(
                               child: Padding(
-                                padding: EdgeInsets.all(24),
-                                child: Text('暂无阅读记录'),
+                                padding: const EdgeInsets.all(24),
+                                child: Text(AppStrings.noReadRecords),
                               ),
                             )
                           : ListView.builder(
@@ -1699,11 +1707,11 @@ class _RssReadRecordDialogState extends ConsumerState<_RssReadRecordDialog> {
           onPressed: (records.isEmpty || state.isClearing)
               ? null
               : _confirmClear,
-          child: const Text('清空'),
+          child: Text(AppStrings.clearHistory),
         ),
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('关闭'),
+          child: Text(AppStrings.closeLabel),
         ),
       ],
     );
@@ -1720,16 +1728,16 @@ class _RssReadRecordDialogState extends ConsumerState<_RssReadRecordDialog> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('清空阅读记录'),
-        content: const Text('确定清空当前源的全部阅读记录？'),
+        title: Text(AppStrings.clearReadRecordsTitle),
+        content: Text(AppStrings.clearReadRecordsConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('清空'),
+            child: Text(AppStrings.clearHistory),
           ),
         ],
       ),
@@ -1741,7 +1749,7 @@ class _RssReadRecordDialogState extends ConsumerState<_RssReadRecordDialog> {
     if (!mounted) return;
     if (clearError != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('清空失败：$clearError')),
+        SnackBar(content: Text(AppStrings.clearArticlesFailed(clearError))),
       );
       return;
     }
@@ -1749,7 +1757,7 @@ class _RssReadRecordDialogState extends ConsumerState<_RssReadRecordDialog> {
     final loadError = ref.read(rssHistoryNotifierProvider).error;
     if (loadError != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('清空成功，但刷新记录失败：$loadError')),
+        SnackBar(content: Text(AppStrings.clearSucceededRefreshFailed(loadError))),
       );
     }
   }

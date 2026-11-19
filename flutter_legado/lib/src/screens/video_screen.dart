@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../services/book_api.dart';
@@ -58,7 +59,7 @@ class VideoScreenArgs {
 
   const VideoScreenArgs({
     this.videoUrl = '',
-    this.title = '视频播放',
+    this.title = '',
     this.book,
     this.presetUrl,
     this.presetHeaders = const {},
@@ -106,7 +107,7 @@ class VideoScreen extends StatefulWidget {
   const VideoScreen({
     super.key,
     required this.videoUrl,
-    this.title = '视频播放',
+    this.title = '',
     this.book,
     this.presetUrl,
     this.presetHeaders = const {},
@@ -122,6 +123,11 @@ class VideoScreen extends StatefulWidget {
 }
 
 class _VideoScreenState extends State<VideoScreen> {
+  /// 页面标题：未显式传标题时回退到本地化的默认标题（避免在构造器默认
+  /// 参数里固化文案，保持 locale 切换生效）
+  String get _displayTitle =>
+      widget.title.isNotEmpty ? widget.title : AppStrings.videoPlayTitle;
+
   /// 视频控制器
   late VideoPlayerController _controller;
 
@@ -478,7 +484,7 @@ class _VideoScreenState extends State<VideoScreen> {
       if (_chapters.isEmpty) {
         setState(() {
           _loadingChapter = false;
-          _chapterError = '暂无章节';
+          _chapterError = AppStrings.noChapters;
         });
         return;
       }
@@ -571,7 +577,7 @@ class _VideoScreenState extends State<VideoScreen> {
       if (playable == index && chapter.isVolume) {
         setState(() {
           _loadingChapter = false;
-          _chapterError = '当前为卷标题，无播放地址';
+          _chapterError = AppStrings.videoVolumeNoPlayUrl;
         });
         return;
       }
@@ -599,7 +605,7 @@ class _VideoScreenState extends State<VideoScreen> {
       if (!target.isMpd && target.url.isEmpty) {
         setState(() {
           _loadingChapter = false;
-          _chapterError = '章节未解析出视频地址';
+          _chapterError = AppStrings.videoChapterNoPlayUrl;
         });
         return;
       }
@@ -722,7 +728,7 @@ class _VideoScreenState extends State<VideoScreen> {
             _chapterIndex >= 0 &&
             _chapterIndex < _chapters.length
         ? _chapters[_chapterIndex].title
-        : widget.title;
+        : _displayTitle;
     final state = VideoFloatWindowState(
       url: playUrl,
       title: title,
@@ -786,14 +792,14 @@ class _VideoScreenState extends State<VideoScreen> {
         // 留在本页并提示先在应用内验证后再移交。
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('私密视频需先在应用内验证，再转入悬浮窗')),
+            SnackBar(content: Text(AppStrings.videoPrivateNeedsVerify)),
           );
         }
       } else if (reason == 'no_overlay_permission') {
         await coordinator.requestOverlayPermission();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('请允许「显示在其他应用上层」后重试')),
+            SnackBar(content: Text(AppStrings.videoOverlayPermissionHint)),
           );
         }
       } else if (reason == 'background_start_rejected') {
@@ -801,12 +807,12 @@ class _VideoScreenState extends State<VideoScreen> {
         // tryStartForegroundNotification），此处用中性描述
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('请回到应用内后重试')),
+            SnackBar(content: Text(AppStrings.videoReturnToAppHint)),
           );
         }
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('悬浮窗启动失败，请重试')),
+          SnackBar(content: Text(AppStrings.videoFloatStartFailed)),
         );
       }
       return false;
@@ -947,7 +953,7 @@ class _VideoScreenState extends State<VideoScreen> {
         videoPlayerOptions: videoPlaybackOptions,
       );
       _initializeVideoPlayerFuture = Future<void>.error(
-        Exception('无效的视频地址'),
+        Exception(AppStrings.videoInvalidUrl),
       );
       return;
     }
@@ -1033,7 +1039,7 @@ class _VideoScreenState extends State<VideoScreen> {
       _chapterIndex,
     );
     if (next == null) {
-      _showTip('已播放完');
+      _showTip(AppStrings.videoPlaybackFinished);
       return;
     }
     await _playChapter(next);
@@ -1152,7 +1158,7 @@ class _VideoScreenState extends State<VideoScreen> {
                 title: Text(
                   widget.book != null && _chapters.isNotEmpty
                       ? _chapters[_chapterIndex].title
-                      : widget.title,
+                      : _displayTitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -1172,14 +1178,14 @@ class _VideoScreenState extends State<VideoScreen> {
                   if (widget.book != null && _chapters.isNotEmpty) ...[
                     IconButton(
                       icon: const Icon(Symbols.skip_previous_rounded),
-                      tooltip: '上一集',
+                      tooltip: AppStrings.videoPrevEpisode,
                       onPressed: _chapterIndex > 0
                           ? () => _switchChapter(-1)
                           : null,
                     ),
                     IconButton(
                       icon: const Icon(Symbols.skip_next_rounded),
-                      tooltip: '下一集',
+                      tooltip: AppStrings.videoNextEpisode,
                       onPressed: _chapterIndex < _chapters.length - 1
                           ? () => _switchChapter(1)
                           : null,
@@ -1188,7 +1194,7 @@ class _VideoScreenState extends State<VideoScreen> {
                   // P2-15：视频设置（对标原版 menu_config_settings → SettingsDialog）
                   IconButton(
                     icon: const Icon(Symbols.settings_rounded),
-                    tooltip: '播放设置',
+                    tooltip: AppStrings.videoPlaybackSettings,
                     onPressed: () async {
                       final updated = await showVideoSettingsDialog(context);
                       if (updated != null && mounted) {
@@ -1198,7 +1204,7 @@ class _VideoScreenState extends State<VideoScreen> {
                   ),
                   IconButton(
                     icon: const Icon(Symbols.fullscreen_rounded),
-                    tooltip: '全屏',
+                    tooltip: AppStrings.fullscreen,
                     onPressed: _toggleFullScreen,
                   ),
                 ],
@@ -1213,7 +1219,7 @@ class _VideoScreenState extends State<VideoScreen> {
                       const Icon(Symbols.error_rounded,
                           size: 64, color: Colors.red),
                       const SizedBox(height: 16),
-                      Text('视频加载失败',
+                      Text(AppStrings.videoLoadFailed,
                           style: Theme.of(context).textTheme.titleMedium),
                       const SizedBox(height: 8),
                       Text(_chapterError!,
@@ -1223,7 +1229,7 @@ class _VideoScreenState extends State<VideoScreen> {
                       ElevatedButton.icon(
                         onPressed: _retryPlayback,
                         icon: const Icon(Symbols.refresh_rounded),
-                        label: const Text('重试'),
+                        label: Text(AppStrings.retry),
                       ),
                     ],
                   ),
@@ -1236,14 +1242,14 @@ class _VideoScreenState extends State<VideoScreen> {
                     future: _initializeVideoPlayerFuture,
                     builder: (context, snapshot) {
                       if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(
+                        return Center(
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               // [STAGE-UI-P43UNIFY2 B3] 裸环换接统一封装
-                              AppCircularProgressIndicator(),
-                              SizedBox(height: 16),
-                              Text('正在加载视频...'),
+                              const AppCircularProgressIndicator(),
+                              const SizedBox(height: 16),
+                              Text(AppStrings.videoLoading),
                             ],
                           ),
                         );
@@ -1263,7 +1269,7 @@ class _VideoScreenState extends State<VideoScreen> {
                                 ),
                                 const SizedBox(height: 16),
                                 Text(
-                                  '视频加载失败',
+                                  AppStrings.videoLoadFailed,
                                   style:
                                       Theme.of(context).textTheme.titleMedium,
                                 ),
@@ -1277,7 +1283,7 @@ class _VideoScreenState extends State<VideoScreen> {
                                 ElevatedButton.icon(
                                   onPressed: _retryPlayback,
                                   icon: const Icon(Symbols.refresh_rounded),
-                                  label: const Text('重试'),
+                                  label: Text(AppStrings.retry),
                                 ),
                               ],
                             ),
@@ -1496,7 +1502,9 @@ class _VideoScreenState extends State<VideoScreen> {
                       onPressed: () =>
                           setState(() => _danmakuShow = !_danmakuShow),
                       child: Text(
-                        _danmakuShow ? '关弹幕' : '开弹幕',
+                        _danmakuShow
+                            ? AppStrings.danmakuHide
+                            : AppStrings.danmakuShow,
                         style: TextStyle(
                           fontSize: 12,
                           color: _isFullScreen ? Colors.white : null,
@@ -1524,8 +1532,8 @@ class _VideoScreenState extends State<VideoScreen> {
                     if (widget.book != null && _chapters.isNotEmpty)
                       TextButton(
                         onPressed: _openEpisodeDialog,
-                        child: const Text(
-                          '选集',
+                        child: Text(
+                          AppStrings.videoEpisodes,
                           style: TextStyle(color: Colors.white, fontSize: 14),
                         ),
                       ),
@@ -1537,7 +1545,9 @@ class _VideoScreenState extends State<VideoScreen> {
                           : Symbols.fullscreen_rounded,
                       color: _isFullScreen ? Colors.white : null,
                     ),
-                    tooltip: _isFullScreen ? '退出全屏' : '全屏',
+                    tooltip: _isFullScreen
+                        ? AppStrings.exitFullscreen
+                        : AppStrings.fullscreen,
                     onPressed: _toggleFullScreen,
                   ),
                 ],
@@ -1556,7 +1566,7 @@ class _VideoScreenState extends State<VideoScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            widget.title,
+            _displayTitle,
             style: Theme.of(context).textTheme.titleMedium,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,

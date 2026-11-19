@@ -7,6 +7,7 @@ import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../bridge/ffi.dart' show BridgeError;
 import '../providers/change_source/change_source_notifier.dart';
@@ -276,16 +277,16 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('搜索结果为空'),
-        content: Text('$group分组搜索结果为空，是否切换到全部分组'),
+        title: Text(AppStrings.searchResultEmpty),
+        content: Text(AppStrings.groupSearchEmptySwitchAll(group)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('切换'),
+            child: Text(AppStrings.switchLabel),
           ),
         ],
       ),
@@ -310,19 +311,16 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('切换书源'),
-          content: Text(
-            '确定要将本书切换到「${result.sourceName}」吗？\n'
-            '切换后将重新获取目录与章节内容。',
-          ),
+          title: Text(AppStrings.switchSourceTitle),
+          content: Text(AppStrings.switchSourceConfirm(result.sourceName)),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消'),
+              child: Text(AppStrings.cancel),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('切换'),
+              child: Text(AppStrings.switchLabel),
             ),
           ],
         ),
@@ -337,7 +335,8 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('已切换到「${result.sourceName}」')));
+      ).showSnackBar(
+          SnackBar(content: Text(AppStrings.switchedToSource(result.sourceName))));
       Navigator.pop(context, newBookUrl);
     } catch (e) {
       if (!mounted) return;
@@ -347,7 +346,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
       final msg = e is BridgeError ? e.message : e.toString();
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('换源失败: $msg')));
+      ).showSnackBar(SnackBar(content: Text(AppStrings.changeSourceFailed(msg))));
     }
   }
 
@@ -466,21 +465,21 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
                               ? Symbols.filter_alt_rounded
                               : Symbols.search_rounded,
                         ),
-                        tooltip: '搜索筛选',
+                        tooltip: AppStrings.searchFilter,
                         onPressed: () => setState(
                           () => _searchFilterVisible = !_searchFilterVisible,
                         ),
                       ),
                       IconButton(
                         icon: const Icon(Symbols.refresh_rounded),
-                        tooltip: '重新搜索',
+                        tooltip: AppStrings.searchAgain,
                         onPressed: state.isLoading || _stopped
                             ? null
                             : () => _search(forceRefresh: true),
                       ),
                       // [UI-fix v2.0.2 | 2026-08-06] 高级选项菜单（对标 change_source.xml）— Qoder
                       PopupMenuButton<String>(
-                        tooltip: '高级选项',
+                        tooltip: AppStrings.advancedOptions,
                         onSelected: _handleAdvancedMenu,
                         itemBuilder: (_) => [
                           PopupMenuItem(
@@ -489,21 +488,23 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
                               icon: _stopped
                                   ? Symbols.play_arrow_rounded
                                   : Symbols.stop_rounded,
-                              label: _stopped ? '继续刷新' : '停止刷新',
+                              label: _stopped
+                                  ? AppStrings.resumeRefresh
+                                  : AppStrings.stopRefresh,
                             ),
                           ),
                           PopupMenuItem(
                             value: 'sourceManage',
                             child: _menuRow(
                               icon: Symbols.settings_rounded,
-                              label: '书源管理',
+                              label: AppStrings.sourceManagement,
                             ),
                           ),
                           PopupMenuItem(
                             value: 'refreshList',
                             child: _menuRow(
                               icon: Symbols.refresh_rounded,
-                              label: '刷新列表',
+                              label: AppStrings.refreshList,
                             ),
                           ),
                           PopupMenuItem(
@@ -512,7 +513,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
                               icon: _checkAuthor
                                   ? Symbols.check_box_rounded
                                   : Symbols.check_box_outline_blank_rounded,
-                              label: '校验作者',
+                              label: AppStrings.checkAuthor,
                             ),
                           ),
                           PopupMenuItem(
@@ -521,7 +522,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
                               icon: _loadWordCount
                                   ? Symbols.check_box_rounded
                                   : Symbols.check_box_outline_blank_rounded,
-                              label: '加载字数',
+                              label: AppStrings.loadWordCount,
                             ),
                           ),
                           PopupMenuItem(
@@ -530,7 +531,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
                               icon: _loadInfo
                                   ? Symbols.check_box_rounded
                                   : Symbols.check_box_outline_blank_rounded,
-                              label: '加载信息',
+                              label: AppStrings.loadInfo,
                             ),
                           ),
                           PopupMenuItem(
@@ -539,7 +540,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
                               icon: _loadToc
                                   ? Symbols.check_box_rounded
                                   : Symbols.check_box_outline_blank_rounded,
-                              label: '加载目录',
+                              label: AppStrings.loadToc,
                             ),
                           ),
                           PopupMenuItem(
@@ -547,15 +548,15 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
                             child: _menuRow(
                               icon: Symbols.group_work_rounded,
                               label: _searchGroup.isEmpty
-                                  ? '源分组：全部'
-                                  : '源分组：$_searchGroup',
+                                  ? AppStrings.sourceGroupAll
+                                  : AppStrings.sourceGroupNamed(_searchGroup),
                             ),
                           ),
-                          const PopupMenuItem(
+                          PopupMenuItem(
                             value: 'close',
                             child: _MenuRowStatic(
                               icon: Symbols.close_rounded,
-                              label: '关闭',
+                              label: AppStrings.closeLabel,
                             ),
                           ),
                         ],
@@ -571,7 +572,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
                                 onChanged: (v) =>
                                     setState(() => _searchFilter = v.trim()),
                                 decoration: InputDecoration(
-                                  hintText: '按书源名称筛选',
+                                  hintText: AppStrings.filterBySourceName,
                                   isDense: true,
                                   filled: true,
                                   fillColor: Theme.of(
@@ -606,7 +607,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
                         ? null
                         : () => _search(forceRefresh: true),
                     icon: const Icon(Symbols.search_rounded),
-                    label: const Text('搜索'),
+                    label: Text(AppStrings.search),
                   ),
                 ),
               ),
@@ -666,9 +667,9 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
     final selected = await showDialog<String?>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: const Text('源分组'),
+        title: Text(AppStrings.sourceGroup),
         children: [
-          _groupRadio(ctx, '', '全部'),
+          _groupRadio(ctx, '', AppStrings.allLabel),
           for (final g in _groups) _groupRadio(ctx, g, g),
         ],
       ),
@@ -733,7 +734,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
         ? current!.sourceName
         : (widget.effectiveCurrentSourceUrl.isNotEmpty
               ? widget.effectiveCurrentSourceUrl
-              : '当前书源');
+              : AppStrings.currentSourceLabel);
 
     return Material(
       elevation: 8,
@@ -769,7 +770,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
               ),
               IconButton(
                 icon: const Icon(Symbols.vertical_align_top_rounded),
-                tooltip: '滚到顶部',
+                tooltip: AppStrings.scrollToTopOfList,
                 onPressed: results.isEmpty
                     ? null
                     : () {
@@ -785,7 +786,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
               ),
               IconButton(
                 icon: const Icon(Symbols.vertical_align_bottom_rounded),
-                tooltip: '滚到底部',
+                tooltip: AppStrings.scrollToBottomOfList,
                 onPressed: results.isEmpty
                     ? null
                     : () {
@@ -816,7 +817,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
       final msg = e is BridgeError ? e.message : e.toString();
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('评分失败: $msg')));
+      ).showSnackBar(SnackBar(content: Text(AppStrings.rateFailed(msg))));
     }
   }
 
@@ -831,7 +832,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
       final msg = e is BridgeError ? e.message : e.toString();
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('评分失败: $msg')));
+      ).showSnackBar(SnackBar(content: Text(AppStrings.rateFailed(msg))));
     }
   }
 
@@ -845,22 +846,22 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
           children: [
             ListTile(
               leading: const Icon(Symbols.vertical_align_top_rounded),
-              title: const Text('置顶'),
+              title: Text(AppStrings.pinToTop),
               onTap: () => Navigator.pop(ctx, 'top'),
             ),
             ListTile(
               leading: const Icon(Symbols.vertical_align_bottom_rounded),
-              title: const Text('置底'),
+              title: Text(AppStrings.rssMoveToBottom),
               onTap: () => Navigator.pop(ctx, 'bottom'),
             ),
             ListTile(
               leading: const Icon(Symbols.edit_rounded),
-              title: const Text('编辑书源'),
+              title: Text(AppStrings.sourceEdit),
               onTap: () => Navigator.pop(ctx, 'edit'),
             ),
             ListTile(
               leading: const Icon(Symbols.block_rounded),
-              title: const Text('禁用书源'),
+              title: Text(AppStrings.disableBookSource),
               onTap: () => Navigator.pop(ctx, 'disable'),
             ),
             ListTile(
@@ -869,7 +870,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
                 color: Theme.of(ctx).colorScheme.error,
               ),
               title: Text(
-                '删除',
+                AppStrings.delete,
                 style: TextStyle(color: Theme.of(ctx).colorScheme.error),
               ),
               onTap: () => Navigator.pop(ctx, 'delete'),
@@ -896,7 +897,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
           final msg = e is BridgeError ? e.message : e.toString();
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(SnackBar(content: Text('禁用失败: $msg')));
+          ).showSnackBar(SnackBar(content: Text(AppStrings.disableFailed(msg))));
         }
       case 'delete':
         await _confirmDeleteItem(item);
@@ -907,16 +908,16 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除'),
-        content: Text('确定删除「${item.sourceName}」吗？'),
+        title: Text(AppStrings.delete),
+        content: Text(AppStrings.confirmDeleteSourceNamed(item.sourceName)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('删除'),
+            child: Text(AppStrings.delete),
           ),
         ],
       ),
@@ -940,7 +941,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
       final msg = e is BridgeError ? e.message : e.toString();
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('删除失败: $msg')));
+      ).showSnackBar(SnackBar(content: Text(AppStrings.deleteFailed(msg))));
     }
   }
 
@@ -974,7 +975,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
             ),
             const SizedBox(height: 8),
             Text(
-              '未找到可替换的书源',
+              AppStrings.noReplaceableSourceFound,
               style: TextStyle(
                 color: colorScheme.onSurfaceVariant,
                 fontSize: 16,
@@ -982,7 +983,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
             ),
             const SizedBox(height: 4),
             Text(
-              '请确认已启用足够的书源后重试',
+              AppStrings.enableMoreSourcesAndRetry,
               style: TextStyle(
                 color: colorScheme.onSurfaceVariant,
                 fontSize: 12,
@@ -1004,7 +1005,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
             child: Text(
               state.isLoading
                   ? state.loadingProgressLabel(results.length)
-                  : '找到 ${results.length} 个匹配书源',
+                  : AppStrings.matchedSourcesCount(results.length),
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
@@ -1065,7 +1066,9 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
                     children: [
                       Flexible(
                         child: Text(
-                          item.sourceName.isEmpty ? '未知书源' : item.sourceName,
+                          item.sourceName.isEmpty
+                              ? AppStrings.unknownSource
+                              : item.sourceName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: textTheme.titleSmall?.copyWith(
@@ -1086,7 +1089,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
-                            '当前',
+                            AppStrings.currentLabel,
                             style: TextStyle(
                               fontSize: 10,
                               color: colorScheme.onPrimaryContainer,
@@ -1099,7 +1102,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
                   if (item.latestChapter != null &&
                       item.latestChapter!.isNotEmpty)
                     Text(
-                      '最新：${item.latestChapter}',
+                      AppStrings.latestChapterLabel('${item.latestChapter}'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: textTheme.bodySmall,
@@ -1124,7 +1127,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
                     ),
                   if (_loadWordCount && item.respondTime >= 0)
                     Text(
-                      '耗时 ${item.respondTime}ms',
+                      AppStrings.respondTimeMs(item.respondTime),
                       style: textTheme.labelSmall?.copyWith(
                         // [FIX 2026-09-04] 正文次要文字走 onSurfaceVariant（outline 仅用于边框/装饰图标）
                         color: colorScheme.onSurfaceVariant,
@@ -1143,7 +1146,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
                         ? goodColor
                         : colorScheme.outline.withValues(alpha: 0.6),
                   ),
-                  tooltip: '赞',
+                  tooltip: AppStrings.thumbUp,
                   visualDensity: VisualDensity.compact,
                   onPressed: () => _onThumbUp(item),
                 ),
@@ -1154,7 +1157,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
                         ? badColor
                         : colorScheme.outline.withValues(alpha: 0.6),
                   ),
-                  tooltip: '踩',
+                  tooltip: AppStrings.thumbDown,
                   visualDensity: VisualDensity.compact,
                   onPressed: () => _onThumbDown(item),
                 ),
@@ -1189,7 +1192,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
                         size: 18,
                         color: colorScheme.outline,
                       ),
-                      tooltip: '取消换源',
+                      tooltip: AppStrings.cancelChangeSource,
                       visualDensity: VisualDensity.compact,
                       onPressed: () => ref
                           .read(changeSourceNotifierProvider.notifier)
@@ -1255,9 +1258,11 @@ class _SearchWaitMessageState extends State<_SearchWaitMessage> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final count = widget.count;
-    final sourceText = (count == null || count <= 0) ? '' : ' $count 个书源';
+    final sourceText = (count == null || count <= 0)
+        ? ''
+        : AppStrings.sourceCountSuffix(count);
     return Text(
-      '正在搜索$sourceText… 已等待 $_seconds 秒',
+      AppStrings.searchingWithWait(sourceText, _seconds),
       style: Theme.of(
         context,
       ).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),

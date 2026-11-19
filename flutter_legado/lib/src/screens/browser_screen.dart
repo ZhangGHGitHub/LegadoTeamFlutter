@@ -1,5 +1,6 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../l10n/app_strings.dart';
 import '../utils/webview_support.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
@@ -55,16 +56,16 @@ class _BrowserScreenState extends State<BrowserScreen> {
   /// 当前平台是否支持内嵌 WebView（统一判定见 [isWebViewPlatformSupported]）
   bool get _webViewSupported => isWebViewPlatformSupported;
 
-  static const _jsSnippets = <String, String>{
-    '获取页面标题': 'document.title',
-    '获取正文文本': 'document.body.innerText',
-    '获取所有链接':
-        'JSON.stringify([...document.querySelectorAll("a")].map(a => ({text: a.innerText.trim(), href: a.href})).filter(l => l.text && l.href.startsWith("http")))',
-    '获取章节列表':
-        'JSON.stringify([...document.querySelectorAll("#list dd a, .listmain dd a, #chapterlist a")].map(a => ({title: a.innerText.trim(), url: a.href})))',
-    '获取图片地址':
-        'JSON.stringify([...document.querySelectorAll("img")].map(i => i.src).filter(s => s.startsWith("http")))',
-  };
+  static Map<String, String> get _jsSnippets => {
+        AppStrings.jsSnippetPageTitle: 'document.title',
+        AppStrings.jsSnippetBodyText: 'document.body.innerText',
+        AppStrings.jsSnippetAllLinks:
+            'JSON.stringify([...document.querySelectorAll("a")].map(a => ({text: a.innerText.trim(), href: a.href})).filter(l => l.text && l.href.startsWith("http")))',
+        AppStrings.jsSnippetChapterList:
+            'JSON.stringify([...document.querySelectorAll("#list dd a, .listmain dd a, #chapterlist a")].map(a => ({title: a.innerText.trim(), url: a.href})))',
+        AppStrings.jsSnippetImageUrls:
+            'JSON.stringify([...document.querySelectorAll("img")].map(i => i.src).filter(s => s.startsWith("http")))',
+      };
 
   String? get _currentUrl =>
       _currentIndex >= 0 && _currentIndex < _history.length
@@ -116,7 +117,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
             setState(() => _embeddedLoading = false);
             // [iOS 视角F A1] 主框架加载失败上屏提示（子资源错误不打扰）
             if (error.isForMainFrame ?? false) {
-              _reportLoadFailure('页面加载失败：${error.description}');
+              _reportLoadFailure(
+                  AppStrings.pageLoadFailedWithReason(error.description));
             }
           }
         },
@@ -131,7 +133,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
           if (requestUri == null ||
               (_embeddedStartedUrl.isNotEmpty &&
                   requestUri.toString() == _embeddedStartedUrl)) {
-            _reportLoadFailure('页面加载失败：HTTP $status');
+            _reportLoadFailure(AppStrings.pageLoadFailedHttp(status));
           }
         },
       ));
@@ -251,7 +253,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('无法打开: $url')),
+          SnackBar(content: Text(AppStrings.cannotOpenUrl(url))),
         );
       }
     }
@@ -261,7 +263,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     await Clipboard.setData(ClipboardData(text: snippet));
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已复制「$name」脚本，粘贴到浏览器控制台执行')),
+        SnackBar(content: Text(AppStrings.snippetCopied(name))),
       );
     }
   }
@@ -275,11 +277,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
       topBar: LegadoAppBar(
         title: Text(widget.title?.isNotEmpty == true
             ? widget.title!
-            : '内置浏览器'),
+            : AppStrings.builtInBrowser),
         actions: [
           IconButton(
             icon: const Icon(Symbols.refresh_rounded),
-            tooltip: '刷新',
+            tooltip: AppStrings.refreshAction,
             onPressed: embedded != null || _currentUrl != null
                 ? _refresh
                 : null,
@@ -333,7 +335,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
               decoration: InputDecoration(
                 isDense: true,
                 prefixIcon: const Icon(Symbols.public_rounded, size: 20),
-                hintText: '输入网址，如 https://example.com',
+                hintText: AppStrings.browserUrlHint,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(20),
                 ),
@@ -346,7 +348,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
               final text = _urlController.text.trim();
               if (text.isNotEmpty) _navigate(text);
             },
-            child: const Text('访问'),
+            child: Text(AppStrings.go),
           ),
         ],
       ),
@@ -361,12 +363,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
         children: [
           IconButton(
             icon: const Icon(Symbols.arrow_back_rounded),
-            tooltip: '后退',
+            tooltip: AppStrings.goBackLabel,
             onPressed: _canGoBack ? _goBack : null,
           ),
           IconButton(
             icon: const Icon(Symbols.arrow_forward_rounded),
-            tooltip: '前进',
+            tooltip: AppStrings.goForwardLabel,
             onPressed: _canGoForward ? _goForward : null,
           ),
           const Spacer(),
@@ -391,10 +393,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
           Icon(Symbols.travel_explore_rounded, size: 64,
               color: theme.colorScheme.outline),
           const SizedBox(height: 16),
-          Text('输入网址开始浏览', style: theme.textTheme.bodyLarge),
+          Text(AppStrings.browserEmptyTitle, style: theme.textTheme.bodyLarge),
           const SizedBox(height: 8),
           Text(
-            '页面将在系统浏览器中打开，\n可配合 JS 提取助手抓取结果',
+            AppStrings.browserEmptyDesc,
             textAlign: TextAlign.center,
             style: theme.textTheme.bodySmall,
           ),
@@ -440,7 +442,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     const Spacer(),
                     TextButton.icon(
                       icon: const Icon(Symbols.open_in_browser_rounded, size: 18),
-                      label: const Text('外部打开'),
+                      label: Text(AppStrings.openExternally),
                       onPressed: () => _openExternal(url),
                     ),
                   ],
@@ -463,10 +465,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
         const SizedBox(height: 16),
 
         // JS 提取助手
-        Text('JavaScript 提取助手', style: theme.textTheme.titleSmall),
+        Text(AppStrings.jsExtractHelper, style: theme.textTheme.titleSmall),
         const SizedBox(height: 4),
         Text(
-          '复制脚本 → 在外部浏览器控制台（F12）执行 → 将结果粘贴到下方',
+          AppStrings.jsExtractHelperDesc,
           style: theme.textTheme.bodySmall?.copyWith(
             // [FIX 2026-09-04] 正文次要文字走 onSurfaceVariant（outline 仅用于边框/装饰图标）
             color: theme.colorScheme.onSurfaceVariant,
@@ -488,9 +490,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
         TextField(
           controller: _jsResultController,
           maxLines: 6,
-          decoration: const InputDecoration(
-            labelText: '执行结果',
-            hintText: '将控制台输出粘贴到此处',
+          decoration: InputDecoration(
+            labelText: AppStrings.executeResult,
+            hintText: AppStrings.executeResultHint,
             alignLabelWithHint: true,
           ),
         ),
@@ -499,13 +501,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
           children: [
             OutlinedButton.icon(
               icon: const Icon(Symbols.close_rounded, size: 18),
-              label: const Text('清空结果'),
+              label: Text(AppStrings.clearResult),
               onPressed: () => _jsResultController.clear(),
             ),
             const SizedBox(width: 8),
             OutlinedButton.icon(
               icon: const Icon(Symbols.content_paste_rounded, size: 18),
-              label: const Text('粘贴'),
+              label: Text(AppStrings.paste),
               onPressed: () async {
                 final data = await Clipboard.getData(Clipboard.kTextPlain);
                 if (data?.text != null) {

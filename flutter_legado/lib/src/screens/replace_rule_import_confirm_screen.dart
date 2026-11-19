@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../providers/replace_rule/replace_rule_notifier.dart';
@@ -105,7 +106,7 @@ class _ReplaceRuleImportConfirmScreenState
   /// 列表项名称（对标原版：group 非空时显示「名称(分组)」）
   String _displayName(int index) {
     final rule = _parsed[index];
-    if (rule == null) return '(格式错误)';
+    if (rule == null) return AppStrings.formatErrorParen;
     final group = rule.group?.trim() ?? '';
     return group.isEmpty ? rule.name : '${rule.name}($group)';
   }
@@ -165,7 +166,9 @@ class _ReplaceRuleImportConfirmScreenState
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导入失败：${errorMessage(e)}')),
+          SnackBar(
+              content:
+                  Text(AppStrings.importFailedShortWithReason(errorMessage(e)))),
         );
       }
     } finally {
@@ -215,15 +218,15 @@ class _ReplaceRuleImportConfirmScreenState
               await Clipboard.setData(ClipboardData(text: json));
               if (ctx.mounted) {
                 ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(content: Text('已复制到剪贴板')),
+                  SnackBar(content: Text(AppStrings.sourceCopied)),
                 );
               }
             },
-            child: const Text('复制'),
+            child: Text(AppStrings.copyAction),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('关闭'),
+            child: Text(AppStrings.closeLabel),
           ),
         ],
       ),
@@ -237,7 +240,7 @@ class _ReplaceRuleImportConfirmScreenState
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       topBar: LegadoAppBar(
-        title: const Text('导入替换规则'),
+        title: Text(AppStrings.importReplaceRulesTitle),
         actions: [
           // 自定义源分组（对标 menu_new_group，always 显示）
           TextButton(
@@ -246,11 +249,11 @@ class _ReplaceRuleImportConfirmScreenState
             ),
             onPressed: _showCustomGroupDialog,
             child: Text(_groupName == null
-                ? '自定义源分组'
+                ? AppStrings.customSourceGroup
                 : '${_isAddGroup ? '+' : ''}$_groupName'),
           ),
           PopupMenuButton<String>(
-            tooltip: '更多选项',
+            tooltip: AppStrings.rssMoreOptions,
             // 菜单在顶栏下方展开，不覆盖顶栏
             position: PopupMenuPosition.under,
             onSelected: _handleMenu,
@@ -258,14 +261,14 @@ class _ReplaceRuleImportConfirmScreenState
               CheckedPopupMenuItem(
                 value: 'keep_name',
                 checked: _keepName,
-                child: const Text('保留原名'),
+                child: Text(AppStrings.keepOriginalName),
               ),
             ],
           ),
         ],
       ),
       body: widget.raws.isEmpty
-          ? const Center(child: Text('格式错误，未解析到替换规则'))
+          ? Center(child: Text(AppStrings.noReplaceRulesParsed))
           : ListView.separated(
               // [LAYOUT_PLAN P2] 列表纵向留白 8dp；行 vertical12/horizontal8（见 _buildItem）
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -304,8 +307,10 @@ class _ReplaceRuleImportConfirmScreenState
                     },
                     child: Text(
                       _isSelectAll
-                          ? '取消全选（$_selectCount/${widget.raws.length}）'
-                          : '全选（$_selectCount/${widget.raws.length}）',
+                          ? AppStrings.deselectAllCount(
+                              _selectCount, widget.raws.length)
+                          : AppStrings.selectAllCount(
+                              _selectCount, widget.raws.length),
                     ),
                   ),
                 ),
@@ -313,7 +318,7 @@ class _ReplaceRuleImportConfirmScreenState
                   onPressed: _importing
                       ? null
                       : () => Navigator.of(context).pop(0),
-                  child: const Text('取消'),
+                  child: Text(AppStrings.cancel),
                 ),
                 const SizedBox(width: 8),
                 FilledButton(
@@ -325,7 +330,7 @@ class _ReplaceRuleImportConfirmScreenState
                           height: 16,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('确认'),
+                      : Text(AppStrings.confirmLabel),
                 ),
               ],
             ),
@@ -354,11 +359,16 @@ class _ReplaceRuleImportConfirmScreenState
 
     final (label, color) = switch (status) {
       // [LAYOUT_PLAN P2] 状态色走 tonal：新增 primary、更新 tertiary、已有 onSurfaceVariant
-      _ImportStatus.isNew => ('新增', AppColorsExt.importNew(colorScheme)),
-      _ImportStatus.isUpdate =>
-        ('更新', AppColorsExt.importUpdate(colorScheme)),
+      _ImportStatus.isNew => (
+          AppStrings.importStatusNew,
+          AppColorsExt.importNew(colorScheme)
+        ),
+      _ImportStatus.isUpdate => (
+          AppStrings.importStatusUpdate,
+          AppColorsExt.importUpdate(colorScheme)
+        ),
       _ImportStatus.exists =>
-        ('已有', colorScheme.onSurfaceVariant),
+        (AppStrings.importStatusExists, colorScheme.onSurfaceVariant),
     };
 
     return InkWell(
@@ -394,7 +404,7 @@ class _ReplaceRuleImportConfirmScreenState
             ),
             TextButton(
               onPressed: () => _showRuleJson(index),
-              child: const Text('打开'),
+              child: Text(AppStrings.open),
             ),
           ],
         ),

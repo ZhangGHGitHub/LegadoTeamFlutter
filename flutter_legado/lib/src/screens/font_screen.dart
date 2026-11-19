@@ -8,6 +8,7 @@ import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../l10n/app_strings.dart';
 import '../utils/error_message.dart';
 
 /// 字体管理页面
@@ -41,21 +42,21 @@ class _FontScreenState extends State<FontScreen> {
       widget.target == 'title' ? _keyTitleFont : _keyFontFamily;
 
   /// 内置/系统字体候选列表
-  static const List<_FontOption> _systemFonts = [
-    _FontOption(family: null, label: '默认字体'),
-    _FontOption(family: 'serif', label: '衬线体 (Serif)'),
-    _FontOption(family: 'monospace', label: '等宽体 (Monospace)'),
-    _FontOption(family: 'Microsoft YaHei', label: '微软雅黑'),
-    _FontOption(family: 'SimSun', label: '宋体'),
-    _FontOption(family: 'KaiTi', label: '楷体'),
-    _FontOption(family: 'SimHei', label: '黑体'),
-    _FontOption(family: 'Source Han Serif SC', label: '思源宋体'),
-    _FontOption(family: 'Source Han Sans SC', label: '思源黑体'),
-    _FontOption(family: 'Noto Serif SC', label: 'Noto 宋体'),
-    _FontOption(family: 'Georgia', label: 'Georgia'),
-    _FontOption(family: 'Times New Roman', label: 'Times New Roman'),
-    _FontOption(family: 'Consolas', label: 'Consolas'),
-  ];
+  static List<_FontOption> get _systemFonts => [
+        _FontOption(family: null, label: AppStrings.defaultFont),
+        _FontOption(family: 'serif', label: AppStrings.fontSerif),
+        _FontOption(family: 'monospace', label: AppStrings.fontMonospace),
+        _FontOption(family: 'Microsoft YaHei', label: AppStrings.fontYaHei),
+        _FontOption(family: 'SimSun', label: AppStrings.fontSimSun),
+        _FontOption(family: 'KaiTi', label: AppStrings.fontKaiTi),
+        _FontOption(family: 'SimHei', label: AppStrings.fontSimHei),
+        _FontOption(family: 'Source Han Serif SC', label: AppStrings.fontSourceHanSerif),
+        _FontOption(family: 'Source Han Sans SC', label: AppStrings.fontSourceHanSans),
+        _FontOption(family: 'Noto Serif SC', label: AppStrings.fontNotoSerif),
+        const _FontOption(family: 'Georgia', label: 'Georgia'),
+        const _FontOption(family: 'Times New Roman', label: 'Times New Roman'),
+        const _FontOption(family: 'Consolas', label: 'Consolas'),
+      ];
 
   String? _currentFamily;
   List<_FontOption> _customFonts = [];
@@ -169,7 +170,7 @@ class _FontScreenState extends State<FontScreen> {
           ..showSnackBar(
             SnackBar(
               content:
-                  Text('部分自定义字体文件缺失，未加载：${missing.join('、')}'),
+                  Text(AppStrings.fontFilesMissing(missing.join(AppStrings.listSeparator))),
             ),
           );
       }
@@ -243,14 +244,18 @@ class _FontScreenState extends State<FontScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(isNew ? '已导入字体「$name」' : '已更新字体「$name」'),
+            content: Text(isNew
+                ? AppStrings.fontImportedNamed(name)
+                : AppStrings.fontUpdatedNamed(name)),
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('字体导入失败: ${errorMessage(e)}')),
+          SnackBar(
+              content:
+                  Text(AppStrings.fontImportFailedWithReason(errorMessage(e)))),
         );
       }
     } finally {
@@ -268,9 +273,9 @@ class _FontScreenState extends State<FontScreen> {
     final family = _currentFamily;
     if (widget.target == 'title') {
       // 标题字体：null/空 = 跟随正文（对齐原版 titleFont 语义）
-      if (family == null || family.isEmpty) return '跟随正文';
+      if (family == null || family.isEmpty) return AppStrings.followBodyFont;
     } else if (family == null) {
-      return '默认字体';
+      return AppStrings.defaultFont;
     }
     for (final f in [..._systemFonts, ..._customFonts]) {
       if (f.family == family) return f.label;
@@ -284,7 +289,9 @@ class _FontScreenState extends State<FontScreen> {
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       topBar: LegadoAppBar(
-        title: Text(widget.target == 'title' ? '标题字体' : '字体管理'),
+        title: Text(widget.target == 'title'
+            ? AppStrings.titleFontLabel
+            : AppStrings.fontManagement),
         actions: [
           IconButton(
             icon: _importing
@@ -294,7 +301,7 @@ class _FontScreenState extends State<FontScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Symbols.file_download_rounded),
-            tooltip: '导入 .ttf / .otf 字体',
+            tooltip: AppStrings.importFontTooltip,
             onPressed: _importing ? null : _importFont,
           ),
         ],
@@ -306,8 +313,8 @@ class _FontScreenState extends State<FontScreen> {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
             child: Text(
               widget.target == 'title'
-                  ? '当前标题字体：$_currentLabel'
-                  : '当前字体：$_currentLabel',
+                  ? AppStrings.currentTitleFont(_currentLabel)
+                  : AppStrings.currentFont(_currentLabel),
               style: theme.textTheme.titleMedium,
             ),
           ),
@@ -329,13 +336,13 @@ class _FontScreenState extends State<FontScreen> {
 
           // ===== 自定义字体 =====
           if (_customFonts.isNotEmpty) ...[
-            _buildSectionHeader(theme, '自定义字体'),
+            _buildSectionHeader(theme, AppStrings.fontCustom),
             ..._customFonts.map((f) => _buildFontTile(theme, f)),
             const Divider(),
           ],
 
           // ===== 系统字体 =====
-          _buildSectionHeader(theme, '系统字体'),
+          _buildSectionHeader(theme, AppStrings.systemFonts),
           ..._systemFonts.map((f) => _buildFontTile(theme, f)),
           const SizedBox(height: 16),
         ],
@@ -369,7 +376,7 @@ class _FontScreenState extends State<FontScreen> {
         style: TextStyle(fontFamily: font.family, fontSize: 16),
       ),
       subtitle: Text(
-        '阅读字体预览 Aa 汉',
+        AppStrings.fontPreviewSample,
         style: TextStyle(fontFamily: font.family, fontSize: 13),
       ),
       selected: selected,

@@ -19,7 +19,7 @@ extension _SourceBuilders on _SourceScreenState {
           controller: _searchCtrl,
           style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
           decoration: InputDecoration(
-            hintText: '搜索书源',
+            hintText: AppStrings.searchSourcesHint,
             hintStyle: TextStyle(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
@@ -71,7 +71,7 @@ extension _SourceBuilders on _SourceScreenState {
         // 安卓原版 book_source.xml：排序按钮常驻顶栏（action_sort）
         PopupMenuButton<String>(
           icon: const Icon(Symbols.sort_rounded),
-          tooltip: '排序',
+          tooltip: AppStrings.sortLabel,
           // 菜单在顶栏下方展开，不覆盖顶栏
           position: PopupMenuPosition.under,
           onSelected: (value) => _handleSortAction(context, value),
@@ -80,46 +80,47 @@ extension _SourceBuilders on _SourceScreenState {
         // 安卓原版：分组按钮常驻顶栏（menu_group 子菜单）
         PopupMenuButton<String>(
           icon: const Icon(Symbols.groups_rounded),
-          tooltip: '分组',
+          tooltip: AppStrings.group,
           // 菜单在顶栏下方展开，不覆盖顶栏
           position: PopupMenuPosition.under,
           onSelected: (value) => _handleGroupAction(context, value),
           itemBuilder: (context) => [
-            const PopupMenuItem(
+            PopupMenuItem(
               enabled: false,
-              child:
-                  Text('分组', style: TextStyle(fontWeight: FontWeight.w600)),
+              child: Text(AppStrings.group,
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
             ),
-            const PopupMenuItem(value: 'group_manage', child: Text('分组管理')),
+            PopupMenuItem(
+                value: 'group_manage', child: Text(AppStrings.groupManagement)),
             CheckedPopupMenuItem(
               value: SourceSpecialGroup.enabled,
               checked: state.selectedGroup == SourceSpecialGroup.enabled,
-              child: const Text('已启用'),
+              child: Text(AppStrings.rssEnabled),
             ),
             CheckedPopupMenuItem(
               value: SourceSpecialGroup.disabled,
               checked: state.selectedGroup == SourceSpecialGroup.disabled,
-              child: const Text('已禁用'),
+              child: Text(AppStrings.rssDisabled),
             ),
             CheckedPopupMenuItem(
               value: SourceSpecialGroup.login,
               checked: state.selectedGroup == SourceSpecialGroup.login,
-              child: const Text('需登录'),
+              child: Text(AppStrings.rssNeedLogin),
             ),
             CheckedPopupMenuItem(
               value: '未分组',
               checked: state.selectedGroup == '未分组',
-              child: const Text('未分组'),
+              child: Text(AppStrings.ungrouped),
             ),
             CheckedPopupMenuItem(
               value: SourceSpecialGroup.exploreOn,
               checked: state.selectedGroup == SourceSpecialGroup.exploreOn,
-              child: const Text('发现已启用'),
+              child: Text(AppStrings.exploreEnabled),
             ),
             CheckedPopupMenuItem(
               value: SourceSpecialGroup.exploreOff,
               checked: state.selectedGroup == SourceSpecialGroup.exploreOff,
-              child: const Text('发现已禁用'),
+              child: Text(AppStrings.exploreDisabled),
             ),
             for (final group in state.groups.where((g) => g != '未分组'))
               CheckedPopupMenuItem(
@@ -132,42 +133,52 @@ extension _SourceBuilders on _SourceScreenState {
         PopupMenuButton<String>(
           // 原版无 tooltip 时系统默认提示 Show menu（长按被误读为
           // "shou menu"），此处显式指定中文提示
-          tooltip: '更多选项',
+          tooltip: AppStrings.rssMoreOptions,
           // 菜单在顶栏下方展开，不覆盖顶栏（默认 over 会盖住搜索栏）
           position: PopupMenuPosition.under,
           onSelected: (value) => _handleAction(context, value),
           itemBuilder: (_) => [
             // 对标原版 book_source.xml 溢出菜单（JS 书源编辑器未移植前隐藏入口，避免假菜单）
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'new',
-              child: _MenuRow(icon: Symbols.add_rounded, label: '新建书源'),
+              child: _MenuRow(icon: Symbols.add_rounded, label: AppStrings.sourceAdd),
             ),
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'new_js',
-              child: _MenuRow(icon: Symbols.code_rounded, label: '新建 JS 书源'),
+              child: _MenuRow(
+                  icon: Symbols.code_rounded,
+                  label: AppStrings.jsSourceNewTitle),
             ),
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'import_file',
-              child: _MenuRow(icon: Symbols.download_rounded, label: '本地导入'),
+              child: _MenuRow(
+                  icon: Symbols.download_rounded,
+                  label: AppStrings.rssImportLocal),
             ),
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'import_url',
-              child:
-                  _MenuRow(icon: Symbols.cloud_download_rounded, label: '网络导入'),
+              child: _MenuRow(
+                  icon: Symbols.cloud_download_rounded,
+                  label: AppStrings.rssImportOnline),
             ),
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'import_qr',
-              child: _MenuRow(icon: Symbols.qr_code_rounded, label: '二维码导入'),
+              child: _MenuRow(
+                  icon: Symbols.qr_code_rounded,
+                  label: AppStrings.rssImportQr),
             ),
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'import_passphrase',
-              child: _MenuRow(icon: Symbols.key_rounded, label: '口令导入'),
+              child: _MenuRow(
+                  icon: Symbols.key_rounded, label: AppStrings.rssImportToken),
             ),
             PopupMenuItem(
               value: 'group_by_domain',
               child: _MenuRow(
                 icon: Symbols.domain_rounded,
-                label: _groupByDomain ? '按域名分组显示 ✓' : '按域名分组显示',
+                label: _groupByDomain
+                    ? AppStrings.groupByDomainOn
+                    : AppStrings.groupByDomain,
               ),
             ),
             // [批31] 显示书架书籍数量（对齐原版 menu_show_source_bookshelf_count，
@@ -177,12 +188,12 @@ extension _SourceBuilders on _SourceScreenState {
               checked: _showBookshelfCount,
               child: _MenuRow(
                 icon: Symbols.library_books_rounded,
-                label: '显示书籍数量',
+                label: AppStrings.showBookshelfCount,
               ),
             ),
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'help',
-              child: _MenuRow(icon: Symbols.help_rounded, label: '帮助'),
+              child: _MenuRow(icon: Symbols.help_rounded, label: AppStrings.helpLabel),
             ),
           ],
         ),
@@ -198,11 +209,11 @@ extension _SourceBuilders on _SourceScreenState {
     return LegadoAppBar(
       leading: IconButton(
         icon: const Icon(Symbols.close_rounded),
-        tooltip: '退出批量模式',
+        tooltip: AppStrings.rssExitBatchMode,
         onPressed: () =>
             ref.read(sourceNotifierProvider.notifier).exitBatchMode(),
       ),
-      title: Text('已选择 ${state.selectedCount} 项'),
+      title: Text(AppStrings.selectedCountLabel(state.selectedCount)),
     );
   }
 
@@ -275,7 +286,8 @@ extension _SourceBuilders on _SourceScreenState {
                   icon: state.isAllSelected
                       ? Symbols.check_box_rounded
                       : Symbols.check_box_outline_blank_rounded,
-                  label: '全选（${state.selectedCount}/$filteredCount）',
+                  label: AppStrings.selectAllCount(
+                      state.selectedCount, filteredCount),
                   onPressed: () {
                     final notifier =
                         ref.read(sourceNotifierProvider.notifier);
@@ -293,7 +305,7 @@ extension _SourceBuilders on _SourceScreenState {
                 width: 82,
                 child: barButton(
                   icon: Symbols.flip_rounded,
-                  label: '反选',
+                  label: AppStrings.invertSelection,
                   onPressed: state.filteredSources.isEmpty
                       ? null
                       : () {
@@ -309,7 +321,7 @@ extension _SourceBuilders on _SourceScreenState {
                 width: 82,
                 child: barButton(
                   icon: Symbols.delete_rounded,
-                  label: '删除',
+                  label: AppStrings.delete,
                   color: colorScheme.error,
                   onPressed: state.selectedCount == 0
                       ? null
@@ -320,7 +332,7 @@ extension _SourceBuilders on _SourceScreenState {
               SizedBox(
                 width: 36,
                 child: PopupMenuButton<String>(
-                  tooltip: '更多选项',
+                  tooltip: AppStrings.rssMoreOptions,
                   enabled: state.selectedCount > 0,
                   onSelected: (value) =>
                       _handleBatchAction(context, value),
@@ -339,7 +351,7 @@ extension _SourceBuilders on _SourceScreenState {
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          '更多选项',
+                          AppStrings.rssMoreOptions,
                           style: TextStyle(
                             fontSize: 12,
                             color: state.selectedCount == 0
@@ -353,30 +365,38 @@ extension _SourceBuilders on _SourceScreenState {
                   ),
                   itemBuilder: (_) => [
                     // 对标原版 book_source_sel.xml 12 项选择操作
-                    const PopupMenuItem(
-                        value: 'enable', child: Text('启用所选')),
-                    const PopupMenuItem(
-                        value: 'disable', child: Text('禁用所选')),
-                    const PopupMenuItem(
-                        value: 'add_group', child: Text('添加分组')),
-                    const PopupMenuItem(
-                        value: 'remove_group', child: Text('移除分组')),
-                    const PopupMenuItem(
-                        value: 'enable_explore', child: Text('启用发现')),
-                    const PopupMenuItem(
-                        value: 'disable_explore', child: Text('禁用发现')),
-                    const PopupMenuItem(
-                        value: 'top', child: Text('置顶所选')),
-                    const PopupMenuItem(
-                        value: 'bottom', child: Text('置底所选')),
-                    const PopupMenuItem(
-                        value: 'export', child: Text('导出所选')),
-                    const PopupMenuItem(
-                        value: 'share', child: Text('分享选中源')),
-                    const PopupMenuItem(
-                        value: 'check', child: Text('校验所选')),
-                    const PopupMenuItem(
-                        value: 'select_range', child: Text('选中所选区间')),
+                    PopupMenuItem(
+                        value: 'enable', child: Text(AppStrings.enableSelectedSources)),
+                    PopupMenuItem(
+                        value: 'disable',
+                        child: Text(AppStrings.disableSelectedSources)),
+                    PopupMenuItem(
+                        value: 'add_group', child: Text(AppStrings.addGroup)),
+                    PopupMenuItem(
+                        value: 'remove_group',
+                        child: Text(AppStrings.removeGroup)),
+                    PopupMenuItem(
+                        value: 'enable_explore',
+                        child: Text(AppStrings.enableExplore)),
+                    PopupMenuItem(
+                        value: 'disable_explore',
+                        child: Text(AppStrings.disableExplore)),
+                    PopupMenuItem(
+                        value: 'top', child: Text(AppStrings.pinSelectedTop)),
+                    PopupMenuItem(
+                        value: 'bottom',
+                        child: Text(AppStrings.pinSelectedBottom)),
+                    PopupMenuItem(
+                        value: 'export',
+                        child: Text(AppStrings.exportSelectedItems)),
+                    PopupMenuItem(
+                        value: 'share',
+                        child: Text(AppStrings.shareSelectedSources)),
+                    PopupMenuItem(
+                        value: 'check', child: Text(AppStrings.checkSelected)),
+                    PopupMenuItem(
+                        value: 'select_range',
+                        child: Text(AppStrings.selectSelectedRange)),
                   ],
                 ),
               ),
@@ -391,7 +411,7 @@ extension _SourceBuilders on _SourceScreenState {
     final state = ref.watch(sourceNotifierProvider);
 
     if (state.loading && state.sources.isEmpty) {
-      return const LoadingIndicator(message: '加载书源...');
+      return LoadingIndicator(message: AppStrings.loadingSources);
     }
 
     if (state.error != null && state.sources.isEmpty) {
@@ -500,10 +520,16 @@ extension _SourceBuilders on _SourceScreenState {
               Expanded(
                 child: Text(
                   checking
-                      ? '校验中 ${checkState.done}/${checkState.total}：'
-                          '${checkState.currentName}'
-                      : '校验结束：${checkState.done}/${checkState.total}'
-                          '，失效 ${checkState.invalidCount} 个',
+                      ? AppStrings.checkingProgress(
+                          checkState.done,
+                          checkState.total,
+                          checkState.currentName,
+                        )
+                      : AppStrings.checkFinished(
+                          checkState.done,
+                          checkState.total,
+                          checkState.invalidCount,
+                        ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -517,12 +543,12 @@ extension _SourceBuilders on _SourceScreenState {
                   onPressed: () => ref
                       .read(checkSourceNotifierProvider.notifier)
                       .cancel(),
-                  child: const Text('取消'),
+                  child: Text(AppStrings.cancel),
                 )
               else
                 IconButton(
                   icon: const Icon(Symbols.close_rounded, size: 18),
-                  tooltip: '关闭校验结果',
+                  tooltip: AppStrings.closeCheckResult,
                   visualDensity: VisualDensity.compact,
                   onPressed: () {
                     setState(() => _checkToastShown = false);
@@ -540,10 +566,10 @@ extension _SourceBuilders on _SourceScreenState {
 
   Widget _buildSourceList(BuildContext context, List<BookSource> sources) {
     if (sources.isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: Symbols.library_books_rounded,
-        title: '暂无书源',
-        subtitle: '点击右上角菜单「新建书源」新建，或导入书源',
+        title: AppStrings.noSources,
+        subtitle: AppStrings.noSourcesHint,
       );
     }
 
@@ -693,7 +719,7 @@ extension _SourceBuilders on _SourceScreenState {
                   // 「书架：%1$d 本」（此前漏「书架：」前缀）
                   if (_showBookshelfCount)
                     Text(
-                      '书架：${source.bookshelfCount} 本',
+                      AppStrings.bookshelfCountLabel(source.bookshelfCount),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -721,7 +747,7 @@ extension _SourceBuilders on _SourceScreenState {
             // 自带「开启」文案（实机 dump 实证），原版仅有 Switch；取参考版形态、
             // 文案本地化为中文（开启/关闭），替代我方旧有的英文 ON/OFF
             Text(
-              source.enabled ? '开启' : '关闭',
+              source.enabled ? AppStrings.onLabel : AppStrings.offLabel,
               style: TextStyle(
                 fontSize: 12,
                 // [UI_MD3_ALIGNMENT_PLAN.md Batch B B3] 状态语义走 tonal
@@ -754,7 +780,7 @@ extension _SourceBuilders on _SourceScreenState {
             // 编辑图标（对标 iv_edit）
             IconButton(
               icon: const Icon(Symbols.edit_rounded, size: 20),
-              tooltip: '编辑',
+              tooltip: AppStrings.edit,
               visualDensity: VisualDensity.compact,
               onPressed: () {
                 Navigator.of(context).push(
@@ -772,7 +798,7 @@ extension _SourceBuilders on _SourceScreenState {
                 IconButton(
                   icon: const Icon(Symbols.more_vert_rounded, size: 20),
                   // 对齐原版内容描述「更多菜单」
-                  tooltip: '更多菜单',
+                  tooltip: AppStrings.moreMenu,
                   visualDensity: VisualDensity.compact,
                   onPressed: () => _showSourceMenu(context, source),
                 ),
@@ -783,8 +809,8 @@ extension _SourceBuilders on _SourceScreenState {
                     child: Semantics(
                       // 对齐原版「标志:发现已启用」内容描述
                       label: source.enabledExplore
-                          ? '标志:发现已启用'
-                          : '标志:发现未启用',
+                          ? AppStrings.exploreBadgeOn
+                          : AppStrings.exploreBadgeOff,
                       child: Container(
                         width: 8,
                         height: 8,
@@ -863,7 +889,7 @@ extension _SourceBuilders on _SourceScreenState {
                   // 「书架：%1$d 本」（此前漏「书架：」前缀）
                   if (_showBookshelfCount)
                     Text(
-                      '书架：${source.bookshelfCount} 本',
+                      AppStrings.bookshelfCountLabel(source.bookshelfCount),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -891,7 +917,7 @@ extension _SourceBuilders on _SourceScreenState {
             // 自带「开启」文案（实机 dump 实证），原版仅有 Switch；取参考版形态、
             // 文案本地化为中文（开启/关闭），替代我方旧有的英文 ON/OFF
             Text(
-              source.enabled ? '开启' : '关闭',
+              source.enabled ? AppStrings.onLabel : AppStrings.offLabel,
               style: TextStyle(
                 fontSize: 12,
                 // [UI_MD3_ALIGNMENT_PLAN.md Batch B B3] 状态语义走 tonal
@@ -922,7 +948,7 @@ extension _SourceBuilders on _SourceScreenState {
             // 编辑图标（对标 iv_edit）
             IconButton(
               icon: const Icon(Symbols.edit_rounded, size: 20),
-              tooltip: '编辑',
+              tooltip: AppStrings.edit,
               visualDensity: VisualDensity.compact,
               onPressed: () {
                 Navigator.of(context).push(
@@ -938,7 +964,7 @@ extension _SourceBuilders on _SourceScreenState {
               children: [
                 IconButton(
                   icon: const Icon(Symbols.more_vert_rounded, size: 20),
-                  tooltip: '更多选项',
+                  tooltip: AppStrings.rssMoreOptions,
                   visualDensity: VisualDensity.compact,
                   onPressed: () => _showSourceMenu(context, source),
                 ),
@@ -986,35 +1012,35 @@ extension _SourceBuilders on _SourceScreenState {
       children: [
         ListTile(
           leading: const Icon(Symbols.vertical_align_top_rounded),
-          title: const Text('置顶'),
+          title: Text(AppStrings.pinToTop),
           enabled: manualSort,
           onTap: () => Navigator.pop(context, 'top'),
         ),
         ListTile(
           leading: const Icon(Symbols.vertical_align_bottom_rounded),
-          title: const Text('置底'),
+          title: Text(AppStrings.rssMoveToBottom),
           enabled: manualSort,
           onTap: () => Navigator.pop(context, 'bottom'),
         ),
         if (hasLoginUrl)
           ListTile(
             leading: const Icon(Symbols.person_rounded),
-            title: const Text('登录'),
+            title: Text(AppStrings.rssLogin),
             onTap: () => Navigator.pop(context, 'login'),
           ),
         ListTile(
           leading: const Icon(Symbols.search_rounded),
-          title: const Text('搜索'),
+          title: Text(AppStrings.search),
           onTap: () => Navigator.pop(context, 'search'),
         ),
         ListTile(
           leading: const Icon(Symbols.bug_report_rounded),
-          title: const Text('调试'),
+          title: Text(AppStrings.debugLabel),
           onTap: () => Navigator.pop(context, 'debug'),
         ),
         ListTile(
           leading: Icon(Symbols.delete_rounded, color: colorScheme.error),
-          title: Text('删除',
+          title: Text(AppStrings.delete,
               style: TextStyle(color: colorScheme.error)),
           onTap: () => Navigator.pop(context, 'delete'),
         ),
@@ -1023,8 +1049,9 @@ extension _SourceBuilders on _SourceScreenState {
             leading: Icon(source.enabledExplore
                 ? Symbols.explore_off_rounded
                 : Symbols.explore_rounded),
-            title:
-                Text(source.enabledExplore ? '禁用发现' : '启用发现'),
+            title: Text(source.enabledExplore
+                ? AppStrings.disableExplore
+                : AppStrings.enableExplore),
             onTap: () => Navigator.pop(context, 'toggle_explore'),
           ),
       ],
@@ -1060,9 +1087,9 @@ extension _SourceBuilders on _SourceScreenState {
       case 'delete':
         final confirmed = await showConfirmDialog(
           context,
-          title: '删除书源',
-          content: '确定要删除书源「${source.bookSourceName}」吗？',
-          confirmText: '删除',
+          title: AppStrings.deleteBookSource,
+          content: AppStrings.deleteSourceConfirmNamed(source.bookSourceName),
+          confirmText: AppStrings.delete,
           isDestructive: true,
         );
         if (confirmed && context.mounted) {
