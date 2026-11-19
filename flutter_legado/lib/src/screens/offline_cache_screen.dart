@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../models/models.dart';
+import '../l10n/app_strings.dart';
 import '../providers/privacy/privacy_content_notifier.dart';
 import '../providers/privacy/privacy_notifier.dart';
 import '../providers/providers.dart';
@@ -167,25 +168,25 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
     bool locked = false,
   }) async {
     final book = entry.book;
-    final label = locked ? '本书' : '《${book.name}》';
+    final label = locked ? AppStrings.mangaThisBook : '《${book.name}》';
     final total = book.totalChapterNum;
     if (total <= 0) {
-      _snack('$label章节数未知，无法缓存');
+      _snack(AppStrings.offlineCacheChapterUnknown(label));
       return;
     }
     final start = afterCurrent ? book.durChapterIndex : 0;
     final end = total - 1;
     if (start > end) {
-      _snack('$label无可缓存的章节');
+      _snack(AppStrings.offlineCacheNoChaptersToCache(label));
       return;
     }
     try {
       final api = ref.read(bookApiProvider);
       await api.cacheDownloadStart(book.bookUrl, start, end);
-      _snack('$label已加入缓存队列');
+      _snack(AppStrings.offlineCacheQueued(label));
       _refresh(silent: true);
     } catch (e) {
-      _snack('缓存启动失败：${errorMessage(e)}');
+      _snack(AppStrings.offlineCacheStartFailedWith(errorMessage(e)));
     }
   }
 
@@ -195,10 +196,12 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
     if (task == null) return;
     try {
       await ref.read(bookApiProvider).cacheDownloadCancel(task.taskId);
-      _snack('已停止${locked ? '本书' : '《${entry.book.name}》'}下载');
+      _snack(AppStrings.offlineCacheStoppedDownload(
+        locked ? AppStrings.mangaThisBook : '《${entry.book.name}》',
+      ));
       _refresh(silent: true);
     } catch (e) {
-      _snack('停止失败：${errorMessage(e)}');
+      _snack(AppStrings.offlineCacheStopFailed(errorMessage(e)));
     }
   }
 
@@ -206,25 +209,30 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
   Future<void> _cacheAll({required bool afterCurrent}) async {
     final targets = _entries.where((e) => e.book.totalChapterNum > 0).toList();
     if (targets.isEmpty) {
-      _snack('书架无可缓存的书籍');
+      _snack(AppStrings.offlineCacheNoCacheableBooks);
       return;
     }
     // 原版 sureCacheBook 确认对话框
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(afterCurrent ? '缓存所有书籍当前章节之后' : '缓存所有书籍'),
+        title: Text(afterCurrent
+            ? AppStrings.offlineCacheAllAfterTitle
+            : AppStrings.offlineCacheAllTitle),
         content: Text(
-          '将缓存书架全部 ${targets.length} 本书${afterCurrent ? '（当前章节之后）' : ''}，是否继续？',
+          AppStrings.offlineCacheAllConfirm(
+            targets.length,
+            afterCurrent: afterCurrent,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('确定'),
+            child: Text(AppStrings.confirm),
           ),
         ],
       ),
@@ -243,7 +251,9 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
         // 单本失败不阻断整体（原版 CacheBook.start 亦逐本尝试）
       }
     }
-    _snack(started > 0 ? '已加入缓存队列：$started 本书' : '缓存启动失败');
+    _snack(started > 0
+        ? AppStrings.offlineCacheQueuedCount(started)
+        : AppStrings.offlineCacheStartFailed);
     _refresh(silent: true);
   }
 
@@ -251,7 +261,7 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
   Future<void> _stopAll() async {
     final running = _entries.where((e) => e.task != null).toList();
     if (running.isEmpty) {
-      _snack('当前没有进行中的下载');
+      _snack(AppStrings.offlineCacheNoActiveDownloads);
       return;
     }
     var stopped = 0;
@@ -264,7 +274,7 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
         // 单任务停止失败继续下一个
       }
     }
-    _snack('已停止 $stopped 个下载任务');
+    _snack(AppStrings.offlineCacheStoppedTasks(stopped));
     _refresh(silent: true);
   }
 
@@ -300,7 +310,7 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
     if (!mounted || result == null) return;
     if (result['success'] == true) {
       final name = result['file_name'] ?? book.name;
-      _snack('已导出 $name');
+      _snack(AppStrings.offlineCacheExported('$name'));
     }
   }
 
@@ -329,22 +339,34 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       topBar: LegadoAppBar(
-        title: const Text('离线缓存'),
+        title: Text(AppStrings.offlineCache),
         actions: [
           IconButton(
-            tooltip: '刷新',
+            tooltip: AppStrings.refreshAction,
             icon: const Icon(Symbols.refresh_rounded),
             onPressed: () => _refresh(),
           ),
           PopupMenuButton<String>(
-            tooltip: '缓存操作',
+            tooltip: AppStrings.offlineCacheOps,
             onSelected: _handleMenu,
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'download_all', child: Text('全部缓存')),
-              PopupMenuItem(value: 'download_after', child: Text('缓存当前章节之后')),
-              PopupMenuItem(value: 'stop_all', child: Text('停止全部下载')),
-              PillMenuDivider(),
-              PopupMenuItem(value: 'queue', child: Text('下载队列')),
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'download_all',
+                child: Text(AppStrings.offlineCacheDownloadAll),
+              ),
+              PopupMenuItem(
+                value: 'download_after',
+                child: Text(AppStrings.offlineCacheDownloadAfter),
+              ),
+              PopupMenuItem(
+                value: 'stop_all',
+                child: Text(AppStrings.offlineCacheStopAll),
+              ),
+              const PillMenuDivider(),
+              PopupMenuItem(
+                value: 'queue',
+                child: Text(AppStrings.offlineCacheDownloadQueue),
+              ),
             ],
           ),
         ],
@@ -387,10 +409,11 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
           Icon(Symbols.cloud_off_rounded, size: 64, color: cs.outlineVariant),
           const SizedBox(height: 12),
           // [LAYOUT_PLAN P3] 列表行字级走 M3 Type Scale
-          Text('书架暂无书籍', style: Theme.of(context).textTheme.titleSmall),
+          Text(AppStrings.offlineCacheShelfEmpty,
+              style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 4),
           Text(
-            '在书架添加书籍后，可在此缓存离线阅读',
+            AppStrings.offlineCacheShelfEmptyHint,
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
@@ -410,13 +433,16 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
     // 下载中显示任务进度，否则「已缓存 N/总章节数」（对齐原版 download_count）
     final String progressText;
     if (isLocal) {
-      progressText = '本地书籍';
+      progressText = AppStrings.offlineCacheLocalBook;
     } else if (entry.task != null) {
-      progressText = '下载中 ${entry.task!.completed}/${entry.task!.total}';
+      progressText = AppStrings.offlineCacheDownloading(
+        entry.task!.completed,
+        entry.task!.total,
+      );
     } else if (total > 0) {
-      progressText = '已缓存 ${entry.cachedCount}/$total';
+      progressText = AppStrings.offlineCacheCachedOfTotal(entry.cachedCount, total);
     } else {
-      progressText = '已缓存 ${entry.cachedCount}';
+      progressText = AppStrings.offlineCacheCached(entry.cachedCount);
     }
     return ListTile(
       onTap: () => _openBook(book),
@@ -437,7 +463,7 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
         children: [
           const SizedBox(height: 2),
           Text(
-            locked ? '' : (book.author.isEmpty ? '作者未知' : book.author),
+            locked ? '' : (book.author.isEmpty ? AppStrings.unknownAuthor : book.author),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             // [LAYOUT_PLAN P3] 列表行字级走 M3 Type Scale
@@ -463,7 +489,9 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
           // 原版 iv_download：播放/停止切换（本地书无缓存概念，隐藏）
           if (!isLocal)
             IconButton(
-              tooltip: entry.task != null ? '停止下载' : '开始缓存',
+              tooltip: entry.task != null
+                  ? AppStrings.offlineCacheStopDownload
+                  : AppStrings.startCaching,
               icon: Icon(
                 entry.task != null
                     ? Symbols.stop_circle_rounded
@@ -478,7 +506,7 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
           // 原版 tv_export：单本导出
           TextButton(
             onPressed: () => _exportBook(book),
-            child: const Text('导出'),
+            child: Text(AppStrings.exportAction),
           ),
         ],
       ),

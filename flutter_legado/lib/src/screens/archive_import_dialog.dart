@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:path_provider/path_provider.dart';
 
 import '../providers/bookshelf/bookshelf_notifier.dart';
+import '../l10n/app_strings.dart';
 import '../providers/providers.dart';
 import '../services/book_api.dart';
 import '../utils/error_message.dart';
@@ -172,7 +173,7 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
         .toList();
     if (txtFiles.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('没有选中的 TXT 文件需要检测编码')),
+        SnackBar(content: Text(AppStrings.archiveNoTxtSelected)),
       );
       return;
     }
@@ -212,7 +213,11 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
       if (result['success'] != true) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('解压失败: ${result['error'] ?? '未知错误'}')),
+            SnackBar(
+              content: Text(AppStrings.archiveExtractFailed(
+                '${result['error'] ?? AppStrings.unknownError}',
+              )),
+            ),
           );
         }
         return;
@@ -227,7 +232,7 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
         if (!txtFiles.contains(fileName)) continue;
         try {
           final encResult = await _api.archiveDetectEncoding(filePath: filePath);
-          final encoding = encResult['encoding'] as String? ?? '未知';
+          final encoding = encResult['encoding'] as String? ?? AppStrings.unknownValue;
           final confidence = encResult['confidence'] as String? ?? '';
           if (mounted) {
             setState(() {
@@ -237,7 +242,7 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
         } catch (_) {
           if (mounted) {
             setState(() {
-              _detectedEncodings[fileName] = '检测失败';
+              _detectedEncodings[fileName] = AppStrings.archiveDetectFailed;
             });
           }
         }
@@ -245,7 +250,11 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('编码检测失败: ${errorMessage(e)}')),
+          SnackBar(
+            content: Text(
+              AppStrings.archiveEncodingDetectFailed(errorMessage(e)),
+            ),
+          ),
         );
       }
     } finally {
@@ -265,22 +274,22 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
     // P2-1：零处理场景不得回落成「成功导入 0 本书籍」。解压成功但没有任何
     // 可导入文件（包内无支持格式）与「选中与解压结果不匹配」分开提示。
     if (_importExtractedEmpty) {
-      return '压缩包内未解压出可导入文件（已选 $_importTotal 本）';
+      return AppStrings.archiveNoImportableFiles(_importTotal);
     }
     if (_importFailures.isEmpty) {
       if (_importDone == 0) {
-        return '未导入任何文件（已选 $_importTotal 本）';
+        return AppStrings.archiveNothingImported(_importTotal);
       }
-      return '成功导入 $_importDone 本书籍';
+      return AppStrings.archiveImportedCount(_importDone);
     }
     final failed = _importFailures.length;
     // P3-7：只展示首条明细，其余条数汇总；完整明细保留在 _importFailures
-    final more = failed > 1 ? '（另有 ${failed - 1} 本）' : '';
+    final more = failed > 1 ? AppStrings.archiveMoreFailed(failed - 1) : '';
     final detail = '${_importFailures.first}$more';
     final summary = _importDone == 0
-        ? '导入失败：$detail'
-        : '成功导入 $_importDone 本，$failed 本失败：$detail';
-    return '$summary（解压文件保留在应用文档/archive_import 目录，可重试）';
+        ? AppStrings.archiveImportFailedDetail(detail)
+        : AppStrings.archivePartialImport(_importDone, failed, detail);
+    return AppStrings.archiveKeptFilesNote(summary);
   }
 
   /// 确认导入：解压压缩包并将书籍添加到书架
@@ -337,7 +346,11 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
       if (result['success'] != true) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('解压失败: ${result['error'] ?? '未知错误'}')),
+            SnackBar(
+              content: Text(AppStrings.archiveExtractFailed(
+                '${result['error'] ?? AppStrings.unknownError}',
+              )),
+            ),
           );
         }
         return;
@@ -391,7 +404,7 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
               setState(() {
                 _importFailed++;
                 _importFailures.add(
-                  '$fileName：编码转换失败'
+                  '${AppStrings.archiveEncodingConvertFailed(fileName)}'
                   '（${convertError.isEmpty ? kUnknownErrorMessage : convertError}）',
                 );
               });
@@ -430,7 +443,9 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导入失败: ${errorMessage(e)}')),
+          SnackBar(
+            content: Text(AppStrings.archiveImportFailedDetail(errorMessage(e))),
+          ),
         );
       }
     } finally {
@@ -453,7 +468,7 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
         borderRadius: BorderRadius.circular(28),
       ),
       title: Text(
-        '压缩包导入',
+        AppStrings.archiveImportTitle,
         style: Theme.of(context).textTheme.titleMedium,
       ),
       content: SizedBox(
@@ -475,8 +490,8 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
               TextField(
                 controller: _passwordController,
                 // [LAYOUT_PLAN P3] 输入框走 inputDecorationTheme（不显式 border）
-                decoration: const InputDecoration(
-                  hintText: 'RAR 密码（可选）',
+                decoration: InputDecoration(
+                  hintText: AppStrings.archiveRarPassword,
                   isDense: true,
                 ),
                 obscureText: true,
@@ -496,15 +511,16 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
       actions: [
         TextButton(
           onPressed: _importing ? null : () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         FilledButton(
           onPressed: _importing || _selected.isEmpty || _loading
               ? null
               : _confirmImport,
           child: _importing
-              ? Text('导入中 $_importProcessed/$_importTotal')
-              : Text('导入 (${_selected.length})'),
+              ? Text(AppStrings.archiveImportInProgress(
+                  _importProcessed, _importTotal))
+              : Text(AppStrings.archiveImportCount(_selected.length)),
         ),
       ],
     );
@@ -528,7 +544,8 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
           children: [
             Icon(Symbols.error_rounded, color: Theme.of(context).colorScheme.error),
             const SizedBox(height: 8),
-            Text('加载失败', style: Theme.of(context).textTheme.bodyMedium),
+            Text(AppStrings.loadFailed,
+                style: Theme.of(context).textTheme.bodyMedium),
             const SizedBox(height: 4),
             Text(
               _error!,
@@ -539,17 +556,17 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
             const SizedBox(height: 8),
             FilledButton.tonal(
               onPressed: _loadFileList,
-              child: const Text('重试'),
+              child: Text(AppStrings.retry),
             ),
           ],
         ),
       );
     }
     if (_fileNames.isEmpty) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Text('压缩包内没有可导入的书籍文件'),
+          padding: const EdgeInsets.all(24),
+          child: Text(AppStrings.archiveNoBooksInArchive),
         ),
       );
     }
@@ -589,7 +606,7 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             subtitle: isTxt && detectedEnc != null
-                ? Text('编码: $detectedEnc',
+                ? Text(AppStrings.archiveEncodingLabel(detectedEnc),
                     style: Theme.of(context).textTheme.labelSmall)
                 : null,
             dense: true,
@@ -609,8 +626,8 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
           child: DropdownButtonFormField<String>(
             initialValue: _selectedEncoding,
             // [LAYOUT_PLAN P3] 输入框走 inputDecorationTheme（不显式 border）
-            decoration: const InputDecoration(
-              labelText: 'TXT 编码',
+            decoration: InputDecoration(
+              labelText: AppStrings.archiveTxtEncoding,
               isDense: true,
             ),
             items: _supportedEncodings
@@ -637,7 +654,7 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Symbols.manage_search_rounded, size: 20),
-          tooltip: '检测编码',
+          tooltip: AppStrings.archiveDetectEncoding,
         ),
       ],
     );

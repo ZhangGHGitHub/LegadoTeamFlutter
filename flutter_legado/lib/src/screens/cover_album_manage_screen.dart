@@ -19,6 +19,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../providers/cover_settings/cover_settings_notifier.dart';
+import '../l10n/app_strings.dart';
 import '../services/cover_album_image_picker.dart';
 import '../services/cover_album_store.dart';
 import '../widgets/app_scaffold.dart';
@@ -62,28 +63,29 @@ class _CoverAlbumManageScreenState
   }
 
   Future<void> _createAlbum() async {
-    final name = await _promptName(title: '新建相册');
+    final name = await _promptName(title: AppStrings.coverAlbumNew);
     if (name == null || !mounted) return;
     try {
       await _store.createAlbum(name);
-      _showMessage('已创建相册「$name」');
+      _showMessage(AppStrings.coverAlbumCreated(name));
     } on CoverAlbumException catch (e) {
       _showMessage(e.message);
     } catch (e) {
-      _showMessage('新建相册失败：${errorMessage(e)}');
+      _showMessage(AppStrings.coverAlbumCreateFailed(errorMessage(e)));
     }
   }
 
   Future<void> _renameAlbum(CoverAlbum album) async {
-    final name = await _promptName(title: '重命名相册', initial: album.name);
+    final name =
+        await _promptName(title: AppStrings.coverAlbumRename, initial: album.name);
     if (name == null || name == album.name || !mounted) return;
     try {
       await _store.renameAlbum(album.id, name);
-      _showMessage('已重命名为「$name」');
+      _showMessage(AppStrings.coverAlbumRenamed(name));
     } on CoverAlbumException catch (e) {
       _showMessage(e.message);
     } catch (e) {
-      _showMessage('重命名失败：${errorMessage(e)}');
+      _showMessage(AppStrings.coverAlbumRenameFailed(errorMessage(e)));
     }
   }
 
@@ -91,18 +93,18 @@ class _CoverAlbumManageScreenState
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('删除相册'),
-        content: Text('确定删除相册「${album.name}」？相册内图片会一并删除。'),
+        title: Text(AppStrings.coverAlbumDeleteTitle),
+        content: Text(AppStrings.coverAlbumDeleteConfirm(album.name)),
         actions: [
           TextButton(
             key: const ValueKey('coverAlbumDeleteCancel'),
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             key: const ValueKey('coverAlbumDeleteConfirm'),
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('删除'),
+            child: Text(AppStrings.delete),
           ),
         ],
       ),
@@ -127,11 +129,11 @@ class _CoverAlbumManageScreenState
               ),
             );
       }
-      _showMessage('已删除相册「${album.name}」');
+      _showMessage(AppStrings.coverAlbumDeleted(album.name));
     } on CoverAlbumException catch (e) {
       _showMessage(e.message);
     } catch (e) {
-      _showMessage('删除失败：${errorMessage(e)}');
+      _showMessage(AppStrings.coverAlbumDeleteFailed(errorMessage(e)));
     }
   }
 
@@ -145,9 +147,9 @@ class _CoverAlbumManageScreenState
               defaultAlbumIdDark: null,
             ),
           );
-      _showMessage('已将「${album.name}」设为默认封面');
+      _showMessage(AppStrings.coverAlbumSetDefault(album.name));
     } catch (e) {
-      _showMessage('设置默认封面失败：${errorMessage(e)}');
+      _showMessage(AppStrings.coverAlbumSetDefaultFailed(errorMessage(e)));
     }
   }
 
@@ -165,11 +167,11 @@ class _CoverAlbumManageScreenState
   Widget build(BuildContext context) {
     return AppScaffold(
       topBar: LegadoAppBar(
-        title: const Text('封面相册'),
+        title: Text(AppStrings.coverAlbumTitle),
         actions: [
           IconButton(
             key: const ValueKey('coverAlbumCreateAction'),
-            tooltip: '新建相册',
+            tooltip: AppStrings.coverAlbumNew,
             icon: const Icon(Symbols.add_rounded),
             onPressed: _createAlbum,
           ),
@@ -183,11 +185,11 @@ class _CoverAlbumManageScreenState
           }
           final albums = _store.albums;
           if (albums.isEmpty) {
-            return const EmptyState(
-              key: ValueKey('coverAlbumEmpty'),
+            return EmptyState(
+              key: const ValueKey('coverAlbumEmpty'),
               icon: Symbols.collections_bookmark,
-              title: '暂无封面相册',
-              subtitle: '点击右上角新建相册，导入日间/夜间封面图',
+              title: AppStrings.coverAlbumEmpty,
+              subtitle: AppStrings.coverAlbumEmptyDesc,
             );
           }
           final settings = ref.watch(coverSettingsProvider);
@@ -251,21 +253,21 @@ class _AlbumNameDialogState extends State<_AlbumNameDialog> {
         controller: _controller,
         autofocus: true,
         textInputAction: TextInputAction.done,
-        decoration: const InputDecoration(hintText: '相册名称'),
+        decoration: InputDecoration(hintText: AppStrings.coverAlbumNameHint),
         onSubmitted: (_) => _submit(),
       ),
       actions: [
         TextButton(
           key: const ValueKey('coverAlbumNameCancel'),
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         ValueListenableBuilder<TextEditingValue>(
           valueListenable: _controller,
           builder: (context, value, _) => FilledButton(
             key: const ValueKey('coverAlbumNameConfirm'),
             onPressed: value.text.trim().isEmpty ? null : _submit,
-            child: const Text('确定'),
+            child: Text(AppStrings.confirm),
           ),
         ),
       ],
@@ -300,7 +302,8 @@ class _AlbumCard extends StatelessWidget {
           key: ValueKey('coverAlbumTile_${album.id}'),
           leading: CoverAlbumPreview(path: album.previewPath),
           title: album.name,
-          subtitle: '日间 ${album.lightCount} · 夜间 ${album.darkCount}',
+          subtitle:
+              AppStrings.coverAlbumCounts(album.lightCount, album.darkCount),
           showChevron: false,
           onTap: onTap,
           trailing: Row(
@@ -310,7 +313,7 @@ class _AlbumCard extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(right: 4),
                   child: Text(
-                    '当前使用',
+                    AppStrings.coverAlbumInUse,
                     style: Theme.of(
                       context,
                     ).textTheme.labelSmall?.copyWith(color: scheme.primary),
@@ -318,7 +321,7 @@ class _AlbumCard extends StatelessWidget {
                 ),
               PopupMenuButton<String>(
                 key: ValueKey('coverAlbumMenu_${album.id}'),
-                tooltip: '相册操作',
+                tooltip: AppStrings.coverAlbumOps,
                 icon: const Icon(Symbols.more_vert_rounded, size: 20),
                 onSelected: (value) {
                   switch (value) {
@@ -334,17 +337,19 @@ class _AlbumCard extends StatelessWidget {
                   PopupMenuItem(
                     key: ValueKey('coverAlbumRename_${album.id}'),
                     value: 'rename',
-                    child: const Text('重命名'),
+                    child: Text(AppStrings.rename),
                   ),
                   PopupMenuItem(
                     key: ValueKey('coverAlbumSelect_${album.id}'),
                     value: 'select',
-                    child: Text(selected ? '当前默认封面' : '设为默认封面'),
+                    child: Text(selected
+                        ? AppStrings.coverAlbumCurrentDefault
+                        : AppStrings.coverAlbumSetDefaultAction),
                   ),
                   PopupMenuItem(
                     key: ValueKey('coverAlbumDelete_${album.id}'),
                     value: 'delete',
-                    child: const Text('删除'),
+                    child: Text(AppStrings.delete),
                   ),
                 ],
               ),
@@ -422,7 +427,10 @@ class _CoverAlbumEditorSheetState extends ConsumerState<CoverAlbumEditorSheet>
         try {
           bytes = await pick.readBytes();
         } catch (e) {
-          failures.add('${pick.name}：读取失败（${errorMessage(e)}）');
+          failures.add(AppStrings.coverAlbumReadFailed(
+            pick.name,
+            errorMessage(e),
+          ));
           continue;
         }
         final result = await CoverAlbumStore.instance.importImages(
@@ -437,10 +445,12 @@ class _CoverAlbumEditorSheetState extends ConsumerState<CoverAlbumEditorSheet>
         }
       }
       final parts = <String>[];
-      if (imported > 0) parts.add('已导入 $imported 张');
-      if (duplicates > 0) parts.add('$duplicates 张图片已存在，未重复导入');
+      if (imported > 0) parts.add(AppStrings.coverAlbumImported(imported));
+      if (duplicates > 0) {
+        parts.add(AppStrings.coverAlbumDuplicates(duplicates));
+      }
       if (failures.isNotEmpty) {
-        parts.add('${failures.length} 张跳过：${failures.first}');
+        parts.add(AppStrings.coverAlbumSkipped(failures.length, failures.first));
       }
       if (parts.isNotEmpty) _showMessage(parts.join('；'));
     } on CoverAlbumImagePickerException catch (e) {
@@ -448,7 +458,7 @@ class _CoverAlbumEditorSheetState extends ConsumerState<CoverAlbumEditorSheet>
     } on CoverAlbumException catch (e) {
       _showMessage(e.message);
     } catch (e) {
-      _showMessage('导入失败：${errorMessage(e)}');
+      _showMessage(AppStrings.importFailedShortWithReason(errorMessage(e)));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -459,18 +469,18 @@ class _CoverAlbumEditorSheetState extends ConsumerState<CoverAlbumEditorSheet>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('删除图片'),
-        content: const Text('确定从相册中删除这张图片吗？'),
+        title: Text(AppStrings.coverAlbumDeleteImageTitle),
+        content: Text(AppStrings.coverAlbumDeleteImageConfirm),
         actions: [
           TextButton(
             key: const ValueKey('coverAlbumRemoveImageCancel'),
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             key: const ValueKey('coverAlbumRemoveImageConfirm'),
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('删除'),
+            child: Text(AppStrings.delete),
           ),
         ],
       ),
@@ -483,11 +493,11 @@ class _CoverAlbumEditorSheetState extends ConsumerState<CoverAlbumEditorSheet>
         fileName: image.fileName,
       );
       // 删除成功后刷新状态行，避免残留上一次导入的文案
-      _showMessage('已删除 1 张图片');
+      _showMessage(AppStrings.coverAlbumImageDeleted);
     } on CoverAlbumException catch (e) {
       _showMessage(e.message);
     } catch (e) {
-      _showMessage('删除图片失败：${errorMessage(e)}');
+      _showMessage(AppStrings.coverAlbumDeleteImageFailed(errorMessage(e)));
     }
   }
 
@@ -500,7 +510,7 @@ class _CoverAlbumEditorSheetState extends ConsumerState<CoverAlbumEditorSheet>
             defaultAlbumIdDark: null,
           ),
         );
-    if (mounted) _showMessage('已将「${album.name}」设为默认封面');
+    if (mounted) _showMessage(AppStrings.coverAlbumSetDefault(album.name));
   }
 
   @override
@@ -514,9 +524,9 @@ class _CoverAlbumEditorSheetState extends ConsumerState<CoverAlbumEditorSheet>
       builder: (context, _) {
         final album = store.albumById(widget.albumId);
         if (album == null) {
-          return const SizedBox(
+          return SizedBox(
             height: 160,
-            child: Center(child: Text('相册不存在或已删除')),
+            child: Center(child: Text(AppStrings.coverAlbumMissing)),
           );
         }
         final selected =
@@ -542,7 +552,7 @@ class _CoverAlbumEditorSheetState extends ConsumerState<CoverAlbumEditorSheet>
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                         child: Text(
-                          '当前使用',
+                          AppStrings.coverAlbumInUse,
                           style: Theme.of(context).textTheme.labelMedium
                               ?.copyWith(
                                 color: Theme.of(context).colorScheme.primary,
@@ -553,11 +563,11 @@ class _CoverAlbumEditorSheetState extends ConsumerState<CoverAlbumEditorSheet>
                       TextButton(
                         key: const ValueKey('coverAlbumSetDefaultButton'),
                         onPressed: () => _setDefault(album),
-                        child: const Text('设为默认封面'),
+                        child: Text(AppStrings.coverAlbumSetDefaultAction),
                       ),
                     IconButton(
                       key: const ValueKey('coverAlbumAddImages'),
-                      tooltip: '导入图片',
+                      tooltip: AppStrings.coverAlbumImportImage,
                       icon: const Icon(Symbols.add_rounded),
                       onPressed: _busy ? null : _importImages,
                     ),
@@ -570,9 +580,15 @@ class _CoverAlbumEditorSheetState extends ConsumerState<CoverAlbumEditorSheet>
                 // 非 scrollable 必须显式 fill，否则 debug 断言 + 布局溢出
                 //（先例 app_log_screen.dart:127 / toc_screen.dart:1070）。
                 tabAlignment: TabAlignment.fill,
-                tabs: const [
-                  Tab(key: ValueKey('coverAlbumDayTab'), text: '日间'),
-                  Tab(key: ValueKey('coverAlbumNightTab'), text: '夜间'),
+                tabs: [
+                  Tab(
+                    key: const ValueKey('coverAlbumDayTab'),
+                    text: AppStrings.coverAlbumDay,
+                  ),
+                  Tab(
+                    key: const ValueKey('coverAlbumNightTab'),
+                    text: AppStrings.nightMode,
+                  ),
                 ],
               ),
               if (_busy) const LinearProgressIndicator(minHeight: 2),
@@ -641,7 +657,7 @@ class _AlbumImageGrid extends StatelessWidget {
       return Center(
         key: ValueKey('coverAlbumImagesEmpty_${isDark ? 'dark' : 'light'}'),
         child: Text(
-          '暂无图片，点击右上角导入',
+          AppStrings.coverAlbumNoImages,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),

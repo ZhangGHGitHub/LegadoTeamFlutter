@@ -8,6 +8,7 @@ import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
 import '../providers/providers.dart';
+import '../l10n/app_strings.dart';
 import '../widgets/custom_refresh_indicator.dart';
 import '../widgets/loading_indicator.dart';
 
@@ -54,11 +55,11 @@ class _DownloadTask {
   bool get isRunning => status == 'running';
 
   String get statusLabel => switch (status) {
-        'running' => '下载中',
-        'completed' => '已完成',
-        'cancelled' => '已取消',
-        'failed' => '失败',
-        'notFound' => '已失效',
+        'running' => AppStrings.downloadStatusRunning,
+        'completed' => AppStrings.downloadStatusCompleted,
+        'cancelled' => AppStrings.downloadStatusCancelled,
+        'failed' => AppStrings.downloadStatusFailed,
+        'notFound' => AppStrings.downloadStatusNotFound,
         _ => status,
       };
 }
@@ -115,7 +116,7 @@ class _CacheDownloadScreenState extends ConsumerState<CacheDownloadScreen> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('取消失败')));
+          .showSnackBar(SnackBar(content: Text(AppStrings.cacheCancelFailed)));
     }
   }
 
@@ -125,10 +126,10 @@ class _CacheDownloadScreenState extends ConsumerState<CacheDownloadScreen> {
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       topBar: LegadoAppBar(
-        title: const Text('缓存下载队列'),
+        title: Text(AppStrings.cacheDownloadQueue),
         actions: [
           IconButton(
-            tooltip: '刷新',
+            tooltip: AppStrings.refreshAction,
             icon: const Icon(Symbols.refresh_rounded),
             onPressed: _refresh,
           ),
@@ -162,10 +163,10 @@ class _CacheDownloadScreenState extends ConsumerState<CacheDownloadScreen> {
         children: [
           Icon(Symbols.download_done_rounded, size: 64, color: cs.outlineVariant),
           const SizedBox(height: 12),
-          const Text('暂无缓存下载任务'),
+          Text(AppStrings.cacheDownloadEmpty),
           const SizedBox(height: 4),
           Text(
-            '阅读页顶栏「缓存」按钮可发起批量缓存下载',
+            AppStrings.cacheDownloadEmptyHint,
             style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
           ),
         ],
@@ -208,7 +209,7 @@ class _CacheDownloadScreenState extends ConsumerState<CacheDownloadScreen> {
           const SizedBox(height: 4),
           Text(
             '${task.statusLabel} · ${task.completed}/${task.total}'
-            '${task.failed > 0 ? ' · 失败 ${task.failed}' : ''}',
+            '${task.failed > 0 ? AppStrings.failedCountSuffix(task.failed) : ''}',
             // [LAYOUT_PLAN P1] 元信息字级走 labelSmall
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: cs.onSurfaceVariant,
@@ -219,7 +220,7 @@ class _CacheDownloadScreenState extends ConsumerState<CacheDownloadScreen> {
       trailing: task.isRunning
           ? TextButton(
               onPressed: () => _cancel(task.taskId),
-              child: const Text('取消'),
+              child: Text(AppStrings.cancel),
             )
           : null,
     );

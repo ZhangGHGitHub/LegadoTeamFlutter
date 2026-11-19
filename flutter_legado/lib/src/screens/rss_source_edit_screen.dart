@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:share_plus/share_plus.dart';
 
 import '../models/models.dart';
+import '../l10n/app_strings.dart';
 import '../providers/providers.dart';
 import '../routes.dart';
 import '../utils/error_message.dart';
@@ -48,51 +49,64 @@ class RssSourceEditScreen extends ConsumerStatefulWidget {
 class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
   // ===== 字段定义（对标原版 sourceEntities 4 Tab 分组） =====
 
-  static const _baseFields = [
-    _FieldSpec('sourceName', '源名称'),
-    _FieldSpec('sourceUrl', '源 URL', 'https://example.com/feed'),
-    _FieldSpec('sourceIcon', '图标', '图标 URL'),
-    _FieldSpec('sourceGroup', '源分组', '多个分组用逗号分隔'),
-    _FieldSpec('sourceComment', '源注释', '', 2),
-    _FieldSpec('searchUrl', '搜索 URL'),
-    _FieldSpec('sortUrl', '分类 URL', '分类名::规则', 2),
-    _FieldSpec('loginUrl', '登录 URL'),
-    _FieldSpec('loginUi', '登录界面'),
-    _FieldSpec('loginCheckJs', '登录检测 JS'),
-    _FieldSpec('coverDecodeJs', '封面解码 JS'),
-    _FieldSpec('header', '请求头'),
-    _FieldSpec('variableComment', '源变量注释', 'variableComment'),
-    _FieldSpec('concurrentRate', '并发率', '如：16/s'),
-    _FieldSpec('jsLib', 'JS 库', '源使用的 JavaScript 库'),
+  static final _baseFields = [
+    _FieldSpec('sourceName', AppStrings.rssFieldSourceName),
+    _FieldSpec('sourceUrl', AppStrings.rssFieldSourceUrl,
+        'https://example.com/feed'),
+    _FieldSpec('sourceIcon', AppStrings.rssFieldSourceIcon,
+        AppStrings.rssFieldIconUrl),
+    _FieldSpec('sourceGroup', AppStrings.rssFieldSourceGroup,
+        AppStrings.rssFieldGroupHint),
+    _FieldSpec('sourceComment', AppStrings.rssFieldSourceComment, '', 2),
+    _FieldSpec('searchUrl', AppStrings.coverSearchUrl),
+    _FieldSpec('sortUrl', AppStrings.rssFieldSortUrl,
+        AppStrings.rssFieldSortUrlHint, 2),
+    _FieldSpec('loginUrl', AppStrings.rssFieldLoginUrl),
+    _FieldSpec('loginUi', AppStrings.rssFieldLoginUi),
+    _FieldSpec('loginCheckJs', AppStrings.rssFieldLoginCheckJs),
+    _FieldSpec('coverDecodeJs', AppStrings.rssFieldCoverDecodeJs),
+    _FieldSpec('header', AppStrings.rssFieldHeader),
+    _FieldSpec('variableComment', AppStrings.rssFieldVariableComment,
+        'variableComment'),
+    _FieldSpec('concurrentRate', AppStrings.rssFieldConcurrentRate,
+        AppStrings.rssFieldConcurrentRateHint),
+    _FieldSpec('jsLib', AppStrings.rssFieldJsLib,
+        AppStrings.rssFieldJsLibHint),
   ];
 
-  static const _preFields = [
-    _FieldSpec('startHtml', '初始 HTML', 'startHtml'),
-    _FieldSpec('startStyle', '初始样式', 'startStyle', 2),
-    _FieldSpec('startJs', '初始 JS', 'startJs'),
-    _FieldSpec('preloadJs', '预加载 JS', 'preloadJs'),
+  static final _preFields = [
+    _FieldSpec('startHtml', AppStrings.rssFieldStartHtml, 'startHtml'),
+    _FieldSpec('startStyle', AppStrings.rssFieldStartStyle, 'startStyle', 2),
+    _FieldSpec('startJs', AppStrings.rssFieldStartJs, 'startJs'),
+    _FieldSpec('preloadJs', AppStrings.rssFieldPreloadJs, 'preloadJs'),
   ];
 
-  static const _listFields = [
-    _FieldSpec('ruleArticles', '文章列表规则', 'ruleArticles，如 item 或 //item'),
-    _FieldSpec('ruleNextPage', '下一页规则', 'ruleNextPage'),
-    _FieldSpec('ruleTitle', '标题规则', 'ruleTitle'),
-    _FieldSpec('rulePubDate', '日期规则', 'rulePubDate'),
-    _FieldSpec('ruleDescription', '描述规则', 'ruleDescription'),
-    _FieldSpec('ruleImage', '图片规则', 'ruleImage'),
-    _FieldSpec('ruleLink', '链接规则', 'ruleLink'),
+  static final _listFields = [
+    _FieldSpec('ruleArticles', AppStrings.rssFieldArticles,
+        AppStrings.rssFieldArticlesHint),
+    _FieldSpec('ruleNextPage', AppStrings.rssFieldNextPage, 'ruleNextPage'),
+    _FieldSpec('ruleTitle', AppStrings.rssFieldTitle, 'ruleTitle'),
+    _FieldSpec('rulePubDate', AppStrings.rssFieldPubDate, 'rulePubDate'),
+    _FieldSpec('ruleDescription', AppStrings.rssFieldDescription,
+        'ruleDescription'),
+    _FieldSpec('ruleImage', AppStrings.rssFieldImage, 'ruleImage'),
+    _FieldSpec('ruleLink', AppStrings.rssFieldLink, 'ruleLink'),
   ];
 
-  static const _webFields = [
-    _FieldSpec('ruleContent', '内容规则', 'ruleContent'),
-    _FieldSpec('style', '样式', '文章页面 CSS', 2),
-    _FieldSpec('injectJs', '注入 JS', 'injectJs'),
-    _FieldSpec('contentWhitelist', '内容白名单', 'contentWhitelist'),
-    _FieldSpec('contentBlacklist', '内容黑名单', 'contentBlacklist'),
-    _FieldSpec('shouldOverrideUrlLoading', 'URL 拦截', 'shouldOverrideUrlLoading'),
+  static final _webFields = [
+    _FieldSpec('ruleContent', AppStrings.rssFieldContent, 'ruleContent'),
+    _FieldSpec('style', AppStrings.rssFieldStyle,
+        AppStrings.rssFieldStyleHint, 2),
+    _FieldSpec('injectJs', AppStrings.rssFieldInjectJs, 'injectJs'),
+    _FieldSpec('contentWhitelist', AppStrings.rssFieldContentWhitelist,
+        'contentWhitelist'),
+    _FieldSpec('contentBlacklist', AppStrings.rssFieldContentBlacklist,
+        'contentBlacklist'),
+    _FieldSpec('shouldOverrideUrlLoading', AppStrings.rssFieldUrlInterceptor,
+        'shouldOverrideUrlLoading'),
   ];
 
-  static const _allFieldSpecs = [
+  static final _allFieldSpecs = [
     ..._baseFields,
     ..._preFields,
     ..._listFields,
@@ -100,10 +114,20 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
   ];
 
   /// 源类型（对标原版 sp_type / @array/rss_type）
-  static const _typeLabels = ['网页', '图片', '视频'];
+  static List<String> get _typeLabels => [
+        AppStrings.rssTypeWeb,
+        AppStrings.sourceTypeImage,
+        AppStrings.sourceTypeVideo,
+      ];
 
   /// 文章样式（对标原版 ly_type / @array/layout_type）
-  static const _styleLabels = ['列表', '单列', '双列', '瀑布', '三列'];
+  static List<String> get _styleLabels => [
+        AppStrings.layoutList,
+        AppStrings.rssStyleSingle,
+        AppStrings.rssStyleDouble,
+        AppStrings.rssStyleWaterfall,
+        AppStrings.rssStyleTriple,
+      ];
 
   final Map<String, TextEditingController> _ctrls = {};
   final Map<String, FocusNode> _focusNodes = {};
@@ -188,7 +212,7 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
     final key = _focusedFieldKey;
     if (key == null || !_ctrls.containsKey(key)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先将光标放在要编辑的输入框')),
+        SnackBar(content: Text(AppStrings.sourceFocusFieldFirst)),
       );
       return;
     }
@@ -296,13 +320,13 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
     final url = _ctrls['sourceUrl']!.text.trim();
     if (name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入源名称')),
+        SnackBar(content: Text(AppStrings.rssSourceNameRequired)),
       );
       return;
     }
     if (url.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入源 URL')),
+        SnackBar(content: Text(AppStrings.rssSourceUrlRequired)),
       );
       return;
     }
@@ -325,7 +349,7 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('保存失败：${errorMessage(e)}')),
+          SnackBar(content: Text(AppStrings.saveFailedWith(errorMessage(e)))),
         );
       }
     } finally {
@@ -335,7 +359,11 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
     // 保存成功后更新快照，退出不再提示未保存
     _initialSnapshotMark = _snapshot();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(_isEdit ? '订阅源已更新' : '订阅源已添加')),
+      SnackBar(
+        content: Text(_isEdit
+            ? AppStrings.rssSourceUpdated
+            : AppStrings.rssSourceAdded),
+      ),
     );
     // 只 pop 一次并回传已保存源（强类型路由契约，见方法上方注释）
     Navigator.of(context).pop(saved);
@@ -356,9 +384,9 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
     }
     final discard = await showConfirmDialog(
       context,
-      title: '未保存的修改',
-      content: '修改尚未保存，确定要放弃修改并退出吗？',
-      confirmText: '放弃',
+      title: AppStrings.rssSourceUnsavedTitle,
+      content: AppStrings.rssSourceUnsavedDesc,
+      confirmText: AppStrings.rssSourceDiscard,
       isDestructive: true,
     );
     if (discard && mounted) {
@@ -369,7 +397,7 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
   Future<void> _test() async {
     final url = _ctrls['sourceUrl']!.text.trim();
     if (url.isEmpty) {
-      setState(() => _testError = '请先输入源 URL');
+      setState(() => _testError = AppStrings.rssSourceEnterUrlFirst);
       return;
     }
     setState(() {
@@ -381,16 +409,18 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
       final api = ref.read(bookApiProvider);
       final articles = await api.getRssArticles(url);
       if (articles.isEmpty) {
-        setState(() => _testResult = '连接成功，但未获取到文章（可能需要配置规则）');
+        setState(() => _testResult = AppStrings.rssSourceTestNoArticles);
       } else {
         final titles = articles
             .take(5)
-            .map((e) => e.title.isEmpty ? '(无标题)' : e.title)
+            .map((e) =>
+                e.title.isEmpty ? AppStrings.rssSourceUntitled : e.title)
             .join('\n');
-        setState(() => _testResult = '成功获取 ${articles.length} 篇文章：\n$titles');
+        setState(() => _testResult =
+            AppStrings.rssSourceTestSuccess(articles.length, titles));
       }
     } catch (e) {
-      setState(() => _testError = '测试失败：${errorMessage(e)}');
+      setState(() => _testError = AppStrings.rssSourceTestFailed(errorMessage(e)));
     } finally {
       if (mounted) setState(() => _testing = false);
     }
@@ -412,7 +442,7 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
         await Clipboard.setData(ClipboardData(text: json));
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('已复制订阅源到剪贴板')),
+            SnackBar(content: Text(AppStrings.rssSourceCopied)),
           );
         }
       case 'paste':
@@ -423,8 +453,12 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
         await _fullscreenCodeEdit();
       case 'share':
         final json = jsonEncode(_buildSource().toJson());
-        await Share.share(json,
-            subject: '订阅源分享：${_ctrls['sourceName']!.text.trim()}');
+        await Share.share(
+          json,
+          subject: AppStrings.rssSourceShareSubject(
+            _ctrls['sourceName']!.text.trim(),
+          ),
+        );
       case 'help':
         _showHelpSheet();
     }
@@ -436,7 +470,7 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
     if (url.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('请先填写源 URL')),
+          SnackBar(content: Text(AppStrings.rssSourceFillUrlFirst)),
         );
       }
       return;
@@ -445,12 +479,14 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
       await ref.read(bookApiProvider).clearCookie(url);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cookie 已清除')),
+        SnackBar(content: Text(AppStrings.sourceCookieCleared)),
       );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('清除 Cookie 失败：${errorMessage(e)}')),
+          SnackBar(
+            content: Text(AppStrings.rssSourceClearCookieFailed(errorMessage(e))),
+          ),
         );
       }
     }
@@ -463,7 +499,7 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
     if (text == null || text.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('剪贴板为空')),
+          SnackBar(content: Text(AppStrings.sourceClipboardEmpty)),
         );
       }
       return;
@@ -473,7 +509,9 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
       final map = decoded is List && decoded.isNotEmpty
           ? decoded.first
           : decoded;
-      if (map is! Map) throw const FormatException('不是订阅源 JSON');
+      if (map is! Map) {
+        throw FormatException(AppStrings.rssSourceNotRssJson);
+      }
       setState(() {
         for (final spec in _allFieldSpecs) {
           final v = map[spec.key];
@@ -495,13 +533,15 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('已从剪贴板粘贴订阅源')),
+          SnackBar(content: Text(AppStrings.rssSourcePasted)),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('粘贴失败，剪贴板不是有效的订阅源 JSON：${errorMessage(e)}')),
+          SnackBar(
+            content: Text(AppStrings.rssSourcePasteFailed(errorMessage(e))),
+          ),
         );
       }
     }
@@ -529,22 +569,24 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
               icon: const Icon(Symbols.arrow_back_rounded),
               onPressed: _tryExit,
             ),
-            title: Text(_isEdit ? '编辑订阅源' : '新建订阅源'),
-            bottom: const TabBar(
+            title: Text(_isEdit
+                ? AppStrings.rssSourceEditTitle
+                : AppStrings.rssSourceNewTitle),
+            bottom: TabBar(
               // 全局 tabBarTheme 设了 TabAlignment.start，必须 isScrollable
               // 否则触发断言崩溃（对齐书源编辑页）
               isScrollable: true,
               tabs: [
-                Tab(text: '基本'),
-                Tab(text: '预处理'),
-                Tab(text: '列表规则'),
-                Tab(text: 'WEB_VIEW'),
+                Tab(text: AppStrings.rssSourceTabBasic),
+                Tab(text: AppStrings.rssSourceTabPreprocess),
+                Tab(text: AppStrings.rssSourceTabListRules),
+                const Tab(text: 'WEB_VIEW'),
               ],
             ),
             actions: [
               // 测试（快速验证源 URL 可用性）
               IconButton(
-                tooltip: '测试',
+                tooltip: AppStrings.testAction,
                 icon: _testing
                     ? const SizedBox(
                         width: 18,
@@ -556,24 +598,38 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
               ),
               // 溢出菜单（对标原版 source_edit.xml 精简版）
               PopupMenuButton<String>(
-                tooltip: '更多选项',
+                tooltip: AppStrings.rssMoreOptions,
                 position: PopupMenuPosition.under,
                 onSelected: _handleMenu,
                 itemBuilder: (_) => [
-                  const PopupMenuItem(
-                      value: 'debug', child: Text('调试源')),
-                  const PopupMenuItem(
-                      value: 'copy', child: Text('复制源')),
-                  const PopupMenuItem(
-                      value: 'paste', child: Text('粘贴源')),
-                  const PopupMenuItem(
-                      value: 'clear_cookie', child: Text('清除Cookie')),
-                  const PopupMenuItem(
-                      value: 'code_edit', child: Text('代码编辑')),
-                  const PopupMenuItem(
-                      value: 'share', child: Text('分享文本')),
-                  const PopupMenuItem(
-                      value: 'help', child: Text('帮助')),
+                  PopupMenuItem(
+                    value: 'debug',
+                    child: Text(AppStrings.sourceDebug),
+                  ),
+                  PopupMenuItem(
+                    value: 'copy',
+                    child: Text(AppStrings.rssSourceCopy),
+                  ),
+                  PopupMenuItem(
+                    value: 'paste',
+                    child: Text(AppStrings.sourcePaste),
+                  ),
+                  PopupMenuItem(
+                    value: 'clear_cookie',
+                    child: Text(AppStrings.sourceClearCookie),
+                  ),
+                  PopupMenuItem(
+                    value: 'code_edit',
+                    child: Text(AppStrings.sourceCodeEdit),
+                  ),
+                  PopupMenuItem(
+                    value: 'share',
+                    child: Text(AppStrings.rssSourceShareText),
+                  ),
+                  PopupMenuItem(
+                    value: 'help',
+                    child: Text(AppStrings.helpLabel),
+                  ),
                 ],
               ),
               // 保存（对标原版 menu_save）
@@ -588,7 +644,7 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
                         height: 16,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('保存'),
+                    : Text(AppStrings.save),
               ),
               const SizedBox(width: 8),
             ],
@@ -623,45 +679,66 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
       tilePadding: const EdgeInsets.symmetric(horizontal: 16),
       shape: const Border(),
       collapsedShape: const Border(),
-      title: const Text('选项',
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+      title: Text(AppStrings.rssSourceOptions,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
           child: Wrap(
             children: [
-              _checkChip('启用', _enabled, (v) => _enabled = v),
-              _checkChip('单 URL', _singleUrl, (v) => _singleUrl = v),
+              _checkChip(AppStrings.sourceEnabledLabel, _enabled,
+                  (v) => _enabled = v),
+              _checkChip(AppStrings.rssSourceSingleUrl, _singleUrl,
+                  (v) => _singleUrl = v),
               _checkChip('Cookie', _cookieJar, (v) => _cookieJar = v),
-              _checkChip('预加载', _preload, (v) => _preload = v),
+              _checkChip(AppStrings.rssSourcePreload, _preload,
+                  (v) => _preload = v),
             ],
           ),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: Row(
+          // 窄屏（360dp）英文文案下两组「标签 + 下拉」并排会右溢，改 Wrap
+          // 换行（组内仍同行，宽屏视觉不变）。
+          child: Wrap(
+            spacing: 24,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Text('类型', style: TextStyle(color: colorScheme.onSurface)),
-              const SizedBox(width: 8),
-              DropdownButton<int>(
-                value: _type,
-                isDense: true,
-                onChanged: (v) => setState(() => _type = v ?? 0),
-                items: [
-                  for (var i = 0; i < _typeLabels.length; i++)
-                    DropdownMenuItem(value: i, child: Text(_typeLabels[i])),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(AppStrings.rssSourceTypeLabel,
+                      style: TextStyle(color: colorScheme.onSurface)),
+                  const SizedBox(width: 8),
+                  DropdownButton<int>(
+                    value: _type,
+                    isDense: true,
+                    onChanged: (v) => setState(() => _type = v ?? 0),
+                    items: [
+                      for (var i = 0; i < _typeLabels.length; i++)
+                        DropdownMenuItem(
+                            value: i, child: Text(_typeLabels[i])),
+                    ],
+                  ),
                 ],
               ),
-              const SizedBox(width: 24),
-              Text('样式', style: TextStyle(color: colorScheme.onSurface)),
-              const SizedBox(width: 8),
-              DropdownButton<int>(
-                value: _articleStyle,
-                isDense: true,
-                onChanged: (v) => setState(() => _articleStyle = v ?? 0),
-                items: [
-                  for (var i = 0; i < _styleLabels.length; i++)
-                    DropdownMenuItem(value: i, child: Text(_styleLabels[i])),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(AppStrings.rssFieldStyle,
+                      style: TextStyle(color: colorScheme.onSurface)),
+                  const SizedBox(width: 8),
+                  DropdownButton<int>(
+                    value: _articleStyle,
+                    isDense: true,
+                    onChanged: (v) => setState(() => _articleStyle = v ?? 0),
+                    items: [
+                      for (var i = 0; i < _styleLabels.length; i++)
+                        DropdownMenuItem(
+                            value: i, child: Text(_styleLabels[i])),
+                    ],
+                  ),
                 ],
               ),
             ],
@@ -732,7 +809,7 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
           isDense: true,
           suffixIcon: spec.maxLines >= 2
               ? IconButton(
-                  tooltip: '代码编辑',
+                  tooltip: AppStrings.sourceCodeEdit,
                   icon: const Icon(Symbols.code_rounded, size: 20),
                   onPressed: () => _openCodeEdit(spec.key, spec.label),
                 )
@@ -751,7 +828,7 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
           dense: true,
           controlAffinity: ListTileControlAffinity.leading,
           contentPadding: EdgeInsets.zero,
-          title: const Text('启用 JS'),
+          title: Text(AppStrings.rssSourceEnableJs),
           value: _enableJs,
           onChanged: (v) => setState(() => _enableJs = v ?? true),
         ),
@@ -759,7 +836,7 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
           dense: true,
           controlAffinity: ListTileControlAffinity.leading,
           contentPadding: EdgeInsets.zero,
-          title: const Text('以 base URL 加载'),
+          title: Text(AppStrings.rssSourceLoadWithBaseUrl),
           value: _loadWithBaseUrl,
           onChanged: (v) => setState(() => _loadWithBaseUrl = v ?? true),
         ),
@@ -767,7 +844,7 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
           dense: true,
           controlAffinity: ListTileControlAffinity.leading,
           contentPadding: EdgeInsets.zero,
-          title: const Text('显示网页日志'),
+          title: Text(AppStrings.rssSourceShowWebLog),
           value: _showWebLog,
           onChanged: (v) => setState(() => _showWebLog = v ?? false),
         ),
@@ -775,7 +852,7 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
           dense: true,
           controlAffinity: ListTileControlAffinity.leading,
           contentPadding: EdgeInsets.zero,
-          title: const Text('缓存优先'),
+          title: Text(AppStrings.rssSourceCacheFirst),
           value: _cacheFirst,
           onChanged: (v) => setState(() => _cacheFirst = v ?? false),
         ),

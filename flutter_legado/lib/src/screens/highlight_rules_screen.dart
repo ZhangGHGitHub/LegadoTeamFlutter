@@ -8,6 +8,7 @@ import '../widgets/md3_fast_scroller.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../models/highlight_style.dart' show normalizeArgb;
 import '../providers/highlight_rules/highlight_rules_notifier.dart';
 import '../utils/error_message.dart';
@@ -188,18 +189,22 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
       return;
     }
     setState(() => _batchError = null);
-    final head = errors.take(3).join('；');
-    final suffix = errors.length > 3 ? ' 等 ${errors.length} 条' : '';
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('$action失败：$head$suffix')));
+    final head = errors.take(3).join(AppStrings.listSeparator);
+    final suffix = errors.length > 3
+        ? AppStrings.highlightBatchSuffix(errors.length)
+        : '';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(AppStrings.highlightBatchFailed(action, head, suffix)),
+      ),
+    );
   }
 
   Future<void> _batchSetEnabled(List<HighlightRule> rules, bool enabled) async {
     if (_batchBusy) return;
     final selected = _selectedRules(rules);
     if (selected.isEmpty) {
-      _showBatchError('请先选择规则');
+      _showBatchError(AppStrings.highlightSelectRulesFirst);
       return;
     }
     setState(() => _batchBusy = true);
@@ -207,7 +212,10 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
       final errors = await ref
           .read(highlightRulesNotifierProvider.notifier)
           .batchSetEnabled(selected, enabled);
-      _showBatchErrors(errors, enabled ? '启用' : '停用');
+      _showBatchErrors(
+        errors,
+        enabled ? AppStrings.sourceEnabledLabel : AppStrings.disableLabel,
+      );
     } finally {
       if (mounted) setState(() => _batchBusy = false);
     }
@@ -217,7 +225,7 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
     if (_batchBusy) return;
     final selected = _selectedRules(rules);
     if (selected.isEmpty) {
-      _showBatchError('请先选择规则');
+      _showBatchError(AppStrings.highlightSelectRulesFirst);
       return;
     }
     setState(() => _batchBusy = true);
@@ -232,18 +240,18 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除高亮规则'),
-        content: Text('确定删除选中的 ${selected.length} 条规则吗？'),
+        title: Text(AppStrings.highlightDeleteTitle),
+        content: Text(AppStrings.highlightDeleteConfirm(selected.length)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           TextButton(
             key: const ValueKey('highlight-batch-delete-confirm'),
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(
-              '删除',
+              AppStrings.delete,
               style: TextStyle(color: Theme.of(ctx).colorScheme.error),
             ),
           ),
@@ -264,7 +272,7 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
       // 全成功 → 空；部分失败 → 仅保留仍存在的 id
       _selected.retainAll(remaining);
     });
-    _showBatchErrors(errors, '删除');
+    _showBatchErrors(errors, AppStrings.delete);
     _normalizeGroupFilter();
   }
 
@@ -281,9 +289,11 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
     );
     if (!mounted) return;
     if (error != null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('分组操作失败：${errorMessage(error)}')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppStrings.highlightGroupOpFailed(errorMessage(error))),
+        ),
+      );
     }
     _normalizeGroupFilter();
     _showErrorIfAny();
@@ -294,17 +304,17 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('高亮规则'),
-        content: Text('确定删除吗？\n${rule.displayName}'),
+        title: Text(AppStrings.highlightRulesMenu),
+        content: Text(AppStrings.highlightDeleteOneConfirm(rule.displayName)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(
-              '删除',
+              AppStrings.delete,
               style: TextStyle(color: Theme.of(ctx).colorScheme.error),
             ),
           ),
@@ -341,9 +351,9 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
   void _showErrorIfAny() {
     final error = ref.read(highlightRulesNotifierProvider).error;
     if (error == null || !mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('操作失败: ${errorMessage(error)}')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(AppStrings.highlightOpFailed(errorMessage(error)))),
+    );
   }
 
   /// 导出全部高亮规则（批16e：接入统一导出目标 Sheet）
@@ -367,7 +377,7 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
     if (target.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('暂无高亮规则')));
+      ).showSnackBar(SnackBar(content: Text(AppStrings.noHighlightRules)));
       return;
     }
     final json = buildHighlightRulesExportJson(target);
@@ -377,7 +387,7 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
       fileName: 'HighlightRules.json',
       // 参考版 highlightRule 备份/上传文件名
       uploadFileName: 'highlightRule.json',
-      subject: '导出高亮规则',
+      subject: AppStrings.exportHighlightRules,
     );
     if (!mounted || result == null) return;
     ScaffoldMessenger.of(
@@ -394,16 +404,18 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
       body: Builder(
         builder: (context) {
           if (state.isLoading) {
-            return const LoadingIndicator(message: '加载高亮规则...');
+            return LoadingIndicator(message: AppStrings.loadingHighlightRules);
           }
           if (state.error != null) {
-            return Center(child: Text('加载失败: ${state.error}'));
+            return Center(
+              child: Text(AppStrings.loadFailedColon('${state.error}')),
+            );
           }
           if (state.rules.isEmpty) {
-            return const EmptyState(
+            return EmptyState(
               icon: Symbols.format_paint_rounded,
-              title: '暂无高亮规则',
-              subtitle: '点击右上角「+」新增自动高亮规则',
+              title: AppStrings.noHighlightRules,
+              subtitle: AppStrings.noHighlightRulesDesc,
             );
           }
           final rules = _filteredRules(state.rules);
@@ -412,7 +424,7 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
               _buildGroupFilterBar(state.rules),
               Expanded(
                 child: rules.isEmpty
-                    ? const Center(child: Text('该分组暂无规则'))
+                    ? Center(child: Text(AppStrings.groupNoRules))
                     : Md3FastScroller(
                         controller: _fsController,
                         child: ListView(
@@ -447,11 +459,11 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
         leading: IconButton(
           key: const ValueKey('highlight-batch-close'),
           icon: const Icon(Icons.close),
-          tooltip: '退出批量',
+          tooltip: AppStrings.exitBatch,
           onPressed: _exitBatch,
         ),
         title: Text(
-          '已选 ${_selected.length} 项',
+          AppStrings.highlightSelectedCount(_selected.length),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -459,20 +471,26 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
           PopupMenuButton<String>(
             key: const ValueKey('highlight-batch-menu'),
             enabled: !_batchBusy,
-            tooltip: '选择操作',
+            tooltip: AppStrings.selectOperation,
             icon: const Icon(Symbols.checklist_rounded),
             onSelected: (value) {
               if (value == 'selectAll') _selectAllVisible(state.rules);
               if (value == 'invert') _invertVisible(state.rules);
             },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'selectAll', child: Text('全选')),
-              PopupMenuItem(value: 'invert', child: Text('反选')),
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'selectAll',
+                child: Text(AppStrings.selectAll),
+              ),
+              PopupMenuItem(
+                value: 'invert',
+                child: Text(AppStrings.invertSelection),
+              ),
             ],
           ),
           IconButton(
             key: const ValueKey('highlight-batch-enable'),
-            tooltip: '启用选中',
+            tooltip: AppStrings.enableSelected,
             visualDensity: VisualDensity.compact,
             icon: const Icon(Symbols.check_circle_rounded, size: 20),
             onPressed: _batchBusy
@@ -481,7 +499,7 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
           ),
           IconButton(
             key: const ValueKey('highlight-batch-disable'),
-            tooltip: '停用选中',
+            tooltip: AppStrings.highlightDisableSelected,
             visualDensity: VisualDensity.compact,
             icon: const Icon(Symbols.remove_circle_outline_rounded, size: 20),
             onPressed: _batchBusy
@@ -490,14 +508,14 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
           ),
           IconButton(
             key: const ValueKey('highlight-batch-delete'),
-            tooltip: '删除选中',
+            tooltip: AppStrings.deleteSelected,
             visualDensity: VisualDensity.compact,
             icon: const Icon(Symbols.delete_rounded, size: 20),
             onPressed: _batchBusy ? null : () => _batchDelete(state.rules),
           ),
           IconButton(
             key: const ValueKey('highlight-batch-export'),
-            tooltip: '导出选中',
+            tooltip: AppStrings.exportSelected,
             visualDensity: VisualDensity.compact,
             icon: const Icon(Symbols.ios_share_rounded, size: 20),
             onPressed: _batchBusy
@@ -505,7 +523,7 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
                 : () {
                     final selected = _selectedRules(state.rules);
                     if (selected.isEmpty) {
-                      _showBatchError('请先选择规则');
+                      _showBatchError(AppStrings.highlightSelectRulesFirst);
                       return;
                     }
                     _exportRules(rules: selected);
@@ -515,15 +533,15 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
       );
     }
     return LegadoAppBar(
-      title: const Text('高亮规则'),
+      title: Text(AppStrings.highlightRulesMenu),
       actions: [
         IconButton(
           icon: const Icon(Symbols.add_rounded),
-          tooltip: '新增规则',
+          tooltip: AppStrings.newRuleAction,
           onPressed: () => _edit(null),
         ),
         PopupMenuButton<String>(
-          tooltip: '更多操作',
+          tooltip: AppStrings.moreOptions,
           icon: const Icon(Symbols.more_vert_rounded),
           onSelected: (value) {
             switch (value) {
@@ -535,10 +553,19 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
                 _showGroupManage();
             }
           },
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'batch', child: Text('批量管理')),
-            PopupMenuItem(value: 'groups', child: Text('管理分组')),
-            PopupMenuItem(value: 'export', child: Text('导出规则')),
+          itemBuilder: (_) => [
+            PopupMenuItem(
+              value: 'batch',
+              child: Text(AppStrings.batchManage),
+            ),
+            PopupMenuItem(
+              value: 'groups',
+              child: Text(AppStrings.manageGroups),
+            ),
+            PopupMenuItem(
+              value: 'export',
+              child: Text(AppStrings.exportRules),
+            ),
           ],
         ),
       ],
@@ -556,8 +583,8 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
           children: [
             Text(
               _batchBusy
-                  ? '已选 ${_selected.length} 项 · 处理中…'
-                  : '已选 ${_selected.length} 项',
+                  ? AppStrings.highlightSelectedCountBusy(_selected.length)
+                  : AppStrings.highlightSelectedCount(_selected.length),
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             if (_batchError != null) ...[
@@ -583,8 +610,8 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
     final groups = _groupNames(allRules);
     final resolved = _resolvedGroupFilter(allRules);
     final entries = <(String?, String)>[
-      (null, '全部'),
-      (_ungrouped, '未分组'),
+      (null, AppStrings.allLabel),
+      (_ungrouped, AppStrings.ungrouped),
       for (final group in groups) (group, group),
     ];
     return SizedBox(
@@ -678,7 +705,7 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
-                                '正则',
+                                AppStrings.regexLabel,
                                 style: TextStyle(
                                   fontSize: 10,
                                   color: cs.onPrimaryContainer,
@@ -687,7 +714,9 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
                             ),
                           Expanded(
                             child: Text(
-                              scope.isNotEmpty ? '范围：$scope' : '全局生效',
+                              scope.isNotEmpty
+                                  ? AppStrings.highlightScopeLabel(scope)
+                                  : AppStrings.highlightGlobalScope,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: Theme.of(context).textTheme.labelSmall
@@ -701,7 +730,7 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
                         child: Text(
-                          '分组：$group',
+                          AppStrings.highlightGroupLabel(group),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(
@@ -728,7 +757,7 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
                     size: 20,
                     color: cs.onSurfaceVariant,
                   ),
-                  tooltip: '删除',
+                  tooltip: AppStrings.delete,
                   visualDensity: VisualDensity.compact,
                   onPressed: () => _confirmDelete(rule),
                 ),
@@ -778,8 +807,8 @@ class _HighlightGroupManageDialogState
     final message = errors.isEmpty
         ? null
         : errors.length > 3
-        ? '$action失败 ${errors.length} 条：${errors.take(3).join('；')}'
-        : '$action失败：${errors.join('；')}';
+        ? AppStrings.highlightBatchErrorList(action, errors)
+        : AppStrings.highlightBatchErrorJoined(action, errors);
     setState(() {
       _busy = false;
       _error = message;
@@ -792,22 +821,23 @@ class _HighlightGroupManageDialogState
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('重命名分组'),
+        title: Text(AppStrings.renameGroup),
         content: TextField(
           key: const ValueKey('highlight-group-rename-field'),
           controller: ctrl,
           autofocus: true,
-          decoration: const InputDecoration(labelText: '分组名称'),
+          decoration:
+              InputDecoration(labelText: AppStrings.groupNameLabel),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           TextButton(
             key: const ValueKey('highlight-group-rename-confirm'),
             onPressed: () => Navigator.pop(ctx, ctrl.text),
-            child: const Text('确定'),
+            child: Text(AppStrings.confirm),
           ),
         ],
       ),
@@ -823,11 +853,11 @@ class _HighlightGroupManageDialogState
     if (input == null || !mounted) return;
     final next = input.trim();
     if (next.isEmpty) {
-      setState(() => _error = '分组名称不能为空');
+      setState(() => _error = AppStrings.highlightGroupNameRequired);
       return;
     }
     if (isReservedHighlightGroupName(next)) {
-      setState(() => _error = '分组名称不可使用保留名');
+      setState(() => _error = AppStrings.highlightReservedGroupName);
       return;
     }
     if (next == oldName) return;
@@ -842,7 +872,7 @@ class _HighlightGroupManageDialogState
     final errors = await ref
         .read(highlightRulesNotifierProvider.notifier)
         .batchSaveRules(targets);
-    _showErrors(errors, '重命名分组');
+    _showErrors(errors, AppStrings.renameGroup);
   }
 
   Future<void> _delete(String group, List<HighlightRule> rules) async {
@@ -853,18 +883,20 @@ class _HighlightGroupManageDialogState
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除分组'),
-        content: Text('确定删除分组「$group」吗？\n${targets.length} 条规则将变为未分组（规则本身保留）。'),
+        title: Text(AppStrings.deleteGroup),
+        content: Text(
+          AppStrings.highlightDeleteGroupConfirm(group, targets.length),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           TextButton(
             key: const ValueKey('highlight-group-delete-confirm'),
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(
-              '删除',
+              AppStrings.delete,
               style: TextStyle(color: Theme.of(ctx).colorScheme.error),
             ),
           ),
@@ -879,7 +911,7 @@ class _HighlightGroupManageDialogState
     final errors = await ref
         .read(highlightRulesNotifierProvider.notifier)
         .batchSaveRules(targets.map((rule) => rule.withGroup(null)));
-    _showErrors(errors, '删除分组');
+    _showErrors(errors, AppStrings.deleteGroup);
   }
 
   @override
@@ -891,11 +923,11 @@ class _HighlightGroupManageDialogState
     return AlertDialog(
       title: Row(
         children: [
-          const Expanded(child: Text('管理分组')),
+          Expanded(child: Text(AppStrings.manageGroups)),
           IconButton(
             key: const ValueKey('highlight-group-manage-close'),
             icon: const Icon(Icons.close),
-            tooltip: '关闭',
+            tooltip: AppStrings.closeLabel,
             onPressed: _busy ? null : _close,
           ),
         ],
@@ -907,9 +939,9 @@ class _HighlightGroupManageDialogState
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (names.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: Center(child: Text('暂无分组')),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Center(child: Text(AppStrings.noGroups)),
               )
             else
               Flexible(
@@ -927,14 +959,18 @@ class _HighlightGroupManageDialogState
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          subtitle: Text('${groups[name]!.length} 条规则'),
+                          subtitle: Text(
+                            AppStrings.highlightRuleCount(
+                              groups[name]!.length,
+                            ),
+                          ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               IconButton(
                                 key: ValueKey('highlight-group-rename-$name'),
                                 icon: const Icon(Icons.edit_outlined, size: 20),
-                                tooltip: '重命名',
+                                tooltip: AppStrings.rename,
                                 onPressed: _busy
                                     ? null
                                     : () => _rename(name, rules),
@@ -946,7 +982,7 @@ class _HighlightGroupManageDialogState
                                   size: 20,
                                   color: cs.error,
                                 ),
-                                tooltip: '删除分组',
+                                tooltip: AppStrings.deleteGroup,
                                 onPressed: _busy
                                     ? null
                                     : () => _delete(name, rules),
@@ -972,7 +1008,10 @@ class _HighlightGroupManageDialogState
         ),
       ),
       actions: [
-        TextButton(onPressed: _busy ? null : _close, child: const Text('关闭')),
+        TextButton(
+          onPressed: _busy ? null : _close,
+          child: Text(AppStrings.dialogClose),
+        ),
       ],
     );
   }
@@ -1110,11 +1149,11 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
   }
 
   static String _underlineKindLabel(String kind) => switch (kind) {
-    'WAVY' => '波浪',
-    'DASHED' => '虚线',
-    'DOTTED' => '点线',
-    'DOUBLE' => '双线',
-    _ => '实线',
+    'WAVY' => AppStrings.lineStyleWavy,
+    'DASHED' => AppStrings.effectDashed,
+    'DOTTED' => AppStrings.lineStyleDotted,
+    'DOUBLE' => AppStrings.lineStyleDouble,
+    _ => AppStrings.lineStyleSolid,
   };
 
   static TextDecorationStyle _underlineDecorationStyle(String kind) =>
@@ -1139,27 +1178,27 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
   void _save() {
     final pattern = _patternCtrl.text.trim();
     if (pattern.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('匹配模式不能为空')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppStrings.highlightEmptyPattern)),
+      );
       return;
     }
     if (_isRegex) {
       try {
         RegExp(pattern);
       } catch (_) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('正则表达式无效，请检查')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppStrings.highlightInvalidRegex)),
+        );
         return;
       }
     }
     final scope = _scopeCtrl.text.trim();
     final group = _groupCtrl.text.trim();
     if (group.isNotEmpty && isReservedHighlightGroupName(group)) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('分组名称不可使用保留名')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppStrings.highlightReservedGroupName)),
+      );
       return;
     }
     final base = widget.rule;
@@ -1261,7 +1300,7 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
       children: [
         if (includeFollowTextColor)
           ChoiceChip(
-            label: const Text('跟随文字色'),
+            label: Text(AppStrings.highlightFollowTextColor),
             selected: selected == 0,
             onSelected: (_) => onSelected(0),
           ),
@@ -1356,14 +1395,16 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
             ),
             const SizedBox(height: 16),
             Text(
-              widget.rule == null ? '新增高亮规则' : '编辑高亮规则',
+              widget.rule == null
+                  ? AppStrings.highlightNewTitle
+                  : AppStrings.highlightEditTitle,
               style: theme.textTheme.titleMedium,
             ),
             const SizedBox(height: 16),
             TextField(
               controller: _nameCtrl,
-              decoration: const InputDecoration(
-                labelText: '规则名称（可选）',
+              decoration: InputDecoration(
+                labelText: AppStrings.highlightRuleNameOptional,
                 filled: true,
               ),
             ),
@@ -1371,9 +1412,9 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
             // [LAYOUT_PLAN P1] 编辑区字段分组间距 12dp
             TextField(
               controller: _patternCtrl,
-              decoration: const InputDecoration(
-                labelText: '匹配模式 *',
-                hintText: '要自动高亮的文本或正则表达式',
+              decoration: InputDecoration(
+                labelText: AppStrings.highlightPatternRequired,
+                hintText: AppStrings.highlightPatternHint,
                 filled: true,
               ),
             ),
@@ -1382,23 +1423,23 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
             // 等价 showChevron=false）；标题字级走 M3 Type Scale
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('使用正则表达式'),
+              title: Text(AppStrings.useRegexLabel),
               value: _isRegex,
               onChanged: (v) => setState(() => _isRegex = v),
             ),
             // [LAYOUT_PLAN P1] 同上：开关行无 Chevron，等价 showChevron=false
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('应用到标题'),
+              title: Text(AppStrings.highlightApplyToTitle),
               value: _applyToTitle,
               onChanged: (v) => setState(() => _applyToTitle = v),
             ),
             const SizedBox(height: 4),
             TextField(
               controller: _scopeCtrl,
-              decoration: const InputDecoration(
-                labelText: '生效范围（可选）',
-                hintText: '书名或书源名，留空为全局生效',
+              decoration: InputDecoration(
+                labelText: AppStrings.highlightScopeOptional,
+                hintText: AppStrings.highlightScopeHint,
                 filled: true,
               ),
             ),
@@ -1406,14 +1447,14 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
             TextField(
               key: const ValueKey('highlight-rule-group'),
               controller: _groupCtrl,
-              decoration: const InputDecoration(
-                labelText: '分组（可选）',
-                hintText: '留空为未分组',
+              decoration: InputDecoration(
+                labelText: AppStrings.highlightGroupOptional,
+                hintText: AppStrings.highlightGroupHint,
                 filled: true,
               ),
             ),
             const SizedBox(height: 16),
-            Text('高亮颜色', style: theme.textTheme.bodyMedium),
+            Text(AppStrings.highlightColor, style: theme.textTheme.bodyMedium),
             const SizedBox(height: 8),
             // [窄屏溢出修复 | 2026-10-01] 原 Row 固定色块行（8×32dp 色块 +
             // 每块右侧 10dp = 336dp）在 360dp 设备上超出内容可用宽 320dp，
@@ -1437,7 +1478,7 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               dense: true,
-              title: const Text('背景填充'),
+              title: Text(AppStrings.highlightBackgroundFill),
               value: _fill != 0,
               onChanged: (v) => _toggleFill(v, cs),
             ),
@@ -1458,7 +1499,7 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               dense: true,
-              title: const Text('下划线'),
+              title: Text(AppStrings.effectUnderline),
               value: _underlineEnabled,
               onChanged: (v) => setState(() {
                 _underlineEnabled = v;
@@ -1468,7 +1509,8 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
             if (_underlineEnabled) ...[
               Row(
                 children: [
-                  Text('线型', style: theme.textTheme.bodySmall),
+                  Text(AppStrings.highlightLineStyle,
+                      style: theme.textTheme.bodySmall),
                   const SizedBox(width: 12),
                   DropdownButton<String>(
                     value: _underlineKind,
@@ -1506,7 +1548,8 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
               ),
               Row(
                 children: [
-                  Text('线宽', style: theme.textTheme.bodySmall),
+                  Text(AppStrings.highlightLineWidth,
+                      style: theme.textTheme.bodySmall),
                   Expanded(
                     child: Slider(
                       value: _underlineWidth,
@@ -1539,7 +1582,7 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               dense: true,
-              title: const Text('删除线'),
+              title: Text(AppStrings.effectStrike),
               value: _strikeEnabled,
               onChanged: (v) => setState(() {
                 _strikeEnabled = v;
@@ -1572,7 +1615,7 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                '高亮效果预览',
+                AppStrings.highlightPreview,
                 style: TextStyle(
                   color: Color(effectiveColor),
                   fontWeight: bold ? FontWeight.bold : null,
@@ -1599,7 +1642,7 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
                     height: 48,
                     child: FilledButton.tonal(
                       onPressed: () => Navigator.pop(context),
-                      child: const Text('取消'),
+                      child: Text(AppStrings.cancel),
                     ),
                   ),
                 ),
@@ -1609,7 +1652,7 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
                     height: 48,
                     child: FilledButton(
                       onPressed: _save,
-                      child: const Text('保存'),
+                      child: Text(AppStrings.save),
                     ),
                   ),
                 ),

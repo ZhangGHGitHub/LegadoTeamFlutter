@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../providers/providers.dart';
+import '../l10n/app_strings.dart';
 import '../services/direct_link_upload_rule_service.dart';
 import '../utils/error_message.dart';
 import '../widgets/ios_widgets.dart';
@@ -97,12 +98,12 @@ class _DirectLinkUploadSettingsSheetState
       if (!mounted) return;
       _fill(result.rule);
       if (result.degraded) {
-        _toast('已保存的直链规则无效，已回退默认规则');
+        _toast(AppStrings.directLinkInvalidFallback);
       }
     } on DirectLinkUploadRuleException catch (e) {
-      if (mounted) _toast('读取直链上传规则失败：${e.message}');
+      if (mounted) _toast(AppStrings.directLinkReadRulesFailed(e.message));
     } catch (e) {
-      if (mounted) _toast('读取直链上传规则失败：${errorMessage(e)}');
+      if (mounted) _toast(AppStrings.directLinkReadRulesFailed(errorMessage(e)));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -160,10 +161,10 @@ class _DirectLinkUploadSettingsSheetState
     try {
       rules = await _service.loadDefaultRules();
     } on DirectLinkUploadRuleException catch (e) {
-      _toast('读取默认规则失败：${e.message}');
+      _toast(AppStrings.directLinkReadDefaultFailed(e.message));
       return;
     } catch (e) {
-      _toast('读取默认规则失败：${errorMessage(e)}');
+      _toast(AppStrings.directLinkReadDefaultFailed(errorMessage(e)));
       return;
     }
     if (!mounted) return;
@@ -171,13 +172,15 @@ class _DirectLinkUploadSettingsSheetState
     final selected = await showDialog<DirectLinkUploadRule>(
       context: context,
       builder: (dialogContext) => SimpleDialog(
-        title: const Text('导入默认规则'),
+        title: Text(AppStrings.rssImportDefaultRules),
         children: [
           for (var i = 0; i < rules.length; i++)
             SimpleDialogOption(
               onPressed: () => Navigator.pop(dialogContext, rules[i]),
               child: Text(
-                i == 0 ? '${rules[i].summary}（默认）' : rules[i].summary,
+                i == 0
+                    ? AppStrings.directLinkDefaultSuffix(rules[i].summary)
+                    : rules[i].summary,
               ),
             ),
         ],
@@ -185,7 +188,7 @@ class _DirectLinkUploadSettingsSheetState
     );
     if (selected == null || !mounted) return;
     _fill(selected);
-    _toast('已导入默认规则「${selected.summary}」');
+    _toast(AppStrings.directLinkDefaultImported(selected.summary));
   }
 
   Future<void> _copyRule() async {
@@ -193,10 +196,10 @@ class _DirectLinkUploadSettingsSheetState
     try {
       await Clipboard.setData(ClipboardData(text: json));
     } catch (e) {
-      _showFeedback('复制失败：${errorMessage(e)}', isError: true);
+      _showFeedback(AppStrings.directLinkCopyFailed(errorMessage(e)), isError: true);
       return;
     }
-    _showFeedback('规则已复制到剪贴板');
+    _showFeedback(AppStrings.directLinkRulesCopied);
   }
 
   Future<void> _pasteRule() async {
@@ -205,20 +208,20 @@ class _DirectLinkUploadSettingsSheetState
       final data = await Clipboard.getData(Clipboard.kTextPlain);
       text = data?.text;
     } catch (e) {
-      _toast('读取剪贴板失败：${errorMessage(e)}');
+      _toast(AppStrings.directLinkClipboardReadFailed(errorMessage(e)));
       return;
     }
     if (text == null || text.trim().isEmpty) {
-      _toast('剪贴板为空或格式不正确');
+      _toast(AppStrings.directLinkClipboardInvalid);
       return;
     }
     try {
       final rule = _service.parseRule(text);
       if (!mounted) return;
       _fill(rule);
-      _toast('已粘贴规则「${rule.summary}」');
+      _toast(AppStrings.directLinkPasted(rule.summary));
     } on DirectLinkUploadRuleException {
-      _toast('剪贴板为空或格式不正确');
+      _toast(AppStrings.directLinkClipboardInvalid);
     }
   }
 
@@ -236,7 +239,9 @@ class _DirectLinkUploadSettingsSheetState
     if (!mounted) return;
     setState(() => _testing = false);
     await _showResult(
-      title: error == null ? '测试结果' : '测试失败',
+      title: error == null
+          ? AppStrings.directLinkTestResult
+          : AppStrings.testFailedLabel,
       message: error ?? result ?? '',
       isError: error != null,
     );
@@ -263,7 +268,7 @@ class _DirectLinkUploadSettingsSheetState
       Navigator.pop(context);
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('已保存直链上传规则')));
+        ..showSnackBar(SnackBar(content: Text(AppStrings.directLinkSaved)));
     } on DirectLinkUploadRuleException catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -276,7 +281,7 @@ class _DirectLinkUploadSettingsSheetState
       messenger
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          SnackBar(content: Text('保存失败：${errorMessage(e)}')),
+          SnackBar(content: Text(AppStrings.directLinkSaveFailed(errorMessage(e)))),
         );
     }
   }
@@ -312,13 +317,13 @@ class _DirectLinkUploadSettingsSheetState
                       child: Row(
                         children: [
                           IconButton(
-                            tooltip: '关闭',
+                            tooltip: AppStrings.closeLabel,
                             onPressed: () => Navigator.pop(context),
                             icon: const Icon(Symbols.close_rounded),
                           ),
                           Expanded(
                             child: Text(
-                              '直链上传配置',
+                              AppStrings.directLinkConfigTitle,
                               textAlign: TextAlign.center,
                               style: theme.textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.w600,
@@ -326,30 +331,30 @@ class _DirectLinkUploadSettingsSheetState
                             ),
                           ),
                           PopupMenuButton<_SheetMenuAction>(
-                            tooltip: '更多菜单',
+                            tooltip: AppStrings.directLinkMoreMenu,
                             enabled: _interactive,
                             icon: const Icon(Symbols.more_vert_rounded),
                             onSelected: _onMenuSelected,
-                            itemBuilder: (_) => const [
+                            itemBuilder: (_) => [
                               PopupMenuItem(
                                 value: _SheetMenuAction.importDefault,
                                 child: _MenuRow(
                                   icon: Symbols.download_rounded,
-                                  label: '导入默认规则',
+                                  label: AppStrings.rssImportDefaultRules,
                                 ),
                               ),
                               PopupMenuItem(
                                 value: _SheetMenuAction.copy,
                                 child: _MenuRow(
                                   icon: Symbols.content_copy_rounded,
-                                  label: '复制规则',
+                                  label: AppStrings.copyRulesAction,
                                 ),
                               ),
                               PopupMenuItem(
                                 value: _SheetMenuAction.paste,
                                 child: _MenuRow(
                                   icon: Symbols.content_paste_rounded,
-                                  label: '粘贴规则',
+                                  label: AppStrings.pasteRulesAction,
                                 ),
                               ),
                             ],
@@ -410,9 +415,10 @@ class _DirectLinkUploadSettingsSheetState
                                     fontSize: 13,
                                     height: 1.35,
                                   ),
-                                  decoration: const InputDecoration(
-                                    labelText: '上传 URL',
-                                    helperText: '支持 url,{选项 JSON} 形式',
+                                  decoration: InputDecoration(
+                                    labelText: AppStrings.directLinkUploadUrl,
+                                    helperText:
+                                        AppStrings.directLinkUploadUrlHelper,
                                     alignLabelWithHint: true,
                                   ),
                                 ),
@@ -433,9 +439,10 @@ class _DirectLinkUploadSettingsSheetState
                                     fontSize: 13,
                                     height: 1.35,
                                   ),
-                                  decoration: const InputDecoration(
-                                    labelText: '下载 URL 规则',
-                                    helperText: 'JSONPath / 正则 / @js: 级联',
+                                  decoration: InputDecoration(
+                                    labelText: AppStrings.directLinkDownloadRule,
+                                    helperText:
+                                        AppStrings.directLinkDownloadRuleHelper,
                                     alignLabelWithHint: true,
                                   ),
                                 ),
@@ -445,16 +452,17 @@ class _DirectLinkUploadSettingsSheetState
                                   enabled: _interactive,
                                   maxLines: 2,
                                   minLines: 1,
-                                  decoration: const InputDecoration(
-                                    labelText: '注释',
+                                  decoration: InputDecoration(
+                                    labelText: AppStrings.directLinkComment,
                                     alignLabelWithHint: true,
                                   ),
                                 ),
                                 const SizedBox(height: 8),
                                 SwitchListTile(
                                   contentPadding: EdgeInsets.zero,
-                                  title: const Text('是否压缩'),
-                                  subtitle: const Text('上传前压缩为 zip'),
+                                  title: Text(AppStrings.directLinkCompress),
+                                  subtitle:
+                                      Text(AppStrings.directLinkCompressDesc),
                                   value: _compress,
                                   onChanged: _interactive
                                       ? (v) => setState(() => _compress = v)
@@ -472,8 +480,7 @@ class _DirectLinkUploadSettingsSheetState
                                     const SizedBox(width: 6),
                                     Expanded(
                                       child: Text(
-                                        '安全提示：规则可能来自网络，上传内容与下载链接由所填服务器处理；'
-                                        '下载规则支持 JS 脚本，请确认来源可信后再使用。',
+                                        AppStrings.directLinkSecurityNote,
                                         style: theme.textTheme.bodySmall
                                             ?.copyWith(
                                               color: cs.onSurfaceVariant,
@@ -504,7 +511,9 @@ class _DirectLinkUploadSettingsSheetState
                                       Icons.checklist_rounded,
                                       size: 18,
                                     ),
-                              label: Text(_testing ? '测试中' : '测试'),
+                              label: Text(_testing
+                                  ? AppStrings.directLinkTesting
+                                  : AppStrings.testAction),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -513,7 +522,7 @@ class _DirectLinkUploadSettingsSheetState
                               onPressed: _busy
                                   ? null
                                   : () => Navigator.pop(context),
-                              child: const Text('取消'),
+                              child: Text(AppStrings.cancel),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -528,7 +537,7 @@ class _DirectLinkUploadSettingsSheetState
                                         strokeWidth: 2,
                                       ),
                                     )
-                                  : const Text('确认'),
+                                  : Text(AppStrings.confirmLabel),
                             ),
                           ),
                         ],
@@ -585,7 +594,7 @@ class _ResultDialogState extends State<_ResultDialog> {
       await Clipboard.setData(ClipboardData(text: widget.message));
     } catch (e) {
       if (!mounted) return;
-      setState(() => _copyError = '复制失败：${errorMessage(e)}');
+      setState(() => _copyError = AppStrings.directLinkCopyFailed(errorMessage(e)));
       return;
     }
     if (!mounted) return;
@@ -620,10 +629,10 @@ class _ResultDialogState extends State<_ResultDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: _copy, child: const Text('复制结果')),
+        TextButton(onPressed: _copy, child: Text(AppStrings.directLinkCopyResult)),
         FilledButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('确认'),
+          child: Text(AppStrings.confirmLabel),
         ),
       ],
     );

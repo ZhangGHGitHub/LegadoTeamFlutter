@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../providers/providers.dart';
+import '../l10n/app_strings.dart';
 import '../utils/error_message.dart';
 
 /// cURL ↔ AnalyzeUrl 双向转换（对标原版 `CurlAnalyzeUrlDialog`）
@@ -98,27 +99,33 @@ class _CurlAnalyzeUrlSheetState extends ConsumerState<CurlAnalyzeUrlSheet> {
   }
 
   String _friendlyError(String raw) {
-    if (raw.contains('CURL_EMPTY_INPUT')) return '输入不能为空';
-    if (raw.contains('CURL_INVALID')) return '不是有效的 cURL 命令';
-    if (raw.contains('CURL_MISSING_URL')) return '缺少 URL';
-    if (raw.contains('CURL_INVALID_ANALYZE_URL')) return 'AnalyzeUrl 格式无效';
-    if (raw.contains('CURL_UNSUPPORTED_METHOD')) return '不支持的 HTTP 方法';
-    if (raw.contains('CURL_UNSUPPORTED_OPTION')) return '含不支持的选项';
-    return '转换失败：$raw';
+    if (raw.contains('CURL_EMPTY_INPUT')) return AppStrings.curlErrorEmptyInput;
+    if (raw.contains('CURL_INVALID')) return AppStrings.curlErrorInvalid;
+    if (raw.contains('CURL_MISSING_URL')) return AppStrings.curlErrorMissingUrl;
+    if (raw.contains('CURL_INVALID_ANALYZE_URL')) {
+      return AppStrings.curlErrorInvalidAnalyzeUrl;
+    }
+    if (raw.contains('CURL_UNSUPPORTED_METHOD')) {
+      return AppStrings.curlErrorUnsupportedMethod;
+    }
+    if (raw.contains('CURL_UNSUPPORTED_OPTION')) {
+      return AppStrings.curlErrorUnsupportedOption;
+    }
+    return AppStrings.curlConvertFailed(raw);
   }
 
   Future<void> _copy() async {
     final out = _output.text;
     if (out.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('没有可复制的结果')),
+        SnackBar(content: Text(AppStrings.curlNoResultToCopy)),
       );
       return;
     }
     await Clipboard.setData(ClipboardData(text: out));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已复制')),
+      SnackBar(content: Text(AppStrings.copiedLabel)),
     );
   }
 
@@ -126,7 +133,7 @@ class _CurlAnalyzeUrlSheetState extends ConsumerState<CurlAnalyzeUrlSheet> {
     final out = _output.text;
     if (out.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('没有可插入的结果')),
+        SnackBar(content: Text(AppStrings.curlNoResultToInsert)),
       );
       return;
     }
@@ -169,7 +176,7 @@ class _CurlAnalyzeUrlSheetState extends ConsumerState<CurlAnalyzeUrlSheet> {
                   child: Row(
                     children: [
                       IconButton(
-                        tooltip: '关闭',
+                        tooltip: AppStrings.closeLabel,
                         onPressed: () => Navigator.pop(context),
                         icon: const Icon(Symbols.close_rounded),
                       ),
@@ -183,7 +190,7 @@ class _CurlAnalyzeUrlSheetState extends ConsumerState<CurlAnalyzeUrlSheet> {
                         ),
                       ),
                       IconButton(
-                        tooltip: '转换',
+                        tooltip: AppStrings.curlConvertAction,
                         onPressed: _converting ? null : _convert,
                         icon: _converting
                             ? const SizedBox(
@@ -236,7 +243,9 @@ class _CurlAnalyzeUrlSheetState extends ConsumerState<CurlAnalyzeUrlSheet> {
                           height: 1.35,
                         ),
                         decoration: InputDecoration(
-                          labelText: _curlToAnalyze ? 'cURL 命令' : 'AnalyzeUrl',
+                          labelText: _curlToAnalyze
+                              ? AppStrings.curlCommandLabel
+                              : 'AnalyzeUrl',
                           alignLabelWithHint: true,
                           // [LAYOUT_PLAN P2] 输入框走 inputDecorationTheme，不手写边框
                         ),
@@ -254,7 +263,9 @@ class _CurlAnalyzeUrlSheetState extends ConsumerState<CurlAnalyzeUrlSheet> {
                           height: 1.35,
                         ),
                         decoration: InputDecoration(
-                          labelText: _curlToAnalyze ? 'AnalyzeUrl' : 'cURL 命令',
+                          labelText: _curlToAnalyze
+                              ? 'AnalyzeUrl'
+                              : AppStrings.curlCommandLabel,
                           alignLabelWithHint: true,
                           // [LAYOUT_PLAN P2] 输入框走 inputDecorationTheme，不手写边框
                         ),
@@ -265,7 +276,7 @@ class _CurlAnalyzeUrlSheetState extends ConsumerState<CurlAnalyzeUrlSheet> {
                           Expanded(
                             child: OutlinedButton(
                               onPressed: _copy,
-                              child: const Text('复制'),
+                              child: Text(AppStrings.copyAction),
                             ),
                           ),
                           if (widget.canInsert) ...[
@@ -273,7 +284,7 @@ class _CurlAnalyzeUrlSheetState extends ConsumerState<CurlAnalyzeUrlSheet> {
                             Expanded(
                               child: FilledButton(
                                 onPressed: _insert,
-                                child: const Text('插入'),
+                                child: Text(AppStrings.curlInsertAction),
                               ),
                             ),
                           ],

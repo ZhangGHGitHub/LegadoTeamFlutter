@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../models/models.dart';
+import '../l10n/app_strings.dart';
 import '../providers/explore/explore_show_notifier.dart';
 import '../providers/providers.dart';
 import '../widgets/app_scaffold.dart';
@@ -62,7 +63,7 @@ class _ExploreShowScreenState extends ConsumerState<ExploreShowScreen> {
     final books = state.books;
     if (books.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('没有已加载的书籍')),
+        SnackBar(content: Text(AppStrings.exploreShowNoBooks)),
       );
       return;
     }
@@ -88,12 +89,12 @@ class _ExploreShowScreenState extends ConsumerState<ExploreShowScreen> {
           await ref.read(bookApiProvider).importBooks(jsonArray);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已加入书架 $added 本')),
+        SnackBar(content: Text(AppStrings.exploreShowAddedCount(added))),
       );
     } catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('加入书架失败: ${errorMessage(e)}')),
+        SnackBar(content: Text(AppStrings.addToShelfFailed(errorMessage(e)))),
       );
     }
   }
@@ -118,10 +119,10 @@ class _ExploreShowScreenState extends ConsumerState<ExploreShowScreen> {
       // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
       return AppScaffold(
         topBar: LegadoAppBar(title: const Text('')),
-        body: const EmptyState(
+        body: EmptyState(
           icon: Symbols.explore_rounded,
-          title: '参数错误',
-          subtitle: '缺少发现分类参数',
+          title: AppStrings.exploreShowParamError,
+          subtitle: AppStrings.exploreShowMissingCategoryParam,
         ),
       );
     }
@@ -141,8 +142,8 @@ class _ExploreShowScreenState extends ConsumerState<ExploreShowScreen> {
           // 像素核验：深色 onSurface、无 off 斜杠），开启态 = 实心 + 主题色
           IconButton(
             tooltip: _filterKeyword.isEmpty
-                ? '筛选'
-                : '筛选（已开启：$_filterKeyword）',
+                ? AppStrings.exploreShowFilter
+                : AppStrings.exploreShowFilterOn(_filterKeyword),
             onPressed: _showFilterDialog,
             icon: Icon(
               _filterKeyword.isEmpty
@@ -155,7 +156,9 @@ class _ExploreShowScreenState extends ConsumerState<ExploreShowScreen> {
           ),
           // [A1 对齐 | Qoder UI] ☰ 列表切换：书卡密度 舒适/紧凑
           IconButton(
-            tooltip: _compact ? '切换为舒适' : '切换为紧凑',
+            tooltip: _compact
+                ? AppStrings.exploreShowSwitchComfort
+                : AppStrings.exploreShowSwitchCompact,
             onPressed: () => setState(() => _compact = !_compact),
             icon: Icon(
               _compact ? Symbols.density_medium_rounded : Symbols.reorder,
@@ -164,7 +167,7 @@ class _ExploreShowScreenState extends ConsumerState<ExploreShowScreen> {
           // 批量加入书架（对标原版 menuAddLoadedBooks；apple-ui-designer
           // 系统图标按钮，次级层级）— 发现页修复 R5
           IconButton(
-            tooltip: '加入书架',
+            tooltip: AppStrings.addToBookshelf,
             icon: const Icon(Symbols.playlist_add_rounded),
             onPressed: () => _addLoadedBooksToShelf(context, ref, widget.args!),
           ),
@@ -209,12 +212,12 @@ class _ExploreFilterDialogState extends State<_ExploreFilterDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('筛选'),
+      title: Text(AppStrings.exploreShowFilter),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            '按关键字过滤已加载的书籍（匹配书名或作者，忽略英文字母大小写）',
+            AppStrings.exploreShowFilterDesc,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -223,8 +226,8 @@ class _ExploreFilterDialogState extends State<_ExploreFilterDialog> {
           TextField(
             controller: _controller,
             autofocus: true,
-            decoration: const InputDecoration(
-              hintText: '关键字（留空=不过滤）',
+            decoration: InputDecoration(
+              hintText: AppStrings.exploreShowFilterHint,
               isDense: true,
             ),
             onSubmitted: (v) => Navigator.of(context).pop(v),
@@ -234,11 +237,11 @@ class _ExploreFilterDialogState extends State<_ExploreFilterDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(_controller.text),
-          child: const Text('确定'),
+          child: Text(AppStrings.confirm),
         ),
       ],
     );

@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:share_plus/share_plus.dart';
 
 import '../providers/bottom_bar_skin_notifier.dart';
+import '../l10n/app_strings.dart';
 import '../services/bottom_bar_skin_format.dart';
 import '../services/bottom_bar_skin_service.dart';
 import '../services/export_file_service.dart';
@@ -33,10 +34,10 @@ class BottomBarSkinScreen extends ConsumerWidget {
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       topBar: LegadoAppBar(
-        title: const Text('底部操作栏皮肤'),
+        title: Text(AppStrings.bottomBarSkinTitle),
         actions: [
           IconButton(
-            tooltip: '导入',
+            tooltip: AppStrings.importLabel,
             icon: const Icon(Symbols.file_upload_rounded),
             onPressed: () => _import(context, notifier),
           ),
@@ -45,7 +46,7 @@ class BottomBarSkinScreen extends ConsumerWidget {
       body: IosGroupedBody(
         child: ListView(
           children: [
-            const IosSectionHeader('皮肤'),
+            IosSectionHeader(AppStrings.bottomBarSkinSection),
             IosGroup(flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
               children: [
                 ListTile(
@@ -54,7 +55,7 @@ class BottomBarSkinScreen extends ConsumerWidget {
                         ? Symbols.radio_button_checked_rounded
                         : Symbols.radio_button_unchecked_rounded,
                   ),
-                  title: const Text('系统默认'),
+                  title: Text(AppStrings.raSystemDefault),
                   onTap: () => notifier.setActive(''),
                 ),
                 for (final name in state.skins)
@@ -74,10 +75,7 @@ class BottomBarSkinScreen extends ConsumerWidget {
                   ),
               ],
             ),
-            const IosSectionFooter(
-              '导入 zip 后进入分配页：为书架/发现/订阅/我的各选「选中」图'
-              '（「未选」可空）。若文件名已是 bookshelf_selected 等，将自动预填。',
-            ),
+            IosSectionFooter(AppStrings.bottomBarSkinImportHint),
             if (state.loading)
               const Padding(
                 padding: EdgeInsets.all(24),
@@ -102,7 +100,7 @@ class BottomBarSkinScreen extends ConsumerWidget {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const IosSectionHeader('预览'),
+                      IosSectionHeader(AppStrings.previewAction),
                       IosGroup(flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
                         children: [
                           Padding(
@@ -189,7 +187,7 @@ class BottomBarSkinScreen extends ConsumerWidget {
         await notifier.setActive(name);
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('已保存并启用：$name')),
+            SnackBar(content: Text(AppStrings.bottomBarSkinSaved(name))),
           );
         }
       } else {
@@ -201,7 +199,7 @@ class BottomBarSkinScreen extends ConsumerWidget {
       }
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导入失败：${errorMessage(e)}')),
+          SnackBar(content: Text(AppStrings.importFailedShortWithReason(errorMessage(e)))),
         );
       }
     }
@@ -219,22 +217,22 @@ class BottomBarSkinScreen extends ConsumerWidget {
       children: [
         ListTile(
           leading: const Icon(Symbols.edit_rounded),
-          title: const Text('编辑'),
+          title: Text(AppStrings.edit),
           onTap: () => Navigator.pop(context, 'edit'),
         ),
         ListTile(
           leading: const Icon(Symbols.file_download_rounded),
-          title: const Text('导出'),
+          title: Text(AppStrings.exportAction),
           onTap: () => Navigator.pop(context, 'export'),
         ),
         ListTile(
           leading: const Icon(Symbols.share_rounded),
-          title: const Text('分享'),
+          title: Text(AppStrings.shareAction),
           onTap: () => Navigator.pop(context, 'share'),
         ),
         ListTile(
           leading: const Icon(Symbols.delete_rounded),
-          title: const Text('删除'),
+          title: Text(AppStrings.delete),
           onTap: () => Navigator.pop(context, 'delete'),
         ),
       ],
@@ -271,7 +269,7 @@ class BottomBarSkinScreen extends ConsumerWidget {
         filePath: zipPath,
         fileName: '$name.zip',
         contentType: 'application/zip',
-        subject: '导出底栏皮肤',
+        subject: AppStrings.bottomBarSkinExportSubject,
         deleteTempFileOnClose: true,
       );
       if (!context.mounted || result == null) return;
@@ -281,7 +279,7 @@ class BottomBarSkinScreen extends ConsumerWidget {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导出失败：${errorMessage(e)}')),
+          SnackBar(content: Text(AppStrings.exportFailedWithReason(errorMessage(e)))),
         );
       }
     }
@@ -298,7 +296,7 @@ class BottomBarSkinScreen extends ConsumerWidget {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('分享失败：${errorMessage(e)}')),
+          SnackBar(content: Text(AppStrings.shareFailed(errorMessage(e)))),
         );
       }
     }
@@ -329,7 +327,7 @@ class BottomBarSkinScreen extends ConsumerWidget {
       await notifier.reload();
       if (saved != null && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已更新：$saved')),
+          SnackBar(content: Text(AppStrings.bottomBarSkinUpdated(saved))),
         );
       }
     } catch (e) {
@@ -338,7 +336,7 @@ class BottomBarSkinScreen extends ConsumerWidget {
       }
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('无法编辑：${errorMessage(e)}')),
+          SnackBar(content: Text(AppStrings.bottomBarSkinEditFailed(errorMessage(e)))),
         );
       }
     }
@@ -352,16 +350,16 @@ class BottomBarSkinScreen extends ConsumerWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除皮肤'),
-        content: Text('确定删除「$name」？'),
+        title: Text(AppStrings.bottomBarSkinDeleteTitle),
+        content: Text(AppStrings.bottomBarSkinDeleteConfirm(name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('删除'),
+            child: Text(AppStrings.delete),
           ),
         ],
       ),

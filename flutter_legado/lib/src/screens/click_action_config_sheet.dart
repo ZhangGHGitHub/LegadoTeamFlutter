@@ -11,6 +11,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../models/reader_tap_action.dart';
+import '../l10n/app_strings.dart';
 import 'reader_config_panel.dart';
 
 class ClickActionConfigSheet extends StatefulWidget {
@@ -70,7 +71,7 @@ class _ClickActionConfigSheetState extends State<ClickActionConfigSheet> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
                   child: Text(
-                    '选择动作',
+                    AppStrings.clickActionPickTitle,
                     style: Theme.of(sheetContext).textTheme.titleMedium,
                   ),
                 ),
@@ -116,14 +117,14 @@ class _ClickActionConfigSheetState extends State<ClickActionConfigSheet> {
                   const Icon(Icons.touch_app_outlined),
                   const SizedBox(width: 10),
                   Text(
-                    '点击区域设置',
+                    AppStrings.clickActionSheetTitle,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                   const Spacer(),
                   IconButton(
-                    tooltip: '关闭',
+                    tooltip: AppStrings.closeLabel,
                     icon: const Icon(Icons.close),
                     onPressed: () => Navigator.pop(context),
                   ),

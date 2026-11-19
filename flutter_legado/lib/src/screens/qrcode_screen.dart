@@ -15,6 +15,7 @@ import 'package:zxing2/zxing2.dart'
         RGBLuminanceSource;
 
 import '../widgets/app_scaffold.dart';
+import '../l10n/app_strings.dart';
 import '../widgets/legado_app_bar.dart';
 
 /// 扫码结果类型
@@ -158,7 +159,7 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
   /// 图片后本地解码（zxing2），无需相机即可导入
   Future<void> _pickFromGallery() async {
     final picked = await FilePicker.platform.pickFiles(
-      dialogTitle: '选择二维码图片',
+      dialogTitle: AppStrings.qrPickDialogTitle,
       type: FileType.image,
     );
     final path = picked?.files.singleOrNull?.path;
@@ -174,7 +175,7 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
       final content = decoded?.trim();
       if (content == null || content.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('未识别到图片中的二维码')),
+          SnackBar(content: Text(AppStrings.qrNoCodeFound)),
         );
         return;
       }
@@ -187,13 +188,13 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
         _inputController.text = content;
         setState(() => _rawContent = content);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('已识别图片二维码，请确认后使用')),
+          SnackBar(content: Text(AppStrings.qrImageRecognized)),
         );
       }
     } on FileSystemException {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('图片读取失败')),
+          SnackBar(content: Text(AppStrings.qrImageReadFailed)),
         );
       }
     } finally {
@@ -230,13 +231,13 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
   String _typeLabel(_ScanResultType type) {
     switch (type) {
       case _ScanResultType.legadoUrl:
-        return 'Legado 导入链接';
+        return AppStrings.qrTypeLegadoLink;
       case _ScanResultType.httpUrl:
-        return 'HTTP 订阅地址';
+        return AppStrings.qrTypeHttpRss;
       case _ScanResultType.sourceJson:
-        return '书源 JSON';
+        return AppStrings.qrTypeSourceJson;
       case _ScanResultType.text:
-        return '口令 / 文本';
+        return AppStrings.qrTypePassphrase;
     }
   }
 
@@ -259,7 +260,7 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
     if (text.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('剪贴板为空')),
+          SnackBar(content: Text(AppStrings.sourceClipboardEmpty)),
         );
       }
       return;
@@ -282,11 +283,11 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       topBar: LegadoAppBar(
-        title: const Text('扫描二维码'),
+        title: Text(AppStrings.qrScanTitle),
         actions: [
           // [PARITY A1] 参考版右上图库按钮：本地选图解码二维码（免相机）
           IconButton(
-            tooltip: '从图库导入',
+            tooltip: AppStrings.qrImportFromGallery,
             icon: const Icon(Symbols.photo_library_rounded),
             onPressed: _picking ? null : _pickFromGallery,
           ),
@@ -375,17 +376,17 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
       children: [
         _buildDegradedHeader(theme, failed: failed, cameraError: cameraError),
         const SizedBox(height: 20),
-        Text('手动输入', style: theme.textTheme.titleSmall),
+        Text(AppStrings.qrManualInput, style: theme.textTheme.titleSmall),
         const SizedBox(height: 8),
         TextField(
           controller: _inputController,
           maxLines: 3,
           decoration: InputDecoration(
-            hintText: '粘贴或输入二维码内容：书源 URL / legado:// 链接 / 书源 JSON / 口令',
+            hintText: AppStrings.qrManualHint,
             border: const OutlineInputBorder(),
             suffixIcon: IconButton(
               icon: const Icon(Symbols.content_paste_rounded),
-              tooltip: '从剪贴板粘贴',
+              tooltip: AppStrings.qrPasteFromClipboard,
               onPressed: _pasteFromClipboard,
             ),
           ),
@@ -395,7 +396,7 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
         FilledButton.icon(
           onPressed: (_rawContent?.isNotEmpty ?? false) ? _confirm : null,
           icon: const Icon(Symbols.check_rounded),
-          label: const Text('使用该内容'),
+          label: Text(AppStrings.qrUseThisContent),
         ),
         if (_rawContent != null && _rawContent!.isNotEmpty) ...[
           const SizedBox(height: 20),
@@ -412,54 +413,57 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
     String? cameraError,
   }) {
     return Container(
-      height: 200,
+      // 固定 200 高度在英文文案（提示行换行更多）下会底部溢出，改为最小高度
+      // + 内容自适应（中文单行形态视觉不变）。
+      constraints: const BoxConstraints(minHeight: 200),
+      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest,
         // [LAYOUT_PLAN P3] 分组卡圆角 16dp（全局标尺）
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              failed
-                  ? Symbols.videocam_off_rounded
-                  : Symbols.qr_code_scanner_rounded,
-              size: 64,
-              color: theme.colorScheme.outline,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            failed
+                ? Symbols.videocam_off_rounded
+                : Symbols.qr_code_scanner_rounded,
+            size: 64,
+            color: theme.colorScheme.outline,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            failed
+                ? AppStrings.qrCameraFailed
+                : AppStrings.qrCameraUnsupported,
+            style: theme.textTheme.titleSmall,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Text(
+              AppStrings.qrCameraHint,
+              style: theme.textTheme.bodySmall,
+              textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 12),
-            Text(
-              failed
-                  ? '相机启动失败'
-                  : '当前平台未启用相机扫码',
-              style: theme.textTheme.titleSmall,
-            ),
+          ),
+          if (failed && cameraError != null) ...[
             const SizedBox(height: 4),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Text(
-                '可使用右上角图库按钮导入二维码图片，或下方手动输入',
+                cameraError,
                 style: theme.textTheme.bodySmall,
                 textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-            if (failed && cameraError != null) ...[
-              const SizedBox(height: 4),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Text(
-                  cameraError,
-                  style: theme.textTheme.bodySmall,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
           ],
-        ),
+        ],
       ),
     );
   }
@@ -481,7 +485,7 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
                 Icon(_typeIcon(type),
                     size: 20, color: theme.colorScheme.primary),
                 const SizedBox(width: 8),
-                Text('识别结果', style: theme.textTheme.titleSmall),
+                Text(AppStrings.qrResultTitle, style: theme.textTheme.titleSmall),
                 const Spacer(),
                 Container(
                   padding:
@@ -527,11 +531,13 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
     try {
       final decoded = jsonDecode(content);
       if (decoded is List) {
-        return '包含 ${decoded.length} 个源';
+        return AppStrings.qrSourceCount(decoded.length);
       }
       if (decoded is Map) {
         final name = decoded['bookSourceName'] ?? decoded['sourceName'] ?? '';
-        return name.toString().isEmpty ? '单个源' : '源：$name';
+        return name.toString().isEmpty
+            ? AppStrings.qrSingleSource
+            : AppStrings.qrSourceNamed(name.toString());
       }
     } catch (_) {}
     return '';

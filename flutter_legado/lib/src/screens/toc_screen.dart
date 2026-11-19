@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../constants/pref_keys.dart';
 import '../models/models.dart';
+import '../l10n/app_strings.dart';
 import '../providers/book_marking/book_marking_notifier.dart';
 import '../providers/bookmark/bookmark_notifier.dart';
 import '../providers/providers.dart';
@@ -700,13 +701,16 @@ class _TocScreenState extends ConsumerState<TocScreen>
       // menu_group_text：仅本地 TXT 书可见（对齐原版 isLocalTxt 判定）
       if (_isLocalTxt) {
         items.add(
-          const PopupMenuItem(value: 'tocRegex', child: Text('TXT 目录规则')),
+          PopupMenuItem(
+            value: 'tocRegex',
+            child: Text(AppStrings.txtTocRulesLabel),
+          ),
         );
         items.add(
           CheckedPopupMenuItem(
             value: 'splitLongChapter',
             checked: _book.readConfig?.splitLongChapter ?? true,
-            child: const Text('拆分长章节'),
+            child: Text(AppStrings.splitLongChapter),
           ),
         );
         // [批1b-3 审查回修 P2-3] 重新解析目录（对齐参考版 TocScreen.kt:457
@@ -714,7 +718,10 @@ class _TocScreenState extends ConsumerState<TocScreen>
         // LocalBook.getChapterList 并 replaceChaptersAndUpdateBook）。为
         // 「无目录时每章字数」等解析档位改值后的重进目录入口。
         items.add(
-          const PopupMenuItem(value: 'reparseToc', child: Text('重新解析目录')),
+          PopupMenuItem(
+            value: 'reparseToc',
+            child: Text(AppStrings.reparseToc),
+          ),
         );
       }
       // menu_group_toc：目录 Tab 可见
@@ -726,14 +733,14 @@ class _TocScreenState extends ConsumerState<TocScreen>
         CheckedPopupMenuItem(
           value: 'reverseToc',
           checked: _book.readConfig?.reverseToc ?? false,
-          child: const Text('倒序目录'),
+          child: Text(AppStrings.reverseToc),
         ),
       );
       items.add(
         CheckedPopupMenuItem(
           value: 'reverseTocDisplay',
           checked: _book.readConfig?.reverseTocDisplay ?? false,
-          child: const Text('目录显示反转'),
+          child: Text(AppStrings.reverseTocDisplay),
         ),
       );
       items.add(
@@ -742,27 +749,35 @@ class _TocScreenState extends ConsumerState<TocScreen>
           // useReplaceRule 存于 ReadConfig（对齐原版 Book.ReadConfig.useReplaceRule）；
           // [批7a P2-1] 勾选态按书级/图片/epub/全局默认的生效值展示
           checked: effectiveReplaceRuleEnabled(_book, globalReplaceDefault),
-          child: const Text('使用替换规则'),
+          child: Text(AppStrings.useReplaceRules),
         ),
       );
       items.add(
         CheckedPopupMenuItem(
           value: 'loadWordCount',
           checked: _loadWordCount,
-          child: const Text('加载字数'),
+          child: Text(AppStrings.loadCharCount),
         ),
       );
     } else if (tab == 1) {
       // menu_group_bookmark：书签 Tab 可见
       items.add(
-        const PopupMenuItem(value: 'exportBookmark', child: Text('导出')),
+        PopupMenuItem(
+          value: 'exportBookmark',
+          child: Text(AppStrings.exportAction),
+        ),
       );
       items.add(
-        const PopupMenuItem(value: 'exportMd', child: Text('导出 Markdown')),
+        PopupMenuItem(
+          value: 'exportMd',
+          child: Text(AppStrings.exportMarkdown),
+        ),
       );
     }
     // menu_log：始终可见
-    items.add(const PopupMenuItem(value: 'log', child: Text('日志')));
+    items.add(
+      PopupMenuItem(value: 'log', child: Text(AppStrings.logLabel)),
+    );
     return items;
   }
 
@@ -794,7 +809,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
             final error =
                 readerResult?.error ??
                 _chaptersError ??
-                (_chapters.isEmpty ? '目录为空（可尝试其它规则）' : null);
+                (_chapters.isEmpty ? AppStrings.tocEmptyHint : null);
             // 阅读器先重解析并已入库时，本页 `_loadChapters` 是缓存命中
             // （used_custom_rule=false 表示「未解析」而非「未命中」）——
             // 以阅读器本次解析结果为准；阅读器未参与时才用本页结果。
@@ -938,7 +953,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
         if (result.error != null) {
           if (!mounted) return;
           messenger.showSnackBar(
-            SnackBar(content: Text('重新解析目录失败: ${result.error}')),
+            SnackBar(content: Text(AppStrings.reparseFailed('${result.error}'))),
           );
           return;
         }
@@ -948,17 +963,19 @@ class _TocScreenState extends ConsumerState<TocScreen>
       if (!mounted) return;
       if (_chaptersError != null) {
         messenger.showSnackBar(
-          SnackBar(content: Text('重新解析目录失败: $_chaptersError')),
+          SnackBar(content: Text(AppStrings.reparseFailed('$_chaptersError'))),
         );
         return;
       }
       messenger.showSnackBar(
-        SnackBar(content: Text('已重新解析目录（共 ${_chapters.length} 章）')),
+        SnackBar(content: Text(AppStrings.reparseDone(_chapters.length))),
       );
     } catch (e) {
       // [P2-5] fail-closed 不误报：Rust 拒绝/清表失败时旧目录仍在，
       // 必须明示失败（口径对齐 reader_toc_rule_dialog）
-      messenger.showSnackBar(SnackBar(content: Text('重新解析目录失败: ${errorMessage(e)}')));
+      messenger.showSnackBar(
+        SnackBar(content: Text(AppStrings.reparseFailed(errorMessage(e)))),
+      );
     }
   }
 
@@ -976,7 +993,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
       if (bookmarks.isEmpty) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('暂无书签可导出')));
+        ).showSnackBar(SnackBar(content: Text(AppStrings.noBookmarksToExport)));
         return;
       }
       // 「默认书籍保存位置」已设置时作为目录选择器初始路径
@@ -1000,13 +1017,15 @@ class _TocScreenState extends ConsumerState<TocScreen>
       if (savedPath == null) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('导出成功: $savedPath')));
+      ).showSnackBar(SnackBar(content: Text(AppStrings.exportSuccessColon(savedPath))));
     } catch (e) {
       // 写入失败给出可读错误（对齐原版 AppLog.put「导出失败」提示语义）
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('导出失败: ${_errMsg(e)}')));
+      ).showSnackBar(
+        SnackBar(content: Text(AppStrings.exportFailedColon(_errMsg(e)))),
+      );
     }
   }
 
@@ -1058,7 +1077,9 @@ class _TocScreenState extends ConsumerState<TocScreen>
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('更新失败: ${_errMsg(e)}')));
+        ).showSnackBar(
+          SnackBar(content: Text(AppStrings.updateFailedColon(_errMsg(e)))),
+        );
       }
     }
   }
@@ -1085,8 +1106,8 @@ class _TocScreenState extends ConsumerState<TocScreen>
             ? TextField(
                 controller: _searchCtrl,
                 autofocus: true,
-                decoration: const InputDecoration(
-                  hintText: '搜索...',
+                decoration: InputDecoration(
+                  hintText: AppStrings.searchPlaceholder,
                   // [B3] 顶栏沉浸搜索框：三态显式无边框，防主题底线式渗入
                   border: InputBorder.none,
                   enabledBorder: InputBorder.none,
@@ -1116,17 +1137,17 @@ class _TocScreenState extends ConsumerState<TocScreen>
                   ),
                 ],
               )
-            : Text(_book.name.isNotEmpty ? _book.name : '目录'),
+            : Text(_book.name.isNotEmpty ? _book.name : AppStrings.catalog),
         actions: [
           IconButton(
             icon: Icon(
               _searching ? Symbols.close_rounded : Symbols.search_rounded,
             ),
-            tooltip: _searching ? '关闭搜索' : '搜索',
+            tooltip: _searching ? AppStrings.closeSearch : AppStrings.search,
             onPressed: _toggleSearch,
           ),
           PopupMenuButton<String>(
-            tooltip: '更多',
+            tooltip: AppStrings.moreActions,
             onSelected: _handleMenu,
             itemBuilder: (_) => _buildMenuItems(globalReplaceDefault),
           ),
@@ -1148,10 +1169,10 @@ class _TocScreenState extends ConsumerState<TocScreen>
           unselectedLabelStyle: Theme.of(
             context,
           ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w500),
-          tabs: const [
-            Tab(text: '目录'),
-            Tab(text: '书签'),
-            Tab(text: '标注'),
+          tabs: [
+            Tab(text: AppStrings.catalog),
+            Tab(text: AppStrings.bookmarksLabel),
+            Tab(text: AppStrings.markingLabel),
           ],
         ),
       ),
@@ -1180,10 +1201,13 @@ class _TocScreenState extends ConsumerState<TocScreen>
   /// 目录 FAB：点击展开四项快捷操作（对齐参考版展开式菜单形态）
   Widget _buildJumpFab(BuildContext context) {
     final actions = [
-      (Icons.my_location_rounded, '定位至当前阅读', _locateCurrentChapter),
-      (Icons.vertical_align_top_rounded, '移至顶部', _scrollTocTop),
-      (Icons.vertical_align_bottom_rounded, '移至底部', _scrollTocBottom),
-      (Icons.cloud_download_rounded, '一键缓存', _cacheFromCurrent),
+      (Icons.my_location_rounded, AppStrings.locateCurrentChapter,
+          _locateCurrentChapter),
+      (Icons.vertical_align_top_rounded, AppStrings.scrollToTop, _scrollTocTop),
+      (Icons.vertical_align_bottom_rounded, AppStrings.scrollToBottom,
+          _scrollTocBottom),
+      (Icons.cloud_download_rounded, AppStrings.cacheFromCurrent,
+          _cacheFromCurrent),
     ];
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1239,7 +1263,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
     if (total <= 0 || start > total - 1) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('无可缓存的章节')));
+      ).showSnackBar(SnackBar(content: Text(AppStrings.tocNoCacheable)));
       return;
     }
     try {
@@ -1249,12 +1273,14 @@ class _TocScreenState extends ConsumerState<TocScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('已从当前章加入缓存队列')));
+      ).showSnackBar(SnackBar(content: Text(AppStrings.tocQueuedFromCurrent)));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('缓存启动失败：${errorMessage(e)}')));
+      ).showSnackBar(
+        SnackBar(content: Text(AppStrings.tocCacheStartFailed(errorMessage(e)))),
+      );
     }
   }
 
@@ -1285,15 +1311,21 @@ class _TocScreenState extends ConsumerState<TocScreen>
         SnackBar(
           content: Text(
             title.isNotEmpty
-                ? '「$title」${retry ? '已加入重新下载队列' : '已加入缓存队列'}'
-                : '第 ${chapterIndex + 1} 章${retry ? '已加入重新下载队列' : '已加入缓存队列'}',
+                ? AppStrings.tocChapterQueued(title, retry: retry)
+                : AppStrings.tocChapterIndexQueued(chapterIndex + 1,
+                    retry: retry),
           ),
         ),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${retry ? '重新下载' : '缓存'}启动失败：${errorMessage(e)}')),
+        SnackBar(
+          content: Text(AppStrings.tocRedownloadStartFailed(
+            '${retry ? AppStrings.redownloadChapter : AppStrings.raCache}'
+            '：${errorMessage(e)}',
+          )),
+        ),
       );
     }
   }
@@ -1317,17 +1349,17 @@ class _TocScreenState extends ConsumerState<TocScreen>
             const SizedBox(height: 16),
             Text(_chaptersError!, textAlign: TextAlign.center),
             const SizedBox(height: 16),
-            ElevatedButton(onPressed: _loadChapters, child: const Text('重试')),
+            ElevatedButton(onPressed: _loadChapters, child: Text(AppStrings.retry)),
           ],
         ),
       );
     }
     if (_chapters.isEmpty) {
-      return const Center(child: Text('暂无章节'));
+      return Center(child: Text(AppStrings.noChapters));
     }
     final entries = _displayEntries;
     if (entries.isEmpty) {
-      return const Center(child: Text('未找到匹配的章节'));
+      return Center(child: Text(AppStrings.tocNoMatchingChapters));
     }
     // [UI_SYNC_REFACTOR R3] 千级章节列表快速滚动条（对齐原版 FastScroller）
     return Md3FastScroller(
@@ -1493,7 +1525,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
         style: IconButton.styleFrom(
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
-        tooltip: '重新下载本章',
+        tooltip: AppStrings.redownloadChapter,
         onPressed: () => _downloadChapter(chapter.index, retry: true),
       );
     } else if (isCached) {
@@ -1521,7 +1553,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
         style: IconButton.styleFrom(
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
-        tooltip: '下载本章',
+        tooltip: AppStrings.downloadChapter,
         onPressed: () => _downloadChapter(chapter.index, retry: false),
       );
     } else {
@@ -1581,7 +1613,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
               onPressed: () => ref
                   .read(bookmarkNotifierProvider.notifier)
                   .loadByBook(_book.name, _book.author),
-              child: const Text('重试'),
+              child: Text(AppStrings.retry),
             ),
           ],
         ),
@@ -1613,7 +1645,9 @@ class _TocScreenState extends ConsumerState<TocScreen>
               ),
             ),
             const SizedBox(height: 16),
-            Text(query.isEmpty ? '暂无书签' : '未找到匹配的书签'),
+            Text(query.isEmpty
+                ? AppStrings.noBookmarks
+                : AppStrings.tocNoMatchingBookmarks),
           ],
         ),
       );
@@ -1707,7 +1741,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
               if (bookmark.content.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(
-                  '备注: ${bookmark.content}',
+                  AppStrings.bookmarkNote(bookmark.content),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.secondary,
                     fontStyle: FontStyle.italic,
@@ -1728,16 +1762,16 @@ class _TocScreenState extends ConsumerState<TocScreen>
     return showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除书签'),
-        content: Text('确定删除「${bookmark.chapterName}」的书签吗？'),
+        title: Text(AppStrings.deleteBookmark),
+        content: Text(AppStrings.deleteBookmarkConfirm(bookmark.chapterName)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('删除'),
+            child: Text(AppStrings.delete),
           ),
         ],
       ),
@@ -1775,7 +1809,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
                 _loadHighlights();
                 _loadMarkings();
               },
-              child: const Text('重试'),
+              child: Text(AppStrings.retry),
             ),
           ],
         ),
@@ -1815,7 +1849,9 @@ class _TocScreenState extends ConsumerState<TocScreen>
               color: Theme.of(context).colorScheme.outline,
             ),
             const SizedBox(height: 16),
-            Text(query.isEmpty ? '暂无标注' : '未找到匹配的标注'),
+            Text(query.isEmpty
+                ? AppStrings.noMarkings
+                : AppStrings.tocNoMatchingMarkings),
           ],
         ),
       );
@@ -1826,14 +1862,14 @@ class _TocScreenState extends ConsumerState<TocScreen>
       children.add(_buildMarkingErrorRow(context, markingsError));
     }
     if (filteredMarkings.isNotEmpty) {
-      children.add(_buildSectionHeader(context, '笔记'));
+      children.add(_buildSectionHeader(context, AppStrings.note));
       children.addAll(
         filteredMarkings.map((m) => _buildMarkingTile(context, m)),
       );
     }
     if (highlights.isNotEmpty) {
       if (filteredMarkings.isNotEmpty) {
-        children.add(_buildSectionHeader(context, '标注'));
+        children.add(_buildSectionHeader(context, AppStrings.markingLabel));
       }
       children.addAll(highlights.map((h) => _buildHighlightTile(context, h)));
     }
@@ -1873,7 +1909,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                '笔记加载失败：${errorMessage(error)}',
+                AppStrings.markingLoadFailed(errorMessage(error)),
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.error,
                 ),
@@ -1884,7 +1920,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
             TextButton(
               key: const ValueKey('toc-marking-retry'),
               onPressed: _loadMarkings,
-              child: const Text('重试'),
+              child: Text(AppStrings.retry),
             ),
           ],
         ),
@@ -1903,7 +1939,9 @@ class _TocScreenState extends ConsumerState<TocScreen>
     final chapterIndex = marking.chapterIndex;
     final chapterName = marking.chapterName.isNotEmpty
         ? marking.chapterName
-        : (chapterIndex == null ? '--' : '第${chapterIndex + 1}章');
+        : (chapterIndex == null
+            ? '--'
+            : AppStrings.chapterIndexLabel(chapterIndex + 1));
     final time = marking.updatedAt > 0 ? marking.updatedAt : marking.createdAt;
     return Card(
       key: ValueKey('toc-marking-tile-${marking.id}'),
@@ -1981,7 +2019,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
                     if (marking.note.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
-                        '备注: ${marking.note}',
+                        AppStrings.markingNote(marking.note),
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.secondary,
                           fontStyle: FontStyle.italic,
@@ -2024,7 +2062,8 @@ class _TocScreenState extends ConsumerState<TocScreen>
     );
     if (!mounted || saved == null) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已保存笔记'), duration: Duration(seconds: 2)),
+      SnackBar(content: Text(AppStrings.noteSaved),
+          duration: const Duration(seconds: 2)),
     );
   }
 
@@ -2037,7 +2076,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('更新笔记失败：${_errMsg(e)}'),
+          content: Text(AppStrings.noteUpdateFailed(_errMsg(e))),
           duration: const Duration(seconds: 2),
         ),
       );
@@ -2098,7 +2137,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
               if (note.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(
-                  '笔记: $note',
+                  AppStrings.tocNoteLine(note),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.secondary,
                     fontStyle: FontStyle.italic,

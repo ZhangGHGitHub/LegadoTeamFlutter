@@ -29,6 +29,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../providers/privacy/privacy_content_notifier.dart';
+import '../l10n/app_strings.dart';
 import '../providers/privacy/privacy_notifier.dart';
 import '../providers/privacy/privacy_state.dart';
 import '../widgets/app_scaffold.dart';
@@ -103,7 +104,7 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
       body = _buildBody(context, privacy);
     }
     return AppScaffold(
-      topBar: const LegadoAppBar(title: Text('隐私')),
+      topBar: LegadoAppBar(title: Text(AppStrings.privacy)),
       body: body,
     );
   }
@@ -123,7 +124,7 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
               color: Theme.of(context).colorScheme.error,
             ),
             const SizedBox(height: 12),
-            const Text('无法读取隐私设置，请重试'),
+            Text(AppStrings.privacyReadFailedRetry),
             const SizedBox(height: 12),
             FilledButton(
               key: const ValueKey('privacySettingsReadRetry'),
@@ -132,7 +133,7 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
                     .read(privacyNotifierProvider.notifier)
                     .retryCredentialCheck(),
               ),
-              child: const Text('重试'),
+              child: Text(AppStrings.retry),
             ),
           ],
         ),
@@ -155,13 +156,13 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
               Icon(Symbols.lock_rounded, size: 48, color: scheme.primary),
               const SizedBox(height: 16),
               Text(
-                '验证隐私密码',
+                AppStrings.verifyPrivacyPassword,
                 style: Theme.of(context).textTheme.titleLarge,
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
               Text(
-                '输入当前隐私密码以进入隐私设置',
+                AppStrings.privacyEnterToOpen,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),
@@ -177,9 +178,9 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
                 autocorrect: false,
                 textInputAction: TextInputAction.done,
                 onSubmitted: (_) => _verify(),
-                decoration: const InputDecoration(
-                  labelText: '隐私密码',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: AppStrings.privacyPasswordLabel,
+                  border: const OutlineInputBorder(),
                 ),
               ),
               if (_verifyError != null) ...[
@@ -204,7 +205,7 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('验证'),
+                      : Text(AppStrings.verifyAction),
                 ),
               ),
               const SizedBox(height: 8),
@@ -213,7 +214,7 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
                 onPressed: _verifying
                     ? null
                     : () => Navigator.of(context).maybePop(),
-                child: const Text('取消'),
+                child: Text(AppStrings.cancel),
               ),
             ],
           ),
@@ -226,7 +227,7 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
     if (_verifying) return;
     final password = _verifyController.text;
     if (password.isEmpty) {
-      setState(() => _verifyError = '请输入密码');
+      setState(() => _verifyError = AppStrings.enterPassword);
       return;
     }
     setState(() {
@@ -243,7 +244,7 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
         _verified = true;
         _verifyController.clear();
       } else {
-        _verifyError = '密码错误';
+        _verifyError = AppStrings.wrongPassword;
       }
     });
   }
@@ -264,35 +265,41 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
           Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: Text(
-              '私密标记暂不可用，当前按未锁定显示；请稍后重试或检查数据库。',
+              AppStrings.privacyPrivateUnavailable,
               key: const ValueKey('privacyMarkersUnavailable'),
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.error,
               ),
             ),
           ),
-        const IosSectionHeader('凭据'),
+        IosSectionHeader(AppStrings.privacyCredentialSection),
         IosGroup(
           children: [
             SettingSwitchRow(
               key: const ValueKey('privacyEnabledSwitch'),
-              title: '启用私密功能',
-              subtitle: '保护私密分组与私密书籍',
+              title: AppStrings.privacyEnableFeature,
+              subtitle: AppStrings.privacyEnableFeatureDesc,
               value: privacy.enabled,
               onChanged: (value) =>
                   unawaited(_toggleEnabled(context, notifier, privacy, value)),
             ),
             IosListTile(
               key: const ValueKey('privacyPasswordRow'),
-              title: privacy.hasPassword ? '修改密码' : '设置密码',
-              subtitle: privacy.hasPassword ? '修改前需验证当前密码' : '设置后才能开启私密功能',
-              value: privacy.hasPassword ? '已设置' : '未设置',
+              title: privacy.hasPassword
+                  ? AppStrings.privacyChangePassword
+                  : AppStrings.privacySetPassword,
+              subtitle: privacy.hasPassword
+                  ? AppStrings.privacyChangePasswordDesc
+                  : AppStrings.privacySetPasswordDesc,
+              value: privacy.hasPassword
+                  ? AppStrings.isSetLabel
+                  : AppStrings.notSetLabel,
               onTap: () => unawaited(_editPassword(context, notifier, privacy)),
             ),
             IosListTile(
               key: const ValueKey('privacyClearPasswordRow'),
-              title: '清除密码',
-              subtitle: '需验证当前密码',
+              title: AppStrings.privacyClearPassword,
+              subtitle: AppStrings.privacyClearPasswordDesc,
               enabled: privacy.hasPassword,
               onTap: privacy.hasPassword
                   ? () => unawaited(_clearPassword(context, notifier))
@@ -300,7 +307,7 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
             ),
             SettingSwitchRow(
               key: const ValueKey('privacyBiometricSwitch'),
-              title: '生物快捷解锁',
+              title: AppStrings.privacyBiometricUnlock,
               subtitle: _biometricSubtitle(privacy),
               value: privacy.biometricConfigured,
               onChanged: _biometricSwitchEnabled(privacy)
@@ -310,12 +317,12 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
             ),
           ],
         ),
-        const IosSectionHeader('验证时机'),
+        IosSectionHeader(AppStrings.privacyVerifyTiming),
         IosGroup(
           children: [
             SettingSwitchRow(
               key: const ValueKey('privacyVerifyEnterGroupSwitch'),
-              title: '进入私密分组时验证',
+              title: AppStrings.privacyVerifyOnPrivateGroup,
               value: privacy.verifyOnEnterGroup,
               onChanged: (value) => unawaited(
                 _applyPolicy(
@@ -326,7 +333,7 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
             ),
             SettingSwitchRow(
               key: const ValueKey('privacyVerifyOpenBookSwitch'),
-              title: '打开私密书籍时验证',
+              title: AppStrings.privacyVerifyOnPrivateBook,
               value: privacy.verifyOnOpenBook,
               onChanged: (value) => unawaited(
                 _applyPolicy(
@@ -337,8 +344,8 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
             ),
             SettingSwitchRow(
               key: const ValueKey('privacyVerifyAppStartSwitch'),
-              title: '启动应用时验证',
-              subtitle: '下次启动应用时需要密码',
+              title: AppStrings.privacyVerifyOnStartup,
+              subtitle: AppStrings.privacyVerifyOnStartupDesc,
               value: privacy.verifyOnAppStart,
               onChanged: (value) => unawaited(
                 _applyPolicy(
@@ -349,8 +356,8 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
             ),
             IosListTile(
               key: const ValueKey('privacyUnlockScopeRow'),
-              title: '验证频率',
-              subtitle: '「每次进入」仅作用于私密分组与书籍',
+              title: AppStrings.privacyVerifyFrequency,
+              subtitle: AppStrings.privacyVerifyFrequencyDesc,
               showChevron: false,
               trailing: DropdownButtonHideUnderline(
                 child: DropdownButton<PrivacyUnlockScope>(
@@ -377,8 +384,8 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
             if (privacy.unlockScope == PrivacyUnlockScope.untilBackground)
               IosListTile(
                 key: const ValueKey('privacyBackgroundGraceRow'),
-                title: '离开后宽限',
-                subtitle: '离开应用超过该时长后重新验证',
+                title: AppStrings.privacyGraceAfterLeave,
+                subtitle: AppStrings.privacyGraceAfterLeaveDesc,
                 showChevron: false,
                 trailing: DropdownButtonHideUnderline(
                   child: DropdownButton<int>(
@@ -407,11 +414,8 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
               ),
           ],
         ),
-        const IosSectionFooter(
-          '「应用会话内」在本次应用运行期间只验证一次，离开后台不失效；'
-          '「离开后台后」离开超过宽限时间后才需要重新验证。',
-        ),
-        const IosSectionHeader('说明'),
+        IosSectionFooter(AppStrings.privacySessionNote),
+        IosSectionHeader(AppStrings.privacyNotesSection),
         IosGroup(
           children: [
             Padding(
@@ -420,24 +424,18 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '隐私密码凭据仅保存在本机，不随应用内备份或书籍导出。'
-                    '启用私密功能后，忘记密码将无法访问私密内容。启动应用'
-                    '验证只在下次启动应用时触发；私密书籍与分组在书架、'
-                    '详情与阅读器中均按验证状态脱敏或放行。',
+                    AppStrings.privacyNoteLocalOnly,
                     style: noteStyle,
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '私密内容不会从本地与 WebDAV 备份（含自动上传）、书籍导出、'
-                    '进度同步或 Web 服务中排除。如需彻底保护，请勿分享备份文件、'
-                    '不要在不可信网络开启 Web 服务；开启后同一网络内任何设备均可访问。',
+                    AppStrings.privacyNoteBackup,
                     key: const ValueKey('privacyBackupDisclosure'),
                     style: noteStyle,
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '隐私密码凭据（加盐校验值）与私密标记保存在应用数据库内，'
-                    '可能随 Android 系统云备份一起迁移到其他设备。',
+                    AppStrings.privacyNoteCloudBackup,
                     key: const ValueKey('privacySystemBackupDisclosure'),
                     style: noteStyle,
                   ),
@@ -457,7 +455,7 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
   ) async {
     final ok = await action();
     if (!ok && context.mounted) {
-      _showMessage(context, '保存失败，请重试');
+      _showMessage(context, AppStrings.saveFailedRetry);
     }
   }
 
@@ -470,7 +468,7 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
     if (!value) {
       final ok = await notifier.setEnabled(false);
       if (!ok && context.mounted) {
-        _showMessage(context, '保存失败，请重试');
+        _showMessage(context, AppStrings.saveFailedRetry);
       }
       return;
     }
@@ -492,7 +490,8 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
       setState(() => _verified = true);
     } else if (context.mounted) {
       final hasPassword = ref.read(privacyNotifierProvider).hasPassword;
-      _showMessage(context, hasPassword ? '保存失败，请重试' : '请先设置隐私密码');
+      _showMessage(context,
+          hasPassword ? AppStrings.saveFailedRetry : AppStrings.privacySetPasswordFirst);
     }
   }
 
@@ -510,7 +509,9 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
       ),
     );
     if (changed == true && context.mounted) {
-      _showMessage(context, privacy.hasPassword ? '密码已修改' : '密码已设置');
+      _showMessage(context, privacy.hasPassword
+          ? AppStrings.privacyPasswordChanged
+          : AppStrings.privacyPasswordSet);
     }
   }
 
@@ -531,10 +532,11 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
     final disabled = await notifier.setEnabled(false);
     if (!mounted || !context.mounted) return;
     if (!disabled) {
-      _showMessage(context, '保存失败，请重试');
+      _showMessage(context, AppStrings.saveFailedRetry);
       return;
     }
-    _showMessage(context, wasEnabled ? '私密功能已关闭' : '密码已清除');
+    _showMessage(context,
+        wasEnabled ? AppStrings.privacyFeatureOff : AppStrings.privacyPasswordCleared);
   }
 
   void _showMessage(BuildContext context, String message) {
@@ -548,15 +550,15 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
     if (privacy.biometricConfigured) {
       final status = privacy.biometricStatus;
       if (status != null && !status.available) {
-        return '已开启；当前生物识别不可用，可关闭';
+        return AppStrings.privacyBiometricUnavailable;
       }
-      return '已开启，解锁时可使用指纹或面容';
+      return AppStrings.privacyBiometricOn;
     }
-    if (!privacy.hasPassword) return '请先设置隐私密码';
+    if (!privacy.hasPassword) return AppStrings.privacySetPasswordFirst;
     final status = privacy.biometricStatus;
-    if (status == null) return '正在读取生物识别状态';
+    if (status == null) return AppStrings.privacyBiometricReading;
     if (!status.available) return status.unavailableMessage;
-    return '使用指纹或面容快速解锁';
+    return AppStrings.privacyBiometricHint;
   }
 
   /// [批9d] 生物开关是否可操作
@@ -594,7 +596,7 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
       if (!mounted) return;
       setState(() => _biometricBusy = false);
       if (!ok && context.mounted) {
-        _showMessage(context, '关闭失败，请重试');
+        _showMessage(context, AppStrings.closeFailedRetry);
       }
     }
   }
@@ -649,19 +651,19 @@ class _PrivacyPasswordDialogState extends State<PrivacyPasswordDialog> {
       _error = null;
     });
     if (widget.hasPassword && oldPassword.isEmpty) {
-      setState(() => _oldError = '请输入当前密码');
+      setState(() => _oldError = AppStrings.privacyEnterCurrentPassword);
       return;
     }
     if (trimmed.isEmpty) {
-      setState(() => _error = '新密码不能为空');
+      setState(() => _error = AppStrings.privacyNewPasswordEmpty);
       return;
     }
     if (trimmed.runes.length > 128) {
-      setState(() => _error = '新密码不能超过 128 个字符');
+      setState(() => _error = AppStrings.privacyNewPasswordTooLong);
       return;
     }
     if (newPassword != confirm) {
-      setState(() => _error = '两次输入的密码不一致');
+      setState(() => _error = AppStrings.privacyPasswordMismatch);
       return;
     }
     setState(() => _saving = true);
@@ -675,11 +677,11 @@ class _PrivacyPasswordDialogState extends State<PrivacyPasswordDialog> {
       case PrivacyPasswordChangeResult.success:
         Navigator.of(context).pop(true);
       case PrivacyPasswordChangeResult.oldPasswordWrong:
-        setState(() => _oldError = '密码错误');
+        setState(() => _oldError = AppStrings.wrongPassword);
       case PrivacyPasswordChangeResult.invalidPassword:
-        setState(() => _error = '新密码不能为空或超过 128 个字符');
+        setState(() => _error = AppStrings.privacyNewPasswordInvalid);
       case PrivacyPasswordChangeResult.failure:
-        setState(() => _error = '设置密码失败，请重试');
+        setState(() => _error = AppStrings.privacySetPasswordFailed);
     }
   }
 
@@ -689,7 +691,9 @@ class _PrivacyPasswordDialogState extends State<PrivacyPasswordDialog> {
     return AlertDialog(
       key: const ValueKey('privacyPasswordDialog'),
       scrollable: true,
-      title: Text(widget.hasPassword ? '修改密码' : '设置密码'),
+      title: Text(widget.hasPassword
+          ? AppStrings.privacyChangePassword
+          : AppStrings.privacySetPassword),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 360),
         child: Column(
@@ -705,7 +709,8 @@ class _PrivacyPasswordDialogState extends State<PrivacyPasswordDialog> {
                 enableSuggestions: false,
                 autocorrect: false,
                 textInputAction: TextInputAction.next,
-                decoration: const InputDecoration(labelText: '当前密码'),
+                decoration:
+                    InputDecoration(labelText: AppStrings.privacyCurrentPassword),
               ),
               if (_oldError != null) ...[
                 const SizedBox(height: 4),
@@ -725,7 +730,8 @@ class _PrivacyPasswordDialogState extends State<PrivacyPasswordDialog> {
               enableSuggestions: false,
               autocorrect: false,
               textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(labelText: '新密码'),
+              decoration:
+                  InputDecoration(labelText: AppStrings.privacyNewPassword),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -737,7 +743,8 @@ class _PrivacyPasswordDialogState extends State<PrivacyPasswordDialog> {
               autocorrect: false,
               textInputAction: TextInputAction.done,
               onSubmitted: (_) => _save(),
-              decoration: const InputDecoration(labelText: '确认新密码'),
+              decoration: InputDecoration(
+                  labelText: AppStrings.privacyConfirmNewPassword),
             ),
             if (_error != null) ...[
               const SizedBox(height: 8),
@@ -753,7 +760,7 @@ class _PrivacyPasswordDialogState extends State<PrivacyPasswordDialog> {
       actions: [
         TextButton(
           onPressed: _saving ? null : () => Navigator.of(context).pop(false),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         FilledButton(
           key: const ValueKey('privacyPasswordSaveButton'),
@@ -764,7 +771,7 @@ class _PrivacyPasswordDialogState extends State<PrivacyPasswordDialog> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('保存'),
+              : Text(AppStrings.save),
         ),
       ],
     );
@@ -799,7 +806,7 @@ class _PrivacyClearPasswordDialogState
     if (_clearing) return;
     final password = _controller.text;
     if (password.isEmpty) {
-      setState(() => _error = '请输入当前密码');
+      setState(() => _error = AppStrings.privacyEnterCurrentPassword);
       return;
     }
     setState(() {
@@ -814,12 +821,12 @@ class _PrivacyClearPasswordDialogState
       case PrivacyClearPasswordResult.passwordWrong:
         setState(() {
           _clearing = false;
-          _error = '密码错误';
+          _error = AppStrings.wrongPassword;
         });
       case PrivacyClearPasswordResult.failure:
         setState(() {
           _clearing = false;
-          _error = '清除失败，请重试';
+          _error = AppStrings.privacyClearFailed;
         });
     }
   }
@@ -832,14 +839,14 @@ class _PrivacyClearPasswordDialogState
       child: AlertDialog(
         key: const ValueKey('privacyClearPasswordDialog'),
         scrollable: true,
-        title: const Text('清除密码'),
+        title: Text(AppStrings.privacyClearPassword),
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 360),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text('清除后私密内容将不再要求密码。确定清除吗？'),
+              Text(AppStrings.privacyClearConfirm),
               const SizedBox(height: 12),
               TextField(
                 key: const ValueKey('privacyClearPasswordField'),
@@ -850,7 +857,8 @@ class _PrivacyClearPasswordDialogState
                 autocorrect: false,
                 textInputAction: TextInputAction.done,
                 onSubmitted: (_) => _clear(),
-                decoration: const InputDecoration(labelText: '当前密码'),
+                decoration:
+                    InputDecoration(labelText: AppStrings.privacyCurrentPassword),
               ),
               if (_error != null) ...[
                 const SizedBox(height: 8),
@@ -868,7 +876,7 @@ class _PrivacyClearPasswordDialogState
             onPressed: _clearing
                 ? null
                 : () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             key: const ValueKey('privacyClearPasswordConfirmButton'),
@@ -879,7 +887,7 @@ class _PrivacyClearPasswordDialogState
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text('清除'),
+                : Text(AppStrings.clear),
           ),
         ],
       ),

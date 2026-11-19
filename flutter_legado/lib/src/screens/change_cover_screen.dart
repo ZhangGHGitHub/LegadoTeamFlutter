@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../models/models.dart';
+import '../l10n/app_strings.dart';
 import '../providers/change_cover/change_cover_notifier.dart';
 import '../services/container_image_picker.dart';
 import '../utils/cover_local_path.dart';
@@ -94,22 +95,22 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
   Future<void> _pickLocal() async {
     try {
       final pick = await ContainerImagePicker.pick(
-        dialogTitle: '选择封面图片',
+        dialogTitle: AppStrings.changeCoverPickDialogTitle,
       );
       if (pick == null || !mounted) return;
       final path = await _storePickedCover(pick);
       if (!mounted) return;
       if (path == null) {
-        _showToast('保存封面失败，请重试');
+        _showToast(AppStrings.changeCoverSaveFailed);
         return;
       }
       setState(() => _selectedUrl = path);
-      _showToast('已选择本地图片，点击底部按钮确认');
+      _showToast(AppStrings.changeCoverLocalPickedHint);
     } on ContainerImagePickException catch (e) {
       if (mounted) _showToast(e.message);
     } catch (e) {
       debugPrint('ChangeCoverScreen._pickLocal 异常: $e');
-      if (mounted) _showToast('选择封面失败，请重试');
+      if (mounted) _showToast(AppStrings.changeCoverPickFailed);
     }
   }
 
@@ -222,12 +223,12 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       topBar: LegadoAppBar(
-        title: const Text('更换封面'),
+        title: Text(AppStrings.changeCoverTitle),
         actions: [
           // 顶栏统一 36dp 图标槽位（TopBarActionStyler），带文字按钮会超出槽位
           // 造成右溢：与其它屏一致用 IconButton，「本地」语义保留在 tooltip
           IconButton(
-            tooltip: '本地',
+            tooltip: AppStrings.bookTypeLocal,
             icon: const Icon(Symbols.photo_library_rounded),
             onPressed: _pickLocal,
           ),
@@ -238,7 +239,7 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
           padding: const EdgeInsets.all(16),
           child: FilledButton.icon(
             icon: const Icon(Symbols.check_rounded),
-            label: const Text('使用该封面'),
+            label: Text(AppStrings.changeCoverUseThis),
             onPressed: _selectedUrl == null ? null : _confirm,
             style: FilledButton.styleFrom(
               minimumSize: const Size.fromHeight(52),
@@ -261,7 +262,7 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
             ),
           ),
           _buildSearchBar(theme, coverState),
-          _buildSectionHeader(theme, '网络封面'),
+          _buildSectionHeader(theme, AppStrings.changeCoverNetworkSection),
           _buildCandidateGrid(theme, coverState),
         ],
       ),
@@ -304,7 +305,9 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  widget.effectiveBookName.isEmpty ? '未命名书籍' : widget.effectiveBookName,
+                  widget.effectiveBookName.isEmpty
+                      ? AppStrings.unnamedBook
+                      : widget.effectiveBookName,
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -320,7 +323,9 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    isSelected ? '已选择新封面' : '当前封面',
+                    isSelected
+                        ? AppStrings.changeCoverNewSelected
+                        : AppStrings.changeCoverCurrent,
                     style: theme.textTheme.labelMedium?.copyWith(
                       color: isSelected
                           ? colorScheme.onPrimaryContainer
@@ -330,7 +335,7 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  '从下方选择网络封面，或点击右上角「本地」从相册选取。',
+                  AppStrings.changeCoverHint,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
@@ -349,7 +354,7 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
       child: SearchBar(
         controller: _searchController,
-        hintText: '输入书名搜索封面',
+        hintText: AppStrings.changeCoverSearchHint,
         constraints: const BoxConstraints(minHeight: 40),
         elevation: const WidgetStatePropertyAll(0),
         backgroundColor: WidgetStatePropertyAll(
@@ -403,7 +408,7 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
         padding: const EdgeInsets.symmetric(vertical: 40),
         child: Center(
           child: Text(
-            '暂无候选封面',
+            AppStrings.changeCoverNoCandidates,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
