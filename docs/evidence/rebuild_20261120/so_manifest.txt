@@ -1,0 +1,26 @@
+# Legado Android Rust .so manifest
+# generated: 2026-11-20T04:40:09+08:00
+# HEAD: c3d95bda8e  fingerprint: b1c0003bb55e7f8d36e82fc15f6beb036363cd052726af8643ef7c8714597d95
+# mode: release
+
+## jniLibs (packaged into APK)
+ABI            SIZE_BYTES   MTIME                SHA256
+-------------------------------------------------------
+arm64-v8a      54684184     2026-11-20 04:37:55  10805ebd3facebb7ee6f83df5bbe5416335753cfa75e134d5e99ba33e04892f6
+armeabi-v7a    36293512     2026-11-20 04:38:24  876b2f6c35a8d7664d9fb556e624c9758bb3bd75de7f5cf79eddfdf017333422
+x86_64         55335240     2026-11-20 04:38:53  5f6e70b7979e2a804f698fc0cd1a532357157b82d385e154aa2a7e9cc1ea75cf
+
+## absolute paths
+D:\OH-WorkSpace\LegadoTeam\legado\flutter_legado\android\app\src\main\jniLibs\arm64-v8a\liblegado_ffi.so
+D:\OH-WorkSpace\LegadoTeam\legado\flutter_legado\android\app\src\main\jniLibs\armeabi-v7a\liblegado_ffi.so
+D:\OH-WorkSpace\LegadoTeam\legado\flutter_legado\android\app\src\main\jniLibs\x86_64\liblegado_ffi.so
+
+## .so.meta (rustFingerprint recorded by build-android.ps1)
+arm64-v8a: {"contentHash":780472602,"mode":"release","quickjs":true,"builtAt":"2026-11-20T04:38:53.9236151+08:00","rustFingerprint":"b1c0003bb55e7f8d36e82fc15f6beb036363cd052726af8643ef7c8714597d95"}
+armeabi-v7a: {"contentHash":780472602,"mode":"release","quickjs":false,"builtAt":"2026-11-20T04:38:53.9514902+08:00","rustFingerprint":"b1c0003bb55e7f8d36e82fc15f6beb036363cd052726af8643ef7c8714597d95"}
+x86_64: {"contentHash":780472602,"mode":"release","quickjs":true,"builtAt":"2026-11-20T04:38:53.9687924+08:00","rustFingerprint":"b1c0003bb55e7f8d36e82fc15f6beb036363cd052726af8643ef7c8714597d95"}
+
+## rust/target build outputs (identical sha256 to jniLibs copies)
+arm64-v8a      aarch64-linux-android        54684184     10805ebd3facebb7ee6f83df5bbe5416335753cfa75e134d5e99ba33e04892f6
+armeabi-v7a    armv7-linux-androideabi      36293512     876b2f6c35a8d7664d9fb556e624c9758bb3bd75de7f5cf79eddfdf017333422
+x86_64         x86_64-linux-android         55335240     5f6e70b7979e2a804f698fc0cd1a532357157b82d385e154aa2a7e9cc1ea75cf

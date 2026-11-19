@@ -1,0 +1,40 @@
+== arm64-v8a ==
+   path   : D:\OH-WorkSpace\LegadoTeam\legado\flutter_legado\android\app\src\main\jniLibs\arm64-v8a\liblegado_ffi.so
+   size   : 54684184 bytes
+   sha256 : 10805ebd3facebb7ee6f83df5bbe5416335753cfa75e134d5e99ba33e04892f6
+   [HIT ] 0x00334c2b x2  HLS 初始化段下载失败
+   [HIT ] 0x0031eaab x1  HLS 变体播放列表仍为 master
+   [HIT ] 0x00322ec3 x1  EXT-X-BYTERANGE 偏移与长度之和溢出
+   [HIT ] 0x0034d2b3 x1  HLS 合并产物超出体积上限
+   [HIT ] 0x0037a545 x1  直播流不支持离线缓存
+
+== armeabi-v7a ==
+   path   : D:\OH-WorkSpace\LegadoTeam\legado\flutter_legado\android\app\src\main\jniLibs\armeabi-v7a\liblegado_ffi.so
+   size   : 36293512 bytes
+   sha256 : 876b2f6c35a8d7664d9fb556e624c9758bb3bd75de7f5cf79eddfdf017333422
+   [HIT ] 0x0023889b x2  HLS 初始化段下载失败
+   [HIT ] 0x00226fb4 x1  HLS 变体播放列表仍为 master
+   [HIT ] 0x0022a5af x1  EXT-X-BYTERANGE 偏移与长度之和溢出
+   [HIT ] 0x0024c911 x1  HLS 合并产物超出体积上限
+   [HIT ] 0x00273d40 x1  直播流不支持离线缓存
+
+== x86_64 ==
+   path   : D:\OH-WorkSpace\LegadoTeam\legado\flutter_legado\android\app\src\main\jniLibs\x86_64\liblegado_ffi.so
+   size   : 55335240 bytes
+   sha256 : 5f6e70b7979e2a804f698fc0cd1a532357157b82d385e154aa2a7e9cc1ea75cf
+   [HIT ] 0x0035ef6b x2  HLS 初始化段下载失败
+   [HIT ] 0x00348ca4 x1  HLS 变体播放列表仍为 master
+   [HIT ] 0x0034cff8 x1  EXT-X-BYTERANGE 偏移与长度之和溢出
+   [HIT ] 0x003777d2 x1  HLS 合并产物超出体积上限
+   [HIT ] 0x0039f085 x1  直播流不支持离线缓存
+
+== matrix ==
+STRING                                 arm64-v8a      armeabi-v7a    x86_64        
+-----------------------------------------------------------------------------------
+HLS 初始化段下载失败                           HIT            HIT            HIT           
+HLS 变体播放列表仍为 master                    HIT            HIT            HIT           
+EXT-X-BYTERANGE 偏移与长度之和溢出              HIT            HIT            HIT           
+HLS 合并产物超出体积上限                         HIT            HIT            HIT           
+直播流不支持离线缓存                             HIT            HIT            HIT           
+
+RESULT=PASS

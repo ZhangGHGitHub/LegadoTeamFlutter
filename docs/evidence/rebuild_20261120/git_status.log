@@ -1,0 +1,33 @@
+# git status snapshot captured during rebuild task
+# time: 2026-11-20T04:40:42+08:00
+# NOTE: docs/pending_deletion/** deletions were NOT caused by this task.
+#       Task-start 'git status --porcelain' showed only untracked entries;
+#       these staged deletions appeared mid-task from an external process.
+
+D  docs/pending_deletion/assets_icons_unused/ic_bottom_books_e.svg
+D  docs/pending_deletion/assets_icons_unused/ic_bottom_books_s.svg
+D  docs/pending_deletion/assets_icons_unused/ic_bottom_explore_e.svg
+D  docs/pending_deletion/assets_icons_unused/ic_bottom_explore_s.svg
+D  docs/pending_deletion/assets_icons_unused/ic_bottom_person_e.svg
+D  docs/pending_deletion/assets_icons_unused/ic_bottom_person_s.svg
+D  docs/pending_deletion/assets_icons_unused/ic_bottom_rss_feed_e.svg
+D  docs/pending_deletion/assets_icons_unused/ic_bottom_rss_feed_s.svg
+D  docs/pending_deletion/lib/src/widgets/badge_widget.dart
+D  docs/pending_deletion/lib/src/widgets/chapter_tile.dart
+D  docs/pending_deletion/lib/src/widgets/custom_progress.dart
+D  docs/pending_deletion/lib/src/widgets/search_bar_widget.dart
+D  docs/pending_deletion/lib/src/widgets/source_card.dart
+D  docs/pending_deletion/lib/src/widgets/swipe_action.dart
+D  docs/pending_deletion/lib/src/widgets/tag_chip.dart
+D  docs/pending_deletion/web_dist_custom_index/README.md
+D  docs/pending_deletion/web_dist_custom_index/index.html
+?? docs/REMAINING_WORK_INVENTORY_20261120.md
+?? docs/evidence/batch33/ui/b34_test.xml
+?? docs/evidence/batch33/ui/name.xml
+?? docs/evidence/batch33/ui/post_home.png
+?? docs/evidence/batch33/ui/post_home.xml
+?? docs/evidence/batch33/ui/post_launch.xml
+?? docs/evidence/batch39c/
+?? docs/evidence/batch45d/
+?? docs/evidence/batch46b/
+?? docs/evidence/rebuild_20261120/
