@@ -2087,9 +2087,7 @@ class AppStrings {
   static String get uncategorized => _get('未分类', 'Uncategorized');
   static String get selectOperation => _get('选择操作', 'Select action');
   static String get goLogin => _get('去登录', 'Log in');
-  static String get notNow => _get('暂不', 'Not now');
   static String get confirmTextDefault => _get('确认', 'Confirm');
-  static String get cancelTextDefault => _get('取消', 'Cancel');
 
   // ----- 通用参数化 -----
   static String unreadChapters(int count) =>
