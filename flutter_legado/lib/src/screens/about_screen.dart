@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../l10n/app_strings.dart';
 import '../routes.dart';
 import '../services/app_update_service.dart';
 import '../services/crash_log_service.dart';
@@ -59,7 +60,9 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
       await Clipboard.setData(ClipboardData(text: url));
-      messenger.showSnackBar(SnackBar(content: Text('已复制链接：$url')));
+      messenger.showSnackBar(
+        SnackBar(content: Text(AppStrings.copiedLink(url))),
+      );
     }
   }
 
@@ -78,14 +81,14 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
       setState(() => _checkingUpdate = false);
       if (info == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('当前已是最新版本 v$version')),
+          SnackBar(content: Text(AppStrings.latestVersion(version))),
         );
         return;
       }
       if (await service.isIgnored(info.tagName)) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已忽略版本 ${info.tagName}')),
+          SnackBar(content: Text(AppStrings.versionIgnoredNamed(info.tagName))),
         );
         return;
       }
@@ -95,7 +98,7 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
       if (!mounted) return;
       setState(() => _checkingUpdate = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('检查更新\n${errorMessage(e)}')),
+        SnackBar(content: Text(AppStrings.checkUpdateError(errorMessage(e)))),
       );
     }
   }
@@ -140,26 +143,22 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
   }
 
   Future<void> _showUpdateLog() async {
-    const placeholder =
-        '更新日志正文尚未打包进 Flutter 资产（对标 Android assets/updateLog.md）。\n'
-        '请前往 GitHub Releases 查看完整变更说明。';
+    final placeholder = AppStrings.updateLogPlaceholder;
     try {
       final md = await rootBundle.loadString('assets/updateLog.md');
-      await _showTextSheet('更新日志', md);
+      await _showTextSheet(AppStrings.updateLog, md);
     } catch (_) {
-      await _showTextSheet('更新日志', placeholder);
+      await _showTextSheet(AppStrings.updateLog, placeholder);
     }
   }
 
   Future<void> _showDisclaimer() async {
-    const placeholder =
-        '免责声明正文尚未打包进 Flutter 资产（对标 Android assets/disclaimer.md）。\n'
-        '本软件为开源阅读工具，使用者须遵守当地法律法规与网站服务条款。';
+    final placeholder = AppStrings.disclaimerPlaceholder;
     try {
       final md = await rootBundle.loadString('assets/disclaimer.md');
-      await _showTextSheet('免责声明', md);
+      await _showTextSheet(AppStrings.disclaimer, md);
     } catch (_) {
-      await _showTextSheet('免责声明', placeholder);
+      await _showTextSheet(AppStrings.disclaimer, placeholder);
     }
   }
 
@@ -169,19 +168,19 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
       if (!mounted) return;
       if (path == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('未开启日志记录，请去其他设置里打开记录日志'),
+          SnackBar(
+            content: Text(AppStrings.logRecordingDisabled),
           ),
         );
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('日志已导出：$path')),
+        SnackBar(content: Text(AppStrings.logsExported(path))),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('保存日志失败：${errorMessage(e)}')),
+        SnackBar(content: Text(AppStrings.saveLogFailed(errorMessage(e)))),
       );
     }
   }
@@ -198,31 +197,37 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
           await CrashLogService.instance.getRecordHeapDump();
       if (!recordHeapDump) {
         messenger.showSnackBar(
-          const SnackBar(
-            content: Text('未开启堆转储记录，请去其他设置里打开记录堆转储'),
+          SnackBar(
+            content: Text(AppStrings.heapDumpRecordingDisabled),
           ),
         );
       }
-      messenger.showSnackBar(const SnackBar(content: Text('开始创建堆转储')));
+      messenger.showSnackBar(
+        SnackBar(content: Text(AppStrings.creatingHeapDump)),
+      );
       final path = await CrashLogService.instance.createHeapDump();
       if (!mounted) return;
       // 分享承载「取出堆转储文件」（share_plus 为既有依赖）
       await Share.shareXFiles(
         [XFile(path)],
-        subject: '堆转储文件',
-        text: '应用堆转储（诊断用）',
+        subject: AppStrings.heapDumpFile,
+        text: AppStrings.heapDumpShareText,
       );
       if (!mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text('堆转储已生成：$path')));
+      messenger.showSnackBar(
+        SnackBar(content: Text(AppStrings.heapDumpCreated(path))),
+      );
     } on UnsupportedError catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message ?? '当前平台不支持创建堆转储')),
+        SnackBar(
+          content: Text(e.message ?? AppStrings.heapDumpUnsupported),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('创建堆转储失败：${errorMessage(e)}')),
+        SnackBar(content: Text(AppStrings.heapDumpFailed(errorMessage(e)))),
       );
     }
   }
@@ -231,7 +236,7 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
   Widget build(BuildContext context) {
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
-      topBar: LegadoAppBar(title: const Text('关于')),
+      topBar: LegadoAppBar(title: Text(AppStrings.aboutLabel)),
       body: IosGroupedBody(
         child: ListView(
           // [LAYOUT_PLAN P3] 底部 bottom32 保留；列表水平边距走 IosGroupedBody 16dp
@@ -241,19 +246,19 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
               // [LAYOUT_PLAN P3] 分组行走 IosListTile 规范（扁平分组，行内边距由 ListTile 承担）
               children: [
                 IosListTile(
-                  title: '开发人员',
-                  subtitle: 'gedoor、Invinciblelee 和 Xwite 等，详情请在 GitHub 中查看',
+                  title: AppStrings.contributors,
+                  subtitle: AppStrings.contributorsSummary,
                   onTap: () => _launch(_contributorsUrl),
                 ),
                 IosListTile(
-                  title: '更新日志',
+                  title: AppStrings.updateLog,
                   subtitle: _appVersion.isEmpty
-                      ? '版本 …'
-                      : '版本 $_appVersion',
+                      ? AppStrings.versionPlaceholder
+                      : AppStrings.versionLabel(_appVersion),
                   onTap: _showUpdateLog,
                 ),
                 IosListTile(
-                  title: '检查更新',
+                  title: AppStrings.checkUpdate,
                   trailing: _checkingUpdate
                       ? const SizedBox(
                           width: 20,
@@ -265,38 +270,38 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
                 ),
               ],
             ),
-            const IosSectionHeader('其他'),
+            IosSectionHeader(AppStrings.otherSection),
             IosGroup(flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
               // [LAYOUT_PLAN P3] 分组行走 IosListTile 规范（扁平分组，行内边距由 ListTile 承担）
               children: [
                 IosListTile(
-                  title: '崩溃日志',
+                  title: AppStrings.crashLog,
                   onTap: () =>
                       Navigator.pushNamed(context, AppRoutes.appLog),
                 ),
                 IosListTile(
-                  title: '保存日志',
+                  title: AppStrings.saveLogs,
                   onTap: _saveLog,
                 ),
                 IosListTile(
-                  title: '创建堆转储',
+                  title: AppStrings.createHeapDump,
                   onTap: _createHeapDump,
                 ),
                 IosListTile(
-                  title: '用户隐私与协议',
+                  title: AppStrings.privacyPolicy,
                   onTap: () => _launch(_privacyUrl),
                 ),
                 IosListTile(
-                  title: '开源许可',
+                  title: AppStrings.licenseLabel,
                   onTap: () => showLicensePage(
                     context: context,
-                    applicationName: '阅读',
+                    applicationName: AppStrings.appTitle,
                     applicationVersion: _appVersion,
                     applicationLegalese: 'GNU General Public License v3.0',
                   ),
                 ),
                 IosListTile(
-                  title: '免责声明',
+                  title: AppStrings.disclaimer,
                   onTap: _showDisclaimer,
                 ),
               ],

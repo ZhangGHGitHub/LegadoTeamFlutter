@@ -8,6 +8,7 @@ import '../widgets/bottom_sheet_widget.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../l10n/app_strings.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/loading_indicator.dart';
 import '../utils/error_message.dart';
@@ -140,7 +141,7 @@ class _FileManageScreenState extends State<FileManageScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('无法打开文件: ${errorMessage(e)}')),
+        SnackBar(content: Text(AppStrings.cannotOpenFile(errorMessage(e)))),
       );
     }
   }
@@ -150,13 +151,13 @@ class _FileManageScreenState extends State<FileManageScreen> {
     // [UI_SYNC_REFACTOR S5] 统一壳迁移示范（AppBottomSheet.show）
     final action = await AppBottomSheet.show<String>(
       context: context,
-      title: '文件操作',
+      title: AppStrings.fileActions,
       children: [
         ListTile(
           leading: Icon(Symbols.delete_rounded,
               color: Theme.of(context).colorScheme.error),
           title: Text(
-            '删除',
+            AppStrings.delete,
             style: TextStyle(color: Theme.of(context).colorScheme.error),
           ),
           onTap: () => Navigator.pop(context, 'delete'),
@@ -172,17 +173,17 @@ class _FileManageScreenState extends State<FileManageScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除'),
-        content: Text('确定删除「$name」吗？此操作不可恢复。'),
+        title: Text(AppStrings.delete),
+        content: Text(AppStrings.deleteFileConfirm(name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(
-              '删除',
+              AppStrings.delete,
               style: TextStyle(color: Theme.of(ctx).colorScheme.error),
             ),
           ),
@@ -195,7 +196,7 @@ class _FileManageScreenState extends State<FileManageScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('删除失败: ${errorMessage(e)}')),
+        SnackBar(content: Text(AppStrings.fileDeleteFailed(errorMessage(e)))),
       );
       return;
     }
@@ -218,7 +219,7 @@ class _FileManageScreenState extends State<FileManageScreen> {
             controller: _searchCtrl,
             decoration: InputDecoration(
               // 对标原版 queryHint：筛选 • 文件管理
-              hintText: '筛选 · 文件管理',
+              hintText: AppStrings.fileManageFilterHint,
               filled: true,
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
@@ -248,10 +249,12 @@ class _FileManageScreenState extends State<FileManageScreen> {
         ),
         body: Builder(builder: (context) {
           if (_rootDoc == null && _error == null) {
-            return const LoadingIndicator(message: '加载文件...');
+            return LoadingIndicator(message: AppStrings.loadingFiles);
           }
           if (_error != null) {
-            return Center(child: Text('加载失败: $_error'));
+            return Center(
+              child: Text(AppStrings.loadFailedColon(_error!)),
+            );
           }
           return Column(
             children: [
@@ -311,9 +314,9 @@ class _FileManageScreenState extends State<FileManageScreen> {
     final atRoot = _subDocs.isEmpty;
 
     if (files.isEmpty && atRoot) {
-      return const EmptyState(
+      return EmptyState(
         icon: Symbols.folder_rounded,
-        title: '当前目录为空',
+        title: AppStrings.currentDirEmpty,
         simple: true,
       );
     }

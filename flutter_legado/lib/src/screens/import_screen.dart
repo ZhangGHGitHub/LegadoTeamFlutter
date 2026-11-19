@@ -289,7 +289,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
         // 远程书籍导入入口（对标原版 RemoteBookActivity）
         IconButton(
           icon: const Icon(Symbols.link_rounded),
-          tooltip: '远程导入',
+          tooltip: AppStrings.remoteImport,
           onPressed: () =>
               Navigator.pushNamed(context, AppRoutes.remoteBooks),
         ),
@@ -298,7 +298,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
             icon: Icon(
               _allVisibleSelected ? Symbols.check_box_rounded : Symbols.check_box_outline_blank_rounded,
             ),
-            tooltip: '全选',
+            tooltip: AppStrings.selectAll,
             onPressed: _visibleFiles.isEmpty ? null : _toggleSelectAll,
           ),
       ],
@@ -362,7 +362,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
 
   Widget _buildBody() {
     if (_loading) {
-      return const LoadingIndicator(message: '扫描文件...');
+      return LoadingIndicator(message: AppStrings.scanningFiles);
     }
     if (_error != null) {
       return EmptyState(
@@ -382,8 +382,8 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
     if (_dirs.isEmpty && _visibleFiles.isEmpty) {
       return EmptyState(
         icon: Symbols.folder_off_rounded,
-        title: '当前目录没有可导入的书籍',
-        subtitle: '切换格式过滤或返回上级目录',
+        title: AppStrings.noImportableBooks,
+        subtitle: AppStrings.noImportableBooksHint,
       );
     }
     return ListView(
@@ -403,7 +403,8 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Text('选择存储目录', style: Theme.of(context).textTheme.titleSmall),
+          child: Text(AppStrings.selectStorageDir,
+              style: Theme.of(context).textTheme.titleSmall),
         ),
         for (final root in _roots)
           Card(
@@ -518,7 +519,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
       if (!isArchive) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('该文件不是有效的压缩包格式')),
+            SnackBar(content: Text(AppStrings.invalidArchiveFormat)),
           );
         }
         return;
@@ -585,7 +586,9 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
         child: FilledButton.icon(
           onPressed: count == 0 ? null : _startImport,
           icon: const Icon(Symbols.download_rounded),
-          label: Text(count == 0 ? '未选择书籍' : '放入书架 ($count)'),
+          label: Text(count == 0
+              ? AppStrings.noBooksSelected
+              : AppStrings.addToShelfCount(count)),
           style: FilledButton.styleFrom(
             minimumSize: const Size.fromHeight(48),
           ),
@@ -604,7 +607,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('正在导入 $_importDone / $_importTotal ...'),
+            Text(AppStrings.importingProgress(_importDone, _importTotal)),
             const SizedBox(height: 8),
             LinearProgressIndicator(value: progress),
           ],
@@ -626,9 +629,21 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _resultStat('成功', '$_successCount', colorScheme.primary),
-                _resultStat('失败', '$_failCount', colorScheme.error),
-                _resultStat('跳过', '$_skipCount', colorScheme.onSurfaceVariant),
+                _resultStat(
+                  AppStrings.debugLevelSuccess,
+                  '$_successCount',
+                  colorScheme.primary,
+                ),
+                _resultStat(
+                  AppStrings.downloadStatusFailed,
+                  '$_failCount',
+                  colorScheme.error,
+                ),
+                _resultStat(
+                  AppStrings.importSkipLabel,
+                  '$_skipCount',
+                  colorScheme.onSurfaceVariant,
+                ),
               ],
             ),
             const SizedBox(height: 12),
@@ -651,7 +666,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
             const SizedBox(height: 8),
             FilledButton(
               onPressed: () => setState(() => _showResult = false),
-              child: const Text('完成'),
+              child: Text(AppStrings.doneLabel),
             ),
           ],
         ),

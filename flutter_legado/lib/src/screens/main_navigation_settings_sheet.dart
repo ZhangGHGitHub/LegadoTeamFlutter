@@ -15,6 +15,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/main_tab.dart';
 import '../providers/bottom_bar_skin_notifier.dart';
 import '../providers/main_prefs_notifier.dart';
@@ -60,10 +61,10 @@ class _MainNavigationSettingsSheetState
   }
 
   String _labelModeLabel(BottomBarLabelMode mode) => switch (mode) {
-    BottomBarLabelMode.auto => '自动',
-    BottomBarLabelMode.selected => '选中时显示',
-    BottomBarLabelMode.labeled => '常驻',
-    BottomBarLabelMode.unlabeled => '不显示',
+    BottomBarLabelMode.auto => AppStrings.raLevelAuto,
+    BottomBarLabelMode.selected => AppStrings.labelModeSelected,
+    BottomBarLabelMode.labeled => AppStrings.labelModeAlways,
+    BottomBarLabelMode.unlabeled => AppStrings.notShown,
   };
 
   @override
@@ -98,10 +99,11 @@ class _MainNavigationSettingsSheetState
               child: Row(
                 children: [
                   Expanded(
-                    child: Text('首页与导航', style: theme.textTheme.titleLarge),
+                    child: Text(AppStrings.homeAndNavigation,
+                        style: theme.textTheme.titleLarge),
                   ),
                   IconButton(
-                    tooltip: '关闭',
+                    tooltip: AppStrings.closeLabel,
                     onPressed: () => Navigator.of(context).maybePop(),
                     icon: const Icon(Symbols.close_rounded),
                   ),
@@ -113,8 +115,8 @@ class _MainNavigationSettingsSheetState
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                 children: [
                   IosListTile(
-                    title: '默认主页',
-                    subtitle: '启动应用时优先打开的页签（仅显示可见项）',
+                    title: AppStrings.defaultHomePageLabel,
+                    subtitle: AppStrings.defaultHomePageHint,
                     trailing: DropdownButton<String>(
                       value: defaultRoute,
                       underline: const SizedBox.shrink(),
@@ -135,8 +137,8 @@ class _MainNavigationSettingsSheetState
                     ),
                   ),
                   IosListTile(
-                    title: '底栏文字',
-                    subtitle: '导航栏标签显示方式',
+                    title: AppStrings.bottomBarLabels,
+                    subtitle: AppStrings.navLabelMode,
                     trailing: DropdownButton<BottomBarLabelMode>(
                       value: ui.labelVisibilityMode,
                       underline: const SizedBox.shrink(),
@@ -158,17 +160,18 @@ class _MainNavigationSettingsSheetState
                   ),
                   IosListTile(
                     icon: Symbols.image_rounded,
-                    title: '导航栏图标',
-                    subtitle: iconCount > 0 ? '已自定义 $iconCount 个图标' : '使用默认图标',
+                    title: AppStrings.navBarIcons,
+                    subtitle: iconCount > 0
+                        ? AppStrings.navIconsCustomized(iconCount)
+                        : AppStrings.usingDefaultIcons,
                     onTap: () => _showIconManager(context),
                   ),
-                  const IosSectionHeader(
-                    '导航项',
-                    padding: EdgeInsets.fromLTRB(0, 20, 0, 4),
+                  IosSectionHeader(
+                    AppStrings.navItems,
+                    padding: const EdgeInsets.fromLTRB(0, 20, 0, 4),
                   ),
                   Text(
-                    '拖动左侧把手调整顺序；开关控制首页/发现/订阅是否显示；'
-                    '书架与我的始终显示。',
+                    AppStrings.navItemsHint,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -204,7 +207,7 @@ class _MainNavigationSettingsSheetState
                     child: TextButton.icon(
                       onPressed: _confirmReset,
                       icon: const Icon(Symbols.restart_alt_rounded),
-                      label: const Text('恢复默认'),
+                      label: Text(AppStrings.restoreDefault),
                     ),
                   ),
                 ],
@@ -259,7 +262,8 @@ class _MainNavigationSettingsSheetState
         title: Text(mainTabLabel(tab)),
         subtitle: hideable
             ? null
-            : const Text('始终显示', style: TextStyle(fontSize: 12)),
+            : Text(AppStrings.alwaysVisible,
+                style: const TextStyle(fontSize: 12)),
         trailing: Switch(
           value: visible,
           onChanged: hideable
@@ -295,16 +299,16 @@ class _MainNavigationSettingsSheetState
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('恢复默认导航设置？'),
-        content: const Text('将重置导航项显隐、顺序、默认首页、底栏文字和自定义图标。'),
+        title: Text(AppStrings.resetNavConfirmTitle),
+        content: Text(AppStrings.resetNavConfirmBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('恢复默认'),
+            child: Text(AppStrings.restoreDefault),
           ),
         ],
       ),
@@ -315,7 +319,7 @@ class _MainNavigationSettingsSheetState
         .read(uiSettingsProvider.notifier)
         .setLabelVisibilityMode(BottomBarLabelMode.auto);
     await NavIconStore.deleteAll();
-    if (mounted) _toast('已恢复默认导航设置');
+    if (mounted) _toast(AppStrings.navResetDone);
   }
 
   Future<void> _showIconManager(BuildContext context) async {
@@ -376,10 +380,11 @@ class _NavIconManagerSheetState extends ConsumerState<_NavIconManagerSheet> {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text('导航栏图标', style: theme.textTheme.titleLarge),
+                    child: Text(AppStrings.navBarIcons,
+                        style: theme.textTheme.titleLarge),
                   ),
                   IconButton(
-                    tooltip: '关闭',
+                    tooltip: AppStrings.closeLabel,
                     onPressed: () => Navigator.of(context).maybePop(),
                     icon: const Icon(Symbols.close_rounded),
                   ),
@@ -391,7 +396,7 @@ class _NavIconManagerSheetState extends ConsumerState<_NavIconManagerSheet> {
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                 children: [
                   Text(
-                    '可为每个页签分别选择未选中/选中图标；留空使用内置图标。',
+                    AppStrings.navIconsHint,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -400,9 +405,9 @@ class _NavIconManagerSheetState extends ConsumerState<_NavIconManagerSheet> {
                   Row(
                     children: [
                       const Spacer(),
-                      _columnHeader(theme, '未选中'),
+                      _columnHeader(theme, AppStrings.unselectedLabel),
                       const SizedBox(width: 12),
-                      _columnHeader(theme, '选中'),
+                      _columnHeader(theme, AppStrings.selectedLabel),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -527,7 +532,7 @@ class _IconSlot extends ConsumerWidget {
           children: [
             ListTile(
               leading: const Icon(Symbols.image_rounded),
-              title: const Text('替换图标'),
+              title: Text(AppStrings.replaceIcon),
               onTap: () {
                 Navigator.pop(sheetContext);
                 _pickIcon(context, ref);
@@ -535,7 +540,7 @@ class _IconSlot extends ConsumerWidget {
             ),
             ListTile(
               leading: const Icon(Symbols.delete_rounded),
-              title: const Text('删除图标'),
+              title: Text(AppStrings.deleteIcon),
               onTap: () {
                 Navigator.pop(sheetContext);
                 _clearIcon(ref);
@@ -553,7 +558,7 @@ class _IconSlot extends ConsumerWidget {
       // MediaStore 路径；iOS/桌面走 file_picker（allowCompression:false）。
       final picked = await ContainerImagePicker.pick(
         maxBytes: NavIconStore.maxBytes,
-        dialogTitle: '选择导航图标',
+        dialogTitle: AppStrings.pickNavIcon,
       );
       if (picked == null) return;
       final stored = await NavIconStore.importBytes(
@@ -578,10 +583,10 @@ class _IconSlot extends ConsumerWidget {
       if (context.mounted) _toast(context, e.message);
     } on UnsupportedError catch (e) {
       if (context.mounted) {
-        _toast(context, e.message ?? '当前平台不支持自定义导航图标');
+        _toast(context, e.message ?? AppStrings.navIconUnsupported);
       }
     } catch (e) {
-      if (context.mounted) _toast(context, '图标保存失败，请重试');
+      if (context.mounted) _toast(context, AppStrings.navIconSaveFailed);
     }
   }
 

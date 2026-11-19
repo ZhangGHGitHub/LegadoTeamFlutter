@@ -17,6 +17,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../models/cover_settings.dart';
 import '../providers/cover_settings/cover_settings_notifier.dart';
 import '../providers/providers.dart';
@@ -57,7 +58,7 @@ class CoverSettingsScreen extends ConsumerWidget {
         builder: (_) => ContainerColorDialog(
           title: title,
           initialColor: initialColor,
-          defaultHint: '恢复默认',
+          defaultHint: AppStrings.restoreDefault,
         ),
       );
       if (picked == null) return;
@@ -68,7 +69,7 @@ class CoverSettingsScreen extends ConsumerWidget {
     }
 
     return AppScaffold(
-      topBar: const LegadoAppBar(title: Text('封面设置')),
+      topBar: LegadoAppBar(title: Text(AppStrings.coverSettingsEntry)),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
         children: [
@@ -76,22 +77,22 @@ class CoverSettingsScreen extends ConsumerWidget {
             children: [
               SettingSwitchRow(
                 key: const ValueKey('coverOnlyWifiSwitch'),
-                title: '仅 WiFi',
-                subtitle: '仅在 WiFi 下加载网络封面',
+                title: AppStrings.onlyWifi,
+                subtitle: AppStrings.onlyWifiHint,
                 value: settings.loadOnlyOnWifi,
                 onChanged: (value) =>
                     update((s) => s.copyWith(loadOnlyOnWifi: value)),
               ),
               IosListTile(
                 key: const ValueKey('coverRuleRow'),
-                title: '封面规则',
-                subtitle: '进入详情页时使用封面规则重新获取封面',
+                title: AppStrings.coverRules,
+                subtitle: AppStrings.coverRuleHint,
                 onTap: () => _openCoverRule(context, ref),
               ),
               SettingSwitchRow(
                 key: const ValueKey('coverUseDefaultSwitch'),
-                title: '总是使用默认封面',
-                subtitle: '总是显示默认封面（不显示网络封面）',
+                title: AppStrings.alwaysUseDefaultCover,
+                subtitle: AppStrings.alwaysUseDefaultCoverHint,
                 value: settings.useDefaultCover,
                 onChanged: (value) =>
                     update((s) => s.copyWith(useDefaultCover: value)),
@@ -105,43 +106,41 @@ class CoverSettingsScreen extends ConsumerWidget {
                   );
                   return IosListTile(
                     key: const ValueKey('coverDefaultAlbumRow'),
-                    title: '默认封面',
+                    title: AppStrings.defaultCover,
                     subtitle: album == null
-                        ? '应用内置封面'
-                        : '${album.name} · 日间 ${album.lightCount} · '
-                              '夜间 ${album.darkCount}',
+                        ? AppStrings.builtInCover
+                        : AppStrings.coverAlbumSummary(
+                            album.name, album.lightCount, album.darkCount),
                     onTap: () => _openDefaultAlbum(context, ref),
                   );
                 },
               ),
               SettingSwitchRow(
                 key: const ValueKey('coverShadowSwitch'),
-                title: '显示字体阴影',
+                title: AppStrings.showFontShadow,
                 value: settings.showShadow,
                 onChanged: (value) =>
                     update((s) => s.copyWith(showShadow: value)),
               ),
               SettingSwitchRow(
                 key: const ValueKey('coverStrokeSwitch'),
-                title: '显示字体描边',
+                title: AppStrings.showFontStroke,
                 value: settings.showStroke,
                 onChanged: (value) =>
                     update((s) => s.copyWith(showStroke: value)),
               ),
               SettingSwitchRow(
                 key: const ValueKey('coverDefaultColorSwitch'),
-                title: '使用默认字体颜色',
-                subtitle: '使用主题次要色绘制书名与作者',
+                title: AppStrings.useDefaultFontColor,
+                subtitle: AppStrings.useDefaultFontColorHint,
                 value: settings.useDefaultColor,
                 onChanged: (value) =>
                     update((s) => s.copyWith(useDefaultColor: value)),
               ),
               SettingSwitchRow(
                 key: const ValueKey('coverRestrictRatioSwitch'),
-                title: '限制封面比例',
-                subtitle:
-                    '开启时封面固定 5:7 显示；关闭后搜索、发现与书籍详情页封面'
-                    '按原图宽高比自适应',
+                title: AppStrings.restrictCoverRatio,
+                subtitle: AppStrings.restrictCoverRatioHint,
                 value: settings.restrictCoverRatio,
                 onChanged: (value) =>
                     update((s) => s.copyWith(restrictCoverRatio: value)),
@@ -158,23 +157,23 @@ class CoverSettingsScreen extends ConsumerWidget {
               ),
             ],
           ),
-          const IosSectionHeader('网络书籍角标'),
+          IosSectionHeader(AppStrings.networkBookBadge),
           IosGroup(
             children: [
               // 过滤逻辑另立项：本批只展示灰置行，不接线行为
               IosListTile(
                 key: const ValueKey('coverNetworkBadgeRow'),
-                title: '网络书籍角标设置',
-                subtitle: '另立项，暂不生效',
-                value: '全部显示',
+                title: AppStrings.networkBookBadgeSetting,
+                subtitle: AppStrings.notImplementedYet,
+                value: AppStrings.showAllLabel,
                 showChevron: false,
                 enabled: false,
               ),
             ],
           ),
-          const IosSectionHeader('白天'),
+          IosSectionHeader(AppStrings.dayLabel),
           IosGroup(children: _dayRows(settings, update, pickColor)),
-          const IosSectionHeader('夜间'),
+          IosSectionHeader(AppStrings.nightMode),
           IosGroup(children: _nightRows(settings, update, pickColor)),
         ],
       ),
@@ -195,10 +194,10 @@ class CoverSettingsScreen extends ConsumerWidget {
     return [
       _ColorRow(
         key: const ValueKey('coverTextColorRow'),
-        title: '正文',
+        title: AppStrings.checkStepContent,
         color: settings.textColor,
         onTap: () => pickColor(
-          title: '正文颜色（白天）',
+          title: AppStrings.coverTextColorDay,
           initialColor: settings.textColor,
           defaultColor: 0xFF000000,
           apply: (current, color) => current.copyWith(textColor: color),
@@ -206,10 +205,10 @@ class CoverSettingsScreen extends ConsumerWidget {
       ),
       _ColorRow(
         key: const ValueKey('coverShadowColorRow'),
-        title: '阴影',
+        title: AppStrings.shadowLabel,
         color: settings.shadowColor,
         onTap: () => pickColor(
-          title: '阴影颜色（白天）',
+          title: AppStrings.shadowColorDay,
           initialColor: settings.shadowColor,
           defaultColor: 0xFF000000,
           apply: (current, color) => current.copyWith(shadowColor: color),
@@ -217,15 +216,15 @@ class CoverSettingsScreen extends ConsumerWidget {
       ),
       SettingSwitchRow(
         key: const ValueKey('coverShowNameSwitch'),
-        title: '显示书名',
-        subtitle: '封面上显示书名',
+        title: AppStrings.showNameLabel,
+        subtitle: AppStrings.showNameHint,
         value: settings.showName,
         onChanged: (value) => update((s) => s.copyWith(showName: value)),
       ),
       SettingSwitchRow(
         key: const ValueKey('coverShowAuthorSwitch'),
-        title: '显示作者',
-        subtitle: '封面上显示作者',
+        title: AppStrings.showAuthorLabel,
+        subtitle: AppStrings.showAuthorHint,
         value: settings.showAuthor,
         // 参考版：作者开关随书名禁用（书名关闭时不绘制作者）
         onChanged: settings.showName
@@ -249,10 +248,10 @@ class CoverSettingsScreen extends ConsumerWidget {
     return [
       _ColorRow(
         key: const ValueKey('coverTextColorDarkRow'),
-        title: '正文',
+        title: AppStrings.checkStepContent,
         color: settings.textColorDark,
         onTap: () => pickColor(
-          title: '正文颜色（夜间）',
+          title: AppStrings.coverTextColorNight,
           initialColor: settings.textColorDark,
           defaultColor: 0xFFFFFFFF,
           apply: (current, color) => current.copyWith(textColorDark: color),
@@ -260,10 +259,10 @@ class CoverSettingsScreen extends ConsumerWidget {
       ),
       _ColorRow(
         key: const ValueKey('coverShadowColorDarkRow'),
-        title: '阴影',
+        title: AppStrings.shadowLabel,
         color: settings.shadowColorDark,
         onTap: () => pickColor(
-          title: '阴影颜色（夜间）',
+          title: AppStrings.shadowColorNight,
           initialColor: settings.shadowColorDark,
           defaultColor: 0xFFFFFFFF,
           apply: (current, color) => current.copyWith(shadowColorDark: color),
@@ -271,15 +270,15 @@ class CoverSettingsScreen extends ConsumerWidget {
       ),
       SettingSwitchRow(
         key: const ValueKey('coverShowNameDarkSwitch'),
-        title: '显示书名',
-        subtitle: '封面上显示书名',
+        title: AppStrings.showNameLabel,
+        subtitle: AppStrings.showNameHint,
         value: settings.showNameDark,
         onChanged: (value) => update((s) => s.copyWith(showNameDark: value)),
       ),
       SettingSwitchRow(
         key: const ValueKey('coverShowAuthorDarkSwitch'),
-        title: '显示作者',
-        subtitle: '封面上显示作者',
+        title: AppStrings.showAuthorLabel,
+        subtitle: AppStrings.showAuthorHint,
         value: settings.showAuthorDark,
         onChanged: settings.showNameDark
             ? (value) => update((s) => s.copyWith(showAuthorDark: value))
@@ -336,14 +335,20 @@ class _OrientationRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IosListTile(
-      title: '封面信息方向',
+      title: AppStrings.coverInfoOrientation,
       showChevron: false,
       trailing: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: value == CoverSettings.infoOrientationLandscape ? '1' : '0',
-          items: const [
-            DropdownMenuItem(value: '0', child: Text('竖向')),
-            DropdownMenuItem(value: '1', child: Text('横向')),
+          items: [
+            DropdownMenuItem(
+              value: '0',
+              child: Text(AppStrings.coverOrientationPortrait),
+            ),
+            DropdownMenuItem(
+              value: '1',
+              child: Text(AppStrings.coverOrientationLandscape),
+            ),
           ],
           onChanged: (next) {
             if (next != null) onChanged(next);

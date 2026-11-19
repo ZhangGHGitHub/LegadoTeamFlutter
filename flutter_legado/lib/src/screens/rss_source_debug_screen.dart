@@ -5,6 +5,7 @@ import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../providers/providers.dart';
 
 /// RSS 源调试页面
@@ -72,55 +73,56 @@ class _RssSourceDebugScreenState extends ConsumerState<RssSourceDebugScreen> {
   Future<void> _runDebug() async {
     final sourceUrl = _sourceUrlCtrl.text.trim();
     if (sourceUrl.isEmpty) {
-      _appendLog('错误：请先输入 RSS 源地址', level: _DebugLogLevel.error);
+      _appendLog(AppStrings.debugErrorNoUrl, level: _DebugLogLevel.error);
       return;
     }
     setState(() => _running = true);
-    _appendLog('=== 开始调试 RSS 源 ===');
-    _appendLog('源地址: $sourceUrl');
+    _appendLog(AppStrings.debugStartHeader);
+    _appendLog(AppStrings.debugSourceUrlEcho(sourceUrl));
 
     try {
       final api = ref.read(bookApiProvider);
 
       // 1. 查询已注册的 RSS 源
-      _appendLog('[1/2] 正在查询已注册的 RSS 源...');
+      _appendLog(AppStrings.debugQueryingSources);
       final sources = await api.getRssSources();
       final source =
           sources.where((s) => s.sourceUrl == sourceUrl).firstOrNull;
       if (source == null) {
         _appendLog(
-          '未在书架注册该 RSS 源，将直接按 URL 抓取',
+          AppStrings.debugSourceNotRegistered,
           level: _DebugLogLevel.warn,
         );
       } else {
-        _appendLog('源名称: ${source.sourceName}',
+        _appendLog(AppStrings.debugSourceNameEcho(source.sourceName),
             level: _DebugLogLevel.success);
       }
 
       // 2. 抓取文章列表
-      _appendLog('[2/2] 正在抓取文章列表...');
+      _appendLog(AppStrings.debugFetchingArticles);
       final articles = await api.getRssArticles(sourceUrl);
       if (articles.isEmpty) {
-        _appendLog('未获取到文章（可能需要配置规则或源不可达）',
+        _appendLog(AppStrings.debugNoArticles,
             level: _DebugLogLevel.warn);
       } else {
-        _appendLog('抓取完成，共 ${articles.length} 篇文章',
+        _appendLog(AppStrings.debugFetchedArticles(articles.length),
             level: _DebugLogLevel.success);
         for (var i = 0; i < articles.length && i < 10; i++) {
           final a = articles[i];
-          _appendLog('  [$i] ${a.title.isEmpty ? '(无标题)' : a.title}');
+          _appendLog(
+              '  [$i] ${a.title.isEmpty ? AppStrings.rssSourceUntitled : a.title}');
           if (a.url.isNotEmpty) {
-            _appendLog('      链接: ${a.url}');
+            _appendLog(AppStrings.debugLinkLine(a.url));
           }
         }
         if (articles.length > 10) {
-          _appendLog('  ...（其余 ${articles.length - 10} 篇省略）');
+          _appendLog(AppStrings.debugMoreOmitted(articles.length - 10));
         }
       }
 
-      _appendLog('=== 调试完成 ===', level: _DebugLogLevel.success);
+      _appendLog(AppStrings.debugDoneHeader, level: _DebugLogLevel.success);
     } catch (e) {
-      _appendLog('异常: $e', level: _DebugLogLevel.error);
+      _appendLog(AppStrings.debugException('$e'), level: _DebugLogLevel.error);
     } finally {
       if (mounted) {
         setState(() => _running = false);
@@ -136,11 +138,11 @@ class _RssSourceDebugScreenState extends ConsumerState<RssSourceDebugScreen> {
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       topBar: LegadoAppBar(
-        title: const Text('RSS 源调试'),
+        title: Text(AppStrings.rssSourceDebug),
         actions: [
           IconButton(
             icon: const Icon(Symbols.delete_rounded),
-            tooltip: '清空日志',
+            tooltip: AppStrings.clearLog,
             onPressed:
                 _logs.isEmpty ? null : () => setState(() => _logs.clear()),
           ),
@@ -158,9 +160,9 @@ class _RssSourceDebugScreenState extends ConsumerState<RssSourceDebugScreen> {
                   child: TextField(
                     controller: _sourceUrlCtrl,
                     // [LAYOUT_PLAN P2] 输入框走 inputDecorationTheme（不显式 border）
-                    decoration: const InputDecoration(
-                      labelText: 'RSS 源 URL',
-                      hintText: '输入要调试的 RSS 源地址',
+                    decoration: InputDecoration(
+                      labelText: AppStrings.rssSourceUrlLabel,
+                      hintText: AppStrings.rssSourceUrlDebugHint,
                       prefixIcon: Icon(Symbols.rss_feed_rounded),
                       isDense: true,
                     ),
@@ -177,7 +179,9 @@ class _RssSourceDebugScreenState extends ConsumerState<RssSourceDebugScreen> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Symbols.play_arrow_rounded),
-                  label: Text(_running ? '运行中' : '调试'),
+                  label: Text(
+                    _running ? AppStrings.runningLabel : AppStrings.debugLabel,
+                  ),
                 ),
               ],
             ),
@@ -225,7 +229,9 @@ class _RssSourceDebugScreenState extends ConsumerState<RssSourceDebugScreen> {
             child: filteredLogs.isEmpty
                 ? Center(
                     child: Text(
-                      _logs.isEmpty ? '点击「调试」开始执行' : '当前过滤条件下无日志',
+                      _logs.isEmpty
+                          ? AppStrings.debugTapToStart
+                          : AppStrings.debugNoLogsForFilter,
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -297,7 +303,7 @@ enum _DebugLogLevel {
       case _DebugLogLevel.info:
         return 'INFO';
       case _DebugLogLevel.success:
-        return '成功';
+        return AppStrings.debugLevelSuccess;
       case _DebugLogLevel.warn:
         return 'WARN';
       case _DebugLogLevel.error:

@@ -27,6 +27,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../models/eye_protection.dart';
 import '../providers/providers.dart' show bookApiProvider;
 import '../providers/theme/eye_protection_notifier.dart';
@@ -96,17 +97,17 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
     // [设置批2a-1] 护眼模式行：与外观页/全局叠加层共用同一 Notifier
     final eyeProtection = ref.watch(eyeProtectionProvider);
     return AppScaffold(
-      topBar: const LegadoAppBar(title: Text('阅读设置')),
+      topBar: LegadoAppBar(title: Text(AppStrings.readingSettings)),
       body: cfg == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
               children: [
-                const IosSectionHeader('屏幕'),
+                IosSectionHeader(AppStrings.screenSection),
                 IosGroup(children: _screenGroup(cfg, eyeProtection)),
-                const IosSectionHeader('页面控制'),
+                IosSectionHeader(AppStrings.pageControl),
                 IosGroup(children: _pageControlGroup(cfg)),
-                const IosSectionHeader('其他'),
+                IosSectionHeader(AppStrings.otherSection),
                 IosGroup(children: _otherGroup(cfg)),
               ],
             ),
@@ -120,7 +121,7 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
     EyeProtectionSettings eyeProtection,
   ) => [
     SettingDropdownRow<int>(
-      title: '屏幕方向',
+      title: AppStrings.screenOrientationLabel,
       value: cfg.screenOrientation,
       options: _kScreenOrientationOptions,
       onChanged: (v) => _update((c) => c.screenOrientation = v),
@@ -129,28 +130,28 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
     // 参考版 screen_time_out arrays；1b-1 平台通道已接通：阅读器进入/
     // 退出/设置变更经 setKeepScreenOn 增删 FLAG_KEEP_SCREEN_ON）
     SettingDropdownRow<int>(
-      title: '保持亮屏',
+      title: AppStrings.keepScreenAwake,
       value: cfg.keepLight,
       options: _kKeepLightOptions,
       onChanged: (v) => _update((c) => c.keepLight = v),
     ),
     SettingSwitchRow(
-      title: '隐藏状态栏',
+      title: AppStrings.hideStatusBarLabel,
       value: cfg.hideStatusBar,
       onChanged: (v) => _update((c) => c.hideStatusBar = v),
     ),
     SettingSwitchRow(
-      title: '隐藏导航栏',
+      title: AppStrings.hideNavigationBarLabel,
       value: cfg.hideNavigationBar,
       onChanged: (v) => _update((c) => c.hideNavigationBar = v),
     ),
     SettingSwitchRow(
-      title: '填充刘海区域',
+      title: AppStrings.fillDisplayCutoutLabel,
       value: cfg.paddingDisplayCutouts,
       onChanged: (v) => _update((c) => c.paddingDisplayCutouts = v),
     ),
     SettingSwitchRow(
-      title: '扩展到刘海',
+      title: AppStrings.extendToCutoutLabel,
       value: cfg.readBodyToLh,
       onChanged: (v) => _update((c) => c.readBodyToLh = v),
     ),
@@ -159,15 +160,17 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
     // EyeProtectionConfigSheet；与外观设置页、全局叠加层共用同一
     // Notifier，改值即全局生效）
     IosListTile(
-      title: '护眼模式',
-      value: eyeProtection.isConfigured ? '已启用' : '未启用',
+      title: AppStrings.eyeProtection,
+      value: eyeProtection.isConfigured
+          ? AppStrings.rssEnabled
+          : AppStrings.notEnabled,
       onTap: () => showEyeProtectionConfigSheet(context),
     ),
     // [批1b-1] 亮度条模式三档（键 readBrightnessMode，档位对齐参考版
     // brightness_bar_mode arrays：0=不显示/1=横排/2=竖排；取代批1a
     // 的旧布尔开关行 showBrightnessView——旧键迁移后停消费）
     SettingDropdownRow<String>(
-      title: '亮度条模式',
+      title: AppStrings.brightnessBarMode,
       value: cfg.readBrightnessMode,
       options: _kBrightnessModeOptions,
       onChanged: (v) => _update((c) => c.readBrightnessMode = v),
@@ -176,19 +179,19 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
     // 模式=竖排时显示，对齐参考版 ReadConfigScreen.kt:191 条件渲染）
     if (cfg.readBrightnessMode == '2')
       SettingDropdownRow<String>(
-        title: '亮度条位置',
+        title: AppStrings.brightnessBarPosition,
         value: cfg.readBrightnessVwPos,
         options: _kBrightnessPosOptions,
         onChanged: (v) => _update((c) => c.readBrightnessVwPos = v),
       ),
     SettingDropdownRow<int>(
-      title: '平板/横屏双页',
+      title: AppStrings.dualPageHorizontalLabel,
       value: cfg.doubleHorizontalPage,
       options: _kDoublePageOptions,
       onChanged: (v) => _update((c) => c.doubleHorizontalPage = v),
     ),
     SettingDropdownRow<String>(
-      title: '进度条行为',
+      title: AppStrings.progressBarBehaviorLabel,
       value: cfg.progressBarBehavior,
       options: _kProgressBarBehaviorOptions,
       onChanged: (v) => _update((c) => c.progressBarBehavior = v),
@@ -199,23 +202,23 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
 
   List<Widget> _pageControlGroup(ReaderAdvancedConfig cfg) => [
     SettingSwitchRow(
-      title: '使用自定义中文分行',
+      title: AppStrings.useZhLayoutLabel,
       value: cfg.useZhLayout,
       onChanged: (v) => _update((c) => c.useZhLayout = v),
     ),
     SettingSwitchRow(
-      title: '文字两端对齐',
+      title: AppStrings.textFullJustifyLabel,
       value: cfg.textFullJustify,
       onChanged: (v) => _update((c) => c.textFullJustify = v),
     ),
     SettingSwitchRow(
-      title: '段首标点悬挂',
-      subtitle: '段首引号等标点悬挂于缩进内，使正文首字与其他段落对齐',
+      title: AppStrings.hangingPunctuationLabel,
+      subtitle: AppStrings.hangingPunctuationHint,
       value: cfg.hangingPunctuation,
       onChanged: (v) => _update((c) => c.hangingPunctuation = v),
     ),
     SettingStepperRow(
-      title: '边缘点击阈值',
+      title: AppStrings.edgeClickThresholdLabel,
       unit: 'px',
       value: cfg.pageTouchClick,
       min: 0,
@@ -225,8 +228,8 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
     ),
     IosListTile(
       key: const ValueKey('read-config-click-action-entry'),
-      title: '点击区域设置',
-      subtitle: '9 个区域（3×3 九宫格）',
+      title: AppStrings.clickActionSheetTitle,
+      subtitle: AppStrings.nineGridZonesHint,
       onTap: () => ClickActionConfigSheet.show(
         context,
         config: cfg.copy(),
@@ -239,10 +242,10 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
     ),
     IosListTile(
       key: const ValueKey('read-config-page-key-entry'),
-      title: '自定义翻页键',
+      title: AppStrings.customPageKey,
       subtitle: cfg.prevKeyCodes.isEmpty && cfg.nextKeyCodes.isEmpty
-          ? '未设置（仅 Android 生效）'
-          : '上一页 ${cfg.prevKeyCodes} / 下一页 ${cfg.nextKeyCodes}',
+          ? AppStrings.pageKeysNotSet
+          : AppStrings.pageKeysSummary(cfg.prevKeyCodes, cfg.nextKeyCodes),
       onTap: () => PageKeyConfigSheet.show(
         context,
         config: cfg.copy(),
@@ -254,24 +257,24 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
       ),
     ),
     SettingSliderRow(
-      title: '滑动翻页阈值',
+      title: AppStrings.pageTouchSlopLabel,
       value: cfg.pageTouchSlop,
       min: 0,
       max: 1000,
       onChanged: (v) => _update((c) => c.pageTouchSlop = v),
     ),
     SettingSwitchRow(
-      title: '鼠标滚轮翻页',
+      title: AppStrings.mouseWheelPageLabel,
       value: cfg.mouseWheelPage,
       onChanged: (v) => _update((c) => c.mouseWheelPage = v),
     ),
     SettingSwitchRow(
-      title: '音量键翻页',
+      title: AppStrings.mangaVolumeKey,
       value: cfg.volumeKeyPage,
       onChanged: (v) => _update((c) => c.volumeKeyPage = v),
     ),
     SettingSwitchRow(
-      title: '朗读时音量键翻页',
+      title: AppStrings.volumeKeyPageOnPlayLabel,
       value: cfg.volumeKeyPageOnPlay,
       onChanged: (v) => _update((c) => c.volumeKeyPageOnPlay = v),
     ),
@@ -279,13 +282,13 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
     // 原版 pref_config_read.xml / AppConfig）：开启后长按 repeat 连续
     // 翻页；关闭时长按 repeat 忽略且 600ms 内只翻一页（leading 节流）
     SettingSwitchRow(
-      title: '按键长按翻页',
-      subtitle: '关闭时长按不连续翻页，且 600 毫秒内只翻一页',
+      title: AppStrings.keyLongPressPageTurn,
+      subtitle: AppStrings.keyLongPressPageTurnHint,
       value: cfg.keyPageOnLongPress,
       onChanged: (v) => _update((c) => c.keyPageOnLongPress = v),
     ),
     SettingSwitchRow(
-      title: '禁用滚动点击动画',
+      title: AppStrings.noAnimScrollClick,
       value: cfg.noAnimScrollPage,
       onChanged: (v) => _update((c) => c.noAnimScrollPage = v),
     ),
@@ -294,23 +297,23 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
     // 默认 "2"=兼容旧版）。档位语义见 utils/click_img_way.dart：
     // 文本阅读器尚无行内图片渲染，当前消费点为 image-dominant 页面。
     SettingDropdownRow<String>(
-      title: '点击图片方式',
+      title: AppStrings.clickImageActionLabel,
       value: clampClickImgWay(cfg.clickImgWay),
       options: kClickImgWayOptions,
       onChanged: (v) => _update((c) => c.clickImgWay = v),
     ),
     SettingSwitchRow(
-      title: '自动换源',
+      title: AppStrings.autoChangeSourceLabel,
       value: cfg.autoChangeSource,
       onChanged: (v) => _update((c) => c.autoChangeSource = v),
     ),
     SettingSwitchRow(
-      title: '长按选择文本',
+      title: AppStrings.selectTextLongPressLabel,
       value: cfg.selectText,
       onChanged: (v) => _update((c) => c.selectText = v),
     ),
     SettingSwitchRow(
-      title: '展示顶部工具栏附加区域',
+      title: AppStrings.showTitleAdditionArea,
       value: cfg.showReadTitleAddition,
       onChanged: (v) => _update((c) => c.showReadTitleAddition = v),
     ),
@@ -320,17 +323,17 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
 
   List<Widget> _otherGroup(ReaderAdvancedConfig cfg) => [
     SettingSwitchRow(
-      title: '滑动进度条时震动',
+      title: AppStrings.vibrateSlider,
       value: cfg.sliderVibrator,
       onChanged: (v) => _update((c) => c.sliderVibrator = v),
     ),
     SettingSwitchRow(
-      title: '选择文本时震动',
+      title: AppStrings.vibrateSelectText,
       value: cfg.selectVibrator,
       onChanged: (v) => _update((c) => c.selectVibrator = v),
     ),
     SettingSwitchRow(
-      title: '禁用返回键',
+      title: AppStrings.disableReturnKey,
       value: cfg.disableReturnKey,
       onChanged: (v) => _update((c) => c.disableReturnKey = v),
     ),
@@ -341,8 +344,8 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
     // 失效，对新导入/重新解析生效（目录页溢出菜单「重新解析目录」可
     // 立即应用，审查回修 P2-3））
     SettingSliderRow(
-      title: '无目录时每章字数',
-      subtitle: '对本地 TXT 无目录规则分章生效；对新导入/重新解析生效',
+      title: AppStrings.maxLengthNoToc,
+      subtitle: AppStrings.maxLengthNoTocHint,
       value: cfg.maxLengthWithNoToc,
       min: 3000,
       max: 100000,
@@ -481,7 +484,7 @@ class SettingStepperRow extends StatelessWidget {
         children: [
           IconButton(
             visualDensity: VisualDensity.compact,
-            tooltip: '减少',
+            tooltip: AppStrings.decreaseLabel,
             icon: const Icon(Icons.remove_rounded),
             onPressed: value <= min
                 ? null
@@ -495,7 +498,7 @@ class SettingStepperRow extends StatelessWidget {
           ),
           IconButton(
             visualDensity: VisualDensity.compact,
-            tooltip: '增加',
+            tooltip: AppStrings.increaseLabel,
             icon: const Icon(Icons.add_rounded),
             onPressed: value >= max
                 ? null

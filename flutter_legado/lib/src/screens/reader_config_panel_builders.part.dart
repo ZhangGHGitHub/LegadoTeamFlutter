@@ -15,11 +15,15 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
         children: [
           Icon(icon, size: 18, color: Theme.of(context).colorScheme.primary),
           const SizedBox(width: 8),
-          Text(
-            title,
-            style: Theme.of(
-              context,
-            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+            ),
           ),
         ],
       ),
@@ -32,7 +36,7 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _sectionTitle('翻页模式', Icons.auto_stories_outlined),
+        _sectionTitle(AppStrings.flipMode, Icons.auto_stories_outlined),
         SegmentedButton<FlipMode>(
           segments: [
             for (final mode in FlipMode.values)
@@ -58,7 +62,7 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _sectionTitle('自动翻页', Icons.timer_outlined),
+        _sectionTitle(AppStrings.autoPageTurn, Icons.timer_outlined),
         // [LAYOUT_PLAN P1] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
         SwitchListTile(
           dense: true,
@@ -66,7 +70,7 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
             vertical: 12,
             horizontal: 8,
           ),
-          title: const Text('启用自动翻页'),
+          title: Text(AppStrings.enableAutoPageTurn),
           value: _config.autoPageTurn,
           onChanged: (v) {
             _config.autoPageTurn = v;
@@ -77,7 +81,9 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
           Row(
             children: [
               Text(
-                '间隔 ${_config.autoPageTurnInterval.toStringAsFixed(0)} 秒',
+                AppStrings.autoPageTurnIntervalLabel(
+                  _config.autoPageTurnInterval.toStringAsFixed(0),
+                ),
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
               Expanded(
@@ -96,13 +102,22 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
           ),
           Row(
             children: [
-              Text('翻页方向', style: Theme.of(context).textTheme.bodyMedium),
+              Text(
+                AppStrings.pageTurnDirection,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: SegmentedButton<bool>(
-                  segments: const [
-                    ButtonSegment(value: true, label: Text('下一章')),
-                    ButtonSegment(value: false, label: Text('上一章')),
+                  segments: [
+                    ButtonSegment(
+                      value: true,
+                      label: Text(AppStrings.nextChapter),
+                    ),
+                    ButtonSegment(
+                      value: false,
+                      label: Text(AppStrings.previousChapter),
+                    ),
                   ],
                   selected: {_config.autoPageTurnForward},
                   onSelectionChanged: (sel) {
@@ -126,8 +141,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
       // [LAYOUT_PLAN P1] 组内行 vertical12/horizontal8
       contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
       leading: const Icon(Icons.touch_app_outlined),
-      title: const Text('点击区域设置'),
-      subtitle: const Text('9 个区域（3×3 九宫格）'),
+      title: Text(AppStrings.clickActionSheetTitle),
+      subtitle: Text(AppStrings.nineGridZonesHint),
       trailing: const Icon(Icons.chevron_right),
       onTap: () => ClickActionConfigSheet.show(
         context,
@@ -152,11 +167,12 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
             horizontal: 8,
           ),
           leading: const Icon(Icons.keyboard_outlined),
-          title: const Text('自定义翻页键'),
+          title: Text(AppStrings.customPageKey),
           subtitle: Text(
             _config.prevKeyCodes.isEmpty && _config.nextKeyCodes.isEmpty
-                ? '未设置（仅 Android 生效）'
-                : '上一页 ${_config.prevKeyCodes} / 下一页 ${_config.nextKeyCodes}',
+                ? AppStrings.pageKeysNotSet
+                : AppStrings.pageKeysSummary(
+                    _config.prevKeyCodes, _config.nextKeyCodes),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -177,8 +193,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
             vertical: 12,
             horizontal: 8,
           ),
-          title: const Text('按键长按翻页'),
-          subtitle: const Text('关闭时长按不连续翻页，且 600 毫秒内只翻一页'),
+          title: Text(AppStrings.keyLongPressPageTurn),
+          subtitle: Text(AppStrings.keyLongPressPageTurnHint),
           value: _config.keyPageOnLongPress,
           onChanged: (v) {
             _config.keyPageOnLongPress = v;
@@ -196,8 +212,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
       key: const ValueKey('reader-select-menu-entry'),
       contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
       leading: const Icon(Icons.format_list_bulleted),
-      title: const Text('选择菜单'),
-      subtitle: const Text('一级 / 折叠 / 隐藏项、多行展示与图标'),
+      title: Text(AppStrings.selectionMenuLabel),
+      subtitle: Text(AppStrings.selectionMenuHint),
       trailing: const Icon(Icons.chevron_right),
       onTap: () => TextSelectMenuConfigSheet.show(
         context,
@@ -220,8 +236,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
         SwitchListTile(
           key: const ValueKey('reader-swipe-bookmark-switch'),
           contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-          title: const Text('下滑添加书签'),
-          subtitle: const Text('分页模式在正文向下拖动 80dp 后松手'),
+          title: Text(AppStrings.swipeDownAddBookmark),
+          subtitle: Text(AppStrings.swipeDownAddBookmarkHint),
           value: _config.swipeToAddBookmark,
           onChanged: (v) {
             _config.swipeToAddBookmark = v;
@@ -231,7 +247,7 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
         ListTile(
           key: const ValueKey('reader-bookmark-badge-size'),
           contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-          title: const Text('角标大小'),
+          title: Text(AppStrings.bookmarkBadgeSize),
           trailing: Text('${badgeSize}dp'),
         ),
         Slider(
@@ -248,20 +264,24 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
         ListTile(
           key: const ValueKey('reader-bookmark-badge-image'),
           contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-          title: const Text('书签角标'),
-          subtitle: Text(_config.bookmarkBadgeImage.isEmpty ? '默认' : '自定义图片'),
+          title: Text(AppStrings.bookmarkBadge),
+          subtitle: Text(_config.bookmarkBadgeImage.isEmpty
+              ? AppStrings.defaultLabel
+              : AppStrings.customImage),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextButton(
                 key: const ValueKey('reader-bookmark-badge-pick'),
                 onPressed: _pickBookmarkBadgeImage,
-                child: Text(_config.bookmarkBadgeImage.isEmpty ? '选择' : '更换'),
+                child: Text(_config.bookmarkBadgeImage.isEmpty
+                    ? AppStrings.selectLabel
+                    : AppStrings.changeLabel),
               ),
               if (_config.bookmarkBadgeImage.isNotEmpty)
                 IconButton(
                   key: const ValueKey('reader-bookmark-badge-reset'),
-                  tooltip: '恢复默认书签角标',
+                  tooltip: AppStrings.resetBookmarkBadge,
                   visualDensity: VisualDensity.compact,
                   icon: const Icon(Icons.restart_alt, size: 20),
                   onPressed: () {
@@ -283,7 +303,7 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
         SwitchListTile(
           key: const ValueKey('reader-slider-vibrator-switch'),
           contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-          title: const Text('滑动进度条时震动'),
+          title: Text(AppStrings.vibrateSlider),
           value: _config.sliderVibrator,
           onChanged: (v) {
             _config.sliderVibrator = v;
@@ -293,7 +313,7 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
         SwitchListTile(
           key: const ValueKey('reader-select-vibrator-switch'),
           contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-          title: const Text('选择文本时震动'),
+          title: Text(AppStrings.vibrateSelectText),
           value: _config.selectVibrator,
           onChanged: (v) {
             _config.selectVibrator = v;
@@ -308,7 +328,7 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
     try {
       final pick = await ContainerImagePicker.pick(
         maxBytes: BookmarkBadgeImageStore.maxBytes,
-        dialogTitle: '选择书签角标图片',
+        dialogTitle: AppStrings.pickBookmarkBadgeImage,
       );
       if (pick == null || !mounted) return;
       final identifier = await BookmarkBadgeImageStore.storeBytes(
@@ -327,7 +347,11 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('书签角标图保存失败：${errorMessage(e)}')));
+      ).showSnackBar(
+        SnackBar(
+          content: Text(AppStrings.bookmarkBadgeSaveFailed(errorMessage(e))),
+        ),
+      );
     }
   }
 
@@ -337,10 +361,11 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _sectionTitle('段落间距', Icons.format_line_spacing_outlined),
+        _sectionTitle(AppStrings.paragraphSpacing, Icons.format_line_spacing_outlined),
         Row(
           children: [
-            Text('小', style: Theme.of(context).textTheme.bodySmall),
+            Text(AppStrings.fontSmall,
+                style: Theme.of(context).textTheme.bodySmall),
             Expanded(
               child: Slider(
                 value: _config.paragraphSpacing,
@@ -354,7 +379,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
                 },
               ),
             ),
-            Text('大', style: Theme.of(context).textTheme.bodySmall),
+            Text(AppStrings.fontLarge,
+                style: Theme.of(context).textTheme.bodySmall),
             SizedBox(
               width: 48,
               child: Text(
@@ -375,7 +401,7 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _sectionTitle('字体与排版', Icons.text_fields),
+        _sectionTitle(AppStrings.typography, Icons.text_fields),
         // 字体选择：跳转字体管理页，返回后触发阅读器重新加载字体
         ListTile(
           dense: true,
@@ -385,7 +411,7 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
             horizontal: 8,
           ),
           leading: const Icon(Icons.font_download_outlined, size: 20),
-          title: const Text('阅读字体'),
+          title: Text(AppStrings.readingFont),
           subtitle: Text(_fontLabel),
           trailing: const Icon(Icons.chevron_right),
           onTap: () async {
@@ -401,7 +427,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
         // （对标原版 dsbTextLetterSpacing (it-50)/100）— Qoder
         Row(
           children: [
-            Text('字距', style: Theme.of(context).textTheme.bodyMedium),
+            Text(AppStrings.letterSpacingShort,
+                style: Theme.of(context).textTheme.bodyMedium),
             Expanded(
               child: Slider(
                 value: _config.letterSpacing.clamp(-0.5, 1.0),
@@ -427,11 +454,17 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
         ),
         // 首行缩进（对标原版 tvTextIndent 缩进选择器）
         // [UI-fix v2.0.4 | 2026-08-08] bool 开关升级为 0-3 字符档位 — Qoder
-        _moreRow('首行缩进', _indentLabel(_config.paragraphIndent), () {
+        _moreRow(AppStrings.firstLineIndent, _indentLabel(_config.paragraphIndent),
+            () {
           _showChoiceDialog<int>(
-            title: '首行缩进',
+            title: AppStrings.firstLineIndent,
             current: _config.paragraphIndent,
-            options: const {0: '无缩进', 1: '一字符', 2: '二字符', 3: '三字符'},
+            options: {
+              0: AppStrings.indentNone,
+              1: AppStrings.indent1,
+              2: AppStrings.indent2,
+              3: AppStrings.indent3,
+            },
             onPick: (v) {
               _config.paragraphIndent = v;
               _commit();
@@ -444,8 +477,13 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
 
   /// 缩进档位显示文案
   String _indentLabel(int v) {
-    const labels = ['无缩进', '一字符', '二字符', '三字符'];
-    if (v < 0 || v >= labels.length) return '二字符';
+    final labels = [
+      AppStrings.indentNone,
+      AppStrings.indent1,
+      AppStrings.indent2,
+      AppStrings.indent3,
+    ];
+    if (v < 0 || v >= labels.length) return AppStrings.indent2;
     return labels[v];
   }
 
@@ -457,8 +495,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
       // [LAYOUT_PLAN P1] 组内行 vertical12/horizontal8
       contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
       leading: const Icon(Icons.view_week_outlined),
-      title: const Text('顶栏按钮'),
-      subtitle: const Text('选择、排序阅读器顶栏动作（最多 6 个，可恢复默认）'),
+      title: Text(AppStrings.topBarButtons),
+      subtitle: Text(AppStrings.topBarButtonsHint),
       trailing: const Icon(Icons.chevron_right),
       onTap: () => ReaderTopBarConfigSheet.show(context),
     );
@@ -472,18 +510,28 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _sectionTitle('更多配置', Icons.tune_outlined),
+        _sectionTitle(AppStrings.moreConfig, Icons.tune_outlined),
         // 简繁转换（接 Rust 繁简转换 FFI，对标原版 chineseConvertType）
         Row(
           children: [
-            Text('简繁转换', style: Theme.of(context).textTheme.bodyMedium),
+            Text(AppStrings.chineseConversion,
+                style: Theme.of(context).textTheme.bodyMedium),
             const SizedBox(width: 12),
             Expanded(
               child: SegmentedButton<int>(
-                segments: const [
-                  ButtonSegment(value: 0, label: Text('不转换')),
-                  ButtonSegment(value: 1, label: Text('繁→简')),
-                  ButtonSegment(value: 2, label: Text('简→繁')),
+                segments: [
+                  ButtonSegment(
+                    value: 0,
+                    label: Text(AppStrings.convertNone),
+                  ),
+                  ButtonSegment(
+                    value: 1,
+                    label: Text(AppStrings.t2sShort),
+                  ),
+                  ButtonSegment(
+                    value: 2,
+                    label: Text(AppStrings.s2tShort),
+                  ),
                 ],
                 selected: {_convertType},
                 onSelectionChanged: (sel) async {
@@ -503,7 +551,13 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
                     if (mounted) {
                       ScaffoldMessenger.of(
                         context,
-                      ).showSnackBar(SnackBar(content: Text('简繁转换设置失败: ${errorMessage(e)}')));
+                      ).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            AppStrings.chineseConvertFailed(errorMessage(e)),
+                          ),
+                        ),
+                      );
                     }
                   }
                 },
@@ -520,8 +574,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
             vertical: 12,
             horizontal: 8,
           ),
-          title: const Text('两端对齐'),
-          subtitle: const Text('正文行尾对齐（末行除外）'),
+          title: Text(AppStrings.textJustify),
+          subtitle: Text(AppStrings.textJustifyHint),
           value: _config.textFullJustify,
           onChanged: (v) {
             _config.textFullJustify = v;
@@ -532,17 +586,18 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
         // 按原版 pref_config_read.xml 项序与文案补齐，每项真实生效
         // （对标 MoreConfigDialog.onSharedPreferenceChanged 事件语义）— Qoder
         // 屏幕方向（原版第 1 项 screenOrientation）
-        _moreRow('屏幕方向', _orientationLabel(_config.screenOrientation), () {
+        _moreRow(AppStrings.screenOrientationLabel,
+            _orientationLabel(_config.screenOrientation), () {
           _showChoiceDialog<int>(
-            title: '屏幕方向',
+            title: AppStrings.screenOrientationLabel,
             current: _config.screenOrientation,
-            options: const {
-              0: '跟随系统',
-              1: '竖屏',
-              2: '横屏',
-              3: '自动(传感器)',
-              4: '反向竖屏',
-              5: '反向横屏',
+            options: {
+              0: AppStrings.themeSystem,
+              1: AppStrings.portraitLabel,
+              2: AppStrings.landscapeLabel,
+              3: AppStrings.orientationAutoSensor,
+              4: AppStrings.orientationPortraitReverse,
+              5: AppStrings.orientationLandscapeReverse,
             },
             onPick: (v) {
               _config.screenOrientation = v;
@@ -553,16 +608,17 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
         // 保持亮屏（原版第 2 项 keep_light；平台限制诚实标注：项目未引入
         // wakelock 依赖（不改 pubspec），设置仅持久化，待平台能力接入后生效，
         // 与 audio_screen 的 audioWakeLock 标注一致）
-        _moreRow('保持亮屏', _keepLightLabel(_config.keepLight), () {
+        _moreRow(AppStrings.keepScreenAwake, _keepLightLabel(_config.keepLight),
+            () {
           _showChoiceDialog<int>(
-            title: '保持亮屏',
+            title: AppStrings.keepScreenAwake,
             current: _config.keepLight,
-            options: const {
-              0: '默认',
-              60: '1 分钟',
-              300: '5 分钟',
-              600: '10 分钟',
-              -1: '常亮',
+            options: {
+              0: AppStrings.defaultLabel,
+              60: AppStrings.minutes1,
+              300: AppStrings.minutes5,
+              600: AppStrings.minutes10,
+              -1: AppStrings.keepAlways,
             },
             onPick: (v) {
               _config.keepLight = v;
@@ -578,8 +634,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
             vertical: 12,
             horizontal: 8,
           ),
-          title: const Text('隐藏状态栏'),
-          subtitle: const Text('阅读时隐藏系统状态栏'),
+          title: Text(AppStrings.hideStatusBarLabel),
+          subtitle: Text(AppStrings.hideStatusBarHint),
           value: _config.hideStatusBar,
           onChanged: (v) {
             _config.hideStatusBar = v;
@@ -594,8 +650,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
             vertical: 12,
             horizontal: 8,
           ),
-          title: const Text('隐藏导航栏'),
-          subtitle: const Text('阅读时隐藏系统导航栏'),
+          title: Text(AppStrings.hideNavigationBarLabel),
+          subtitle: Text(AppStrings.hideNavigationBarHint),
           value: _config.hideNavigationBar,
           onChanged: (v) {
             _config.hideNavigationBar = v;
@@ -604,13 +660,18 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
         ),
         // 进度条行为（原版第 8 项 progressBarBehavior：调章内页/调章节）
         _moreRow(
-          '进度条行为',
-          _config.progressBarBehavior == 'page' ? '调章内页' : '调章节',
+          AppStrings.progressBarBehaviorLabel,
+          _config.progressBarBehavior == 'page'
+              ? AppStrings.progressBarPage
+              : AppStrings.progressBarChapter,
           () {
             _showChoiceDialog<String>(
-              title: '进度条行为',
+              title: AppStrings.progressBarBehaviorLabel,
               current: _config.progressBarBehavior,
-              options: const {'page': '调章内页', 'chapter': '调章节'},
+              options: {
+                'page': AppStrings.progressBarPage,
+                'chapter': AppStrings.progressBarChapter,
+              },
               onPick: (v) {
                 _config.progressBarBehavior = v;
                 _commit();
@@ -626,8 +687,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
             vertical: 12,
             horizontal: 8,
           ),
-          title: const Text('自动换源'),
-          subtitle: const Text('章节加载失败时自动切换书源'),
+          title: Text(AppStrings.autoChangeSourceLabel),
+          subtitle: Text(AppStrings.autoChangeSourceHint),
           value: _config.autoChangeSource,
           onChanged: (v) {
             _config.autoChangeSource = v;
@@ -642,8 +703,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
             vertical: 12,
             horizontal: 8,
           ),
-          title: const Text('长按选择文本'),
-          subtitle: const Text('长按正文段落弹出选择面板'),
+          title: Text(AppStrings.selectTextLongPressLabel),
+          subtitle: Text(AppStrings.selectTextLongPressHint),
           value: _config.selectText,
           onChanged: (v) {
             _config.selectText = v;
@@ -660,8 +721,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
             vertical: 12,
             horizontal: 8,
           ),
-          title: const Text('滚动翻页无动画'),
-          subtitle: const Text('点击/自动翻页直接切换不带动画'),
+          title: Text(AppStrings.noAnimScrollPageLabel),
+          subtitle: Text(AppStrings.noAnimScrollPageHint),
           value: _config.noAnimScrollPage,
           onChanged: (v) {
             _config.noAnimScrollPage = v;
@@ -672,9 +733,10 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
         // 2 兼容旧版/3 关闭/4 双击生效；参考版默认 "2"）。文本阅读器
         // 尚无行内图片渲染，当前消费点为 image-dominant 图片页 —
         // 语义见 utils/click_img_way.dart
-        _moreRow('点击图片方式', clickImgWayLabel(_config.clickImgWay), () {
+        _moreRow(AppStrings.clickImageActionLabel,
+            clickImgWayLabel(_config.clickImgWay), () {
           _showChoiceDialog<String>(
-            title: '点击图片方式',
+            title: AppStrings.clickImageActionLabel,
             current: clampClickImgWay(_config.clickImgWay),
             options: kClickImgWayOptions,
             onPick: (v) {
@@ -691,8 +753,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
             vertical: 12,
             horizontal: 8,
           ),
-          title: const Text('显示标题附加区'),
-          subtitle: const Text('顶栏书名后显示当前章名'),
+          title: Text(AppStrings.showTitleAdditionLabel),
+          subtitle: Text(AppStrings.showTitleAdditionHint),
           value: _config.showReadTitleAddition,
           onChanged: (v) {
             _config.showReadTitleAddition = v;
@@ -711,8 +773,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
               vertical: 12,
               horizontal: 8,
             ),
-            title: const Text('工具栏跟随页面'),
-            subtitle: const Text('顶/底栏配色跟随阅读页背景'),
+            title: Text(AppStrings.toolbarFollowPageLabel),
+            subtitle: Text(AppStrings.toolbarFollowPageHint),
             value: _config.readBarStyleFollowPage,
             onChanged: (v) {
               _config.readBarStyleFollowPage = v;
@@ -731,8 +793,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
             vertical: 12,
             horizontal: 8,
           ),
-          title: const Text('扩展到刘海'),
-          subtitle: const Text('正文延伸到刘海区域（仅 Android 生效）'),
+          title: Text(AppStrings.extendToCutoutLabel),
+          subtitle: Text(AppStrings.extendToCutoutHint),
           value: _config.readBodyToLh,
           onChanged: (v) {
             _config.readBodyToLh = v;
@@ -747,8 +809,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
             vertical: 12,
             horizontal: 8,
           ),
-          title: const Text('填充刘海区域'),
-          subtitle: const Text('页面边距避开刘海区域（仅 Android 生效）'),
+          title: Text(AppStrings.fillDisplayCutoutLabel),
+          subtitle: Text(AppStrings.fillDisplayCutoutHint),
           value: _config.paddingDisplayCutouts,
           onChanged: (v) {
             _config.paddingDisplayCutouts = v;
@@ -756,11 +818,17 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
           },
         ),
         // 平板/横屏双页（原版 doubleHorizontalPage，4 档；已接入渲染）
-        _moreRow('平板/横屏双页', _doublePageLabel(_config.doubleHorizontalPage), () {
+        _moreRow(AppStrings.dualPageHorizontalLabel,
+            _doublePageLabel(_config.doubleHorizontalPage), () {
           _showChoiceDialog<int>(
-            title: '平板/横屏双页',
+            title: AppStrings.dualPageHorizontalLabel,
             current: _config.doubleHorizontalPage,
-            options: const {0: '全局单页', 1: '全局双页', 2: '横屏双页', 3: '平板/横屏双页'},
+            options: {
+              0: AppStrings.dualPageGlobalSingle,
+              1: AppStrings.dualPageGlobalDouble,
+              2: AppStrings.dualPageLandscapeDouble,
+              3: AppStrings.dualPageHorizontalLabel,
+            },
             onPick: (v) {
               _config.doubleHorizontalPage = v;
               _commit();
@@ -775,8 +843,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
             vertical: 12,
             horizontal: 8,
           ),
-          title: const Text('使用自定义中文分行'),
-          subtitle: const Text('开启后启用中文避头尾与更优断行'),
+          title: Text(AppStrings.useZhLayoutLabel),
+          subtitle: Text(AppStrings.useZhLayoutHint),
           value: _config.useZhLayout,
           onChanged: (v) {
             _config.useZhLayout = v;
@@ -791,8 +859,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
             vertical: 12,
             horizontal: 8,
           ),
-          title: const Text('段首标点悬挂'),
-          subtitle: const Text('段首引号等标点悬挂于缩进内，使正文首字与其他段落对齐'),
+          title: Text(AppStrings.hangingPunctuationLabel),
+          subtitle: Text(AppStrings.hangingPunctuationHint),
           value: _config.hangingPunctuation,
           onChanged: (v) {
             _config.hangingPunctuation = v;
@@ -807,8 +875,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
             vertical: 12,
             horizontal: 8,
           ),
-          title: const Text('鼠标滚轮翻页'),
-          subtitle: const Text('分页模式下滚轮上下滚动翻页'),
+          title: Text(AppStrings.mouseWheelPageLabel),
+          subtitle: Text(AppStrings.mouseWheelPageHint),
           value: _config.mouseWheelPage,
           onChanged: (v) {
             _config.mouseWheelPage = v;
@@ -823,8 +891,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
             vertical: 12,
             horizontal: 8,
           ),
-          title: const Text('音量键翻页'),
-          subtitle: const Text('仅 Android 生效'),
+          title: Text(AppStrings.mangaVolumeKey),
+          subtitle: Text(AppStrings.androidOnlyLabel),
           value: _config.volumeKeyPage,
           onChanged: (v) {
             _config.volumeKeyPage = v;
@@ -839,8 +907,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
             vertical: 12,
             horizontal: 8,
           ),
-          title: const Text('朗读时音量键翻页'),
-          subtitle: const Text('仅 Android 生效'),
+          title: Text(AppStrings.volumeKeyPageOnPlayLabel),
+          subtitle: Text(AppStrings.androidOnlyLabel),
           value: _config.volumeKeyPageOnPlay,
           onChanged: (v) {
             _config.volumeKeyPageOnPlay = v;
@@ -851,11 +919,13 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
         // 0=系统默认值；[fix Task#41 | 2026-08-09] 已经 reader_page_view
         // 的 MediaQuery.gestureSettings 覆写拖拽识别阈值，修改即时生效）
         _moreRow(
-          '滑动翻页阈值',
-          _config.pageTouchSlop == 0 ? '系统默认' : '${_config.pageTouchSlop}px',
+          AppStrings.pageTouchSlopLabel,
+          _config.pageTouchSlop == 0
+              ? AppStrings.raSystemDefault
+              : '${_config.pageTouchSlop}px',
           () {
             _showNumberDialog(
-              title: '滑动翻页阈值（0 = 系统默认值）',
+              title: AppStrings.pageTouchSlopDialogTitle,
               current: _config.pageTouchSlop,
               max: 9999,
               onPick: (v) {
@@ -868,9 +938,10 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
         // 边缘点击阈值（原版 pageTouchClick：NumberPicker 0-399，
         // 左右边缘多少距离不触发点击；[fix Task#41 | 2026-08-09] 已经
         // reader_screen._handleTap 收缩左右分区边缘死区，修改即时生效）
-        _moreRow('边缘点击阈值', '${_config.pageTouchClick}px', () {
+        _moreRow(AppStrings.edgeClickThresholdLabel,
+            '${_config.pageTouchClick}px', () {
           _showNumberDialog(
-            title: '边缘点击阈值',
+            title: AppStrings.edgeClickThresholdLabel,
             current: _config.pageTouchClick,
             max: 399,
             onPick: (v) {
@@ -887,8 +958,13 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
 
   /// 双页模式档位显示文案（对齐原版 R.array.double_page_title）
   String _doublePageLabel(int v) {
-    const labels = ['全局单页', '全局双页', '横屏双页', '平板/横屏双页'];
-    if (v < 0 || v >= labels.length) return '全局单页';
+    final labels = [
+      AppStrings.dualPageGlobalSingle,
+      AppStrings.dualPageGlobalDouble,
+      AppStrings.dualPageLandscapeDouble,
+      AppStrings.dualPageHorizontalLabel,
+    ];
+    if (v < 0 || v >= labels.length) return AppStrings.dualPageGlobalSingle;
     return labels[v];
   }
 
@@ -914,7 +990,7 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           TextButton(
             onPressed: () {
@@ -922,7 +998,7 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
               Navigator.pop(dialogContext);
               onPick(v.clamp(0, max));
             },
-            child: const Text('确定'),
+            child: Text(AppStrings.confirm),
           ),
         ],
       ),
@@ -932,23 +1008,30 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
   // ===== MoreConfig 第①批辅助构建方法 =====
 
   String _orientationLabel(int v) {
-    const labels = ['跟随系统', '竖屏', '横屏', '自动(传感器)', '反向竖屏', '反向横屏'];
-    if (v < 0 || v >= labels.length) return '跟随系统';
+    final labels = [
+      AppStrings.themeSystem,
+      AppStrings.portraitLabel,
+      AppStrings.landscapeLabel,
+      AppStrings.orientationAutoSensor,
+      AppStrings.orientationPortraitReverse,
+      AppStrings.orientationLandscapeReverse,
+    ];
+    if (v < 0 || v >= labels.length) return AppStrings.themeSystem;
     return labels[v];
   }
 
   String _keepLightLabel(int v) {
     switch (v) {
       case 60:
-        return '1 分钟';
+        return AppStrings.minutes1;
       case 300:
-        return '5 分钟';
+        return AppStrings.minutes5;
       case 600:
-        return '10 分钟';
+        return AppStrings.minutes10;
       case -1:
-        return '常亮';
+        return AppStrings.keepAlways;
       default:
-        return '默认';
+        return AppStrings.defaultLabel;
     }
   }
 
@@ -964,10 +1047,15 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
             Expanded(
               child: Text(title, style: Theme.of(context).textTheme.bodyMedium),
             ),
-            Text(
-              current,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.primary,
+            Flexible(
+              child: Text(
+                current,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.end,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.primary,
+                ),
               ),
             ),
             const SizedBox(width: 4),
@@ -1021,7 +1109,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _sectionTitle('亮度控制', Icons.brightness_6_outlined),
+        _sectionTitle(AppStrings.brightnessControlSection,
+            Icons.brightness_6_outlined),
         FutureBuilder<bool>(
           future: SystemBrightness.isSupported(),
           builder: (context, snapshot) {
@@ -1035,7 +1124,7 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Text(
-                  '此设备不支持亮度调节',
+                  AppStrings.brightnessUnsupported,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -1058,8 +1147,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
                     SwitchListTile(
                       dense: true,
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('自动亮度'),
-                      subtitle: const Text('根据环境光自动调节'),
+                      title: Text(AppStrings.autoBrightness),
+                      subtitle: Text(AppStrings.autoBrightnessHint),
                       value: isAuto,
                       onChanged: (v) async {
                         await SystemBrightness.setAutoBrightness(v);

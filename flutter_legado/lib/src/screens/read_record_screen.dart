@@ -7,6 +7,7 @@ import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/privacy/privacy_content_notifier.dart';
 import '../providers/privacy/privacy_notifier.dart';
@@ -123,7 +124,7 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
           textAlignVertical: TextAlignVertical.center,
           decoration: InputDecoration(
             isDense: true,
-            hintText: '搜索',
+            hintText: AppStrings.search,
             // [B3] 顶栏沉浸搜索框：三态显式无边框，防主题底线式渗入
             border: InputBorder.none,
             enabledBorder: InputBorder.none,
@@ -138,29 +139,29 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
         ),
         actions: [
           PopupMenuButton<String>(
-            tooltip: '排序与设置',
+            tooltip: AppStrings.sortAndSettings,
             onSelected: _onMenuSelected,
             itemBuilder: (_) => [
               CheckedPopupMenuItem(
                 value: 'sort_name',
                 checked: state.sortMode == ReadRecordSortMode.name,
-                child: const Text('按书名排序'),
+                child: Text(AppStrings.sortByNameLabel),
               ),
               CheckedPopupMenuItem(
                 value: 'sort_read_long',
                 checked: state.sortMode == ReadRecordSortMode.readTime,
-                child: const Text('按阅读时长'),
+                child: Text(AppStrings.sortByReadTime),
               ),
               CheckedPopupMenuItem(
                 value: 'sort_last_read',
                 checked: state.sortMode == ReadRecordSortMode.lastRead,
-                child: const Text('按最后阅读'),
+                child: Text(AppStrings.sortByLastRead),
               ),
               const PillMenuDivider(),
               CheckedPopupMenuItem(
                 value: 'enable_record',
                 checked: state.enableRecord,
-                child: const Text('启用阅读记录'),
+                child: Text(AppStrings.enableReadRecord),
               ),
             ],
           ),
@@ -184,9 +185,9 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
             child: SizedBox(
               width: double.infinity,
               child: SegmentedButton<int>(
-                segments: const [
-                  ButtonSegment(value: 0, label: Text('按书')),
-                  ButtonSegment(value: 1, label: Text('按天')),
+                segments: [
+                  ButtonSegment(value: 0, label: Text(AppStrings.byBook)),
+                  ButtonSegment(value: 1, label: Text(AppStrings.byDay)),
                 ],
                 selected: {_viewMode},
                 onSelectionChanged: (sel) =>
@@ -214,7 +215,7 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
 
   Widget _buildBody(BuildContext context, ReadRecordState state) {
     if (state.isLoading && state.records.isEmpty) {
-      return const LoadingIndicator(message: '加载阅读记录...');
+      return LoadingIndicator(message: AppStrings.loadingReadRecords);
     }
     if (state.error != null && state.records.isEmpty) {
       return ErrorView(
@@ -225,7 +226,9 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
     if (state.records.isEmpty) {
       return EmptyState(
         icon: Symbols.history_rounded,
-        title: state.searchQuery.isEmpty ? '暂无阅读记录' : '未找到匹配的记录',
+        title: state.searchQuery.isEmpty
+            ? AppStrings.noReadRecords
+            : AppStrings.noMatchingRecords,
       );
     }
     // [批9c] 私密且未获准的记录：书名/作者/时长/章节一律不渲染，
@@ -264,11 +267,11 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
                   tilePadding: EdgeInsets.zero,
                   childrenPadding: const EdgeInsets.fromLTRB(0, 0, 0, 12),
                   title: Text(
-                    '阅读热力图',
+                    AppStrings.readingHeatmap,
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                   subtitle: Text(
-                    '近一年每日阅读情况',
+                    AppStrings.heatmapSubtitle,
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
@@ -385,7 +388,9 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('该书为私密内容，请先在书架解锁后再打开')));
+        ..showSnackBar(
+          SnackBar(content: Text(AppStrings.privateBookUnlockFirst)),
+        );
       return;
     }
     final book =
@@ -441,23 +446,25 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除'),
+        title: Text(AppStrings.delete),
         // [批27b P2-2] FFI 按物理书名删除该书**全部作者**的记录（契约 §2.12），
         // 文案须明示范围，避免用户误以为只删当前作者行
         content: Text(
           locked
-              ? '将删除本书全部作者的阅读记录，确定吗？'
+              ? AppStrings.deleteAllAuthorsRecordsConfirm
               // [审查 P2-3] 改名后展示当前书名（物理旧名不外露）
-              : '将删除「${_displayNameOf(privacyContent, item)}」该书全部作者的阅读记录，确定吗？',
+              : AppStrings.deleteNamedAllAuthorsRecordsConfirm(
+                  _displayNameOf(privacyContent, item),
+                ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('确定'),
+            child: Text(AppStrings.confirm),
           ),
         ],
       ),
@@ -475,8 +482,11 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
           SnackBar(
             content: Text(
               success
-                  ? '已删除阅读记录'
-                  : '删除失败：${ref.read(readRecordNotifierProvider).error ?? '未知错误'}',
+                  ? AppStrings.readRecordDeleted
+                  : AppStrings.deleteFailed(
+                      ref.read(readRecordNotifierProvider).error ??
+                          AppStrings.unknownError,
+                    ),
             ),
           ),
         );
@@ -487,16 +497,16 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除'),
-        content: const Text('确定删除全部阅读记录吗？'),
+        title: Text(AppStrings.delete),
+        content: Text(AppStrings.clearAllRecordsConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('确定'),
+            child: Text(AppStrings.confirm),
           ),
         ],
       ),
@@ -509,18 +519,18 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
 
 /// 时长格式化（对齐原版 formatDuring，单位毫秒）
 String formatDuring(int mss) {
-  if (mss <= 0) return '0秒';
+  if (mss <= 0) return AppStrings.durationZero;
   final days = mss ~/ (1000 * 60 * 60 * 24);
   final hours = (mss % (1000 * 60 * 60 * 24)) ~/ (1000 * 60 * 60);
   final minutes = (mss % (1000 * 60 * 60)) ~/ (1000 * 60);
   final seconds = (mss % (1000 * 60)) ~/ 1000;
   final buf = StringBuffer();
-  if (days > 0) buf.write('$days天');
-  if (hours > 0) buf.write('$hours小时');
-  if (minutes > 0) buf.write('$minutes分钟');
-  if (seconds > 0) buf.write('$seconds秒');
+  if (days > 0) buf.write(AppStrings.durationDays(days));
+  if (hours > 0) buf.write(AppStrings.durationHours(hours));
+  if (minutes > 0) buf.write(AppStrings.durationMinutes(minutes));
+  if (seconds > 0) buf.write(AppStrings.durationSeconds(seconds));
   final time = buf.toString();
-  return time.isEmpty ? '0秒' : time;
+  return time.isEmpty ? AppStrings.durationZero : time;
 }
 
 class _ReadRecordTile extends StatelessWidget {
@@ -581,7 +591,7 @@ class _ReadRecordTile extends StatelessWidget {
                         const SizedBox(height: 18),
                         if (lastReadText.isNotEmpty)
                           Text(
-                            '最后阅读：$lastReadText',
+                            AppStrings.lastReadAt(lastReadText),
                             style: Theme.of(
                               context,
                             ).textTheme.bodySmall?.copyWith(color: secondary),
@@ -589,7 +599,10 @@ class _ReadRecordTile extends StatelessWidget {
                       ],
                     ),
                   ),
-                  TextButton(onPressed: onClear, child: const Text('清空')),
+                  TextButton(
+                    onPressed: onClear,
+                    child: Text(AppStrings.clearHistory),
+                  ),
                 ],
               ),
             ),
@@ -628,7 +641,7 @@ class _ReadRecordTile extends StatelessWidget {
                   ],
                   const SizedBox(height: 4),
                   Text(
-                    '阅读时长：$durationText',
+                    AppStrings.readingDuration(durationText),
                     style: Theme.of(
                       context,
                     ).textTheme.bodySmall?.copyWith(color: secondary),
@@ -636,7 +649,7 @@ class _ReadRecordTile extends StatelessWidget {
                   if (lastReadText.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(
-                      '最后阅读：$lastReadText',
+                      AppStrings.lastReadAt(lastReadText),
                       style: Theme.of(
                         context,
                       ).textTheme.bodySmall?.copyWith(color: secondary),
@@ -645,7 +658,10 @@ class _ReadRecordTile extends StatelessWidget {
                 ],
               ),
             ),
-            TextButton(onPressed: onClear, child: const Text('清空')),
+            TextButton(
+              onPressed: onClear,
+              child: Text(AppStrings.clearHistory),
+            ),
           ],
         ),
       ),
@@ -716,16 +732,16 @@ class _HeatmapSectionState extends ConsumerState<_HeatmapSection> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SegmentedButton<Md3HeatmapMode>(
-          segments: const [
+          segments: [
             ButtonSegment(
               value: Md3HeatmapMode.duration,
-              label: Text('按时长'),
-              icon: Icon(Symbols.timer_rounded, size: 16),
+              label: Text(AppStrings.byDurationLabel),
+              icon: const Icon(Symbols.timer_rounded, size: 16),
             ),
             ButtonSegment(
               value: Md3HeatmapMode.count,
-              label: Text('按本数'),
-              icon: Icon(Symbols.menu_book_rounded, size: 16),
+              label: Text(AppStrings.byCount),
+              icon: const Icon(Symbols.menu_book_rounded, size: 16),
             ),
           ],
           selected: {_mode},
@@ -735,24 +751,24 @@ class _HeatmapSectionState extends ConsumerState<_HeatmapSection> {
         ),
         const SizedBox(height: 12),
         if (pending)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
             child: ReadStatsPrivacyPlaceholder(
-              key: ValueKey('readRecordHeatmapPrivacyPending'),
-              message: '正在准备阅读统计…',
+              key: const ValueKey('readRecordHeatmapPrivacyPending'),
+              message: AppStrings.readStatsPreparing,
             ),
           )
         else if (masked && _mode == Md3HeatmapMode.duration)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
             child: ReadStatsPrivacyPlaceholder(
-              key: ValueKey('readRecordHeatmapPrivacyMasked'),
-              message: '私密书籍未验证，暂不显示每日阅读时长',
+              key: const ValueKey('readRecordHeatmapPrivacyMasked'),
+              message: AppStrings.readStatsPrivateMasked,
             ),
           )
         else if (_error != null)
           Text(
-            '每日时长加载失败：$_error',
+            AppStrings.dailyDurationLoadFailed('$_error'),
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
               color: Theme.of(context).colorScheme.error,
             ),

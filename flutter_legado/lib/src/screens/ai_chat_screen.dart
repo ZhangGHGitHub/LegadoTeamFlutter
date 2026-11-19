@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../l10n/app_strings.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/legado_app_bar.dart';
@@ -20,11 +21,11 @@ class AiChatScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
-      topBar: const LegadoAppBar(title: Text('AI 聊天')),
-      body: const EmptyState(
+      topBar: LegadoAppBar(title: Text(AppStrings.aiChatLabel)),
+      body: EmptyState(
         icon: Symbols.auto_awesome_rounded,
-        title: 'AI 聊天暂未支持',
-        subtitle: '待 Rust 能力接入后开放',
+        title: AppStrings.aiChatUnsupported,
+        subtitle: AppStrings.aiChatComingSoon,
       ),
     );
   }

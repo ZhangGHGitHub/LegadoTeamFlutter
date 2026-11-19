@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/source/source_notifier.dart';
 import '../services/source_import_service.dart';
@@ -169,7 +170,9 @@ class _SourceImportConfirmScreenState
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导入失败：${errorMessage(e)}')),
+          SnackBar(
+          content: Text(AppStrings.importFailedShortWithReason(errorMessage(e))),
+        ),
         );
       }
     } finally {
@@ -220,15 +223,15 @@ class _SourceImportConfirmScreenState
               await Clipboard.setData(ClipboardData(text: json));
               if (ctx.mounted) {
                 ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(content: Text('已复制到剪贴板')),
+                  SnackBar(content: Text(AppStrings.sourceCopied)),
                 );
               }
             },
-            child: const Text('复制'),
+            child: Text(AppStrings.copyAction),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('关闭'),
+            child: Text(AppStrings.dialogClose),
           ),
         ],
       ),
@@ -242,7 +245,7 @@ class _SourceImportConfirmScreenState
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       topBar: LegadoAppBar(
-        title: const Text('导入书源'),
+        title: Text(AppStrings.importSources),
         actions: [
           // 自定义源分组（对标 menu_new_group，always 显示）
           TextButton(
@@ -251,50 +254,50 @@ class _SourceImportConfirmScreenState
             ),
             onPressed: _showCustomGroupDialog,
             child: Text(_groupName == null
-                ? '自定义源分组'
+                ? AppStrings.customSourceGroup
                 : '${_isAddGroup ? '+' : ''}$_groupName'),
           ),
           PopupMenuButton<String>(
-            tooltip: '更多选项',
+            tooltip: AppStrings.rssMoreOptions,
             // 菜单在顶栏下方展开，不覆盖顶栏
             position: PopupMenuPosition.under,
             onSelected: _handleMenu,
             itemBuilder: (_) => [
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'select_new',
-                child: Text('选中新增源'),
+                child: Text(AppStrings.selectNewSources),
               ),
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'select_update',
-                child: Text('选中更新源'),
+                child: Text(AppStrings.selectUpdatedSources),
               ),
               const PillMenuDivider(),
               CheckedPopupMenuItem(
                 value: 'keep_name',
                 checked: _keepName,
-                child: const Text('保留原名'),
+                child: Text(AppStrings.keepOriginalName),
               ),
               CheckedPopupMenuItem(
                 value: 'keep_group',
                 checked: _keepGroup,
-                child: const Text('保留分组'),
+                child: Text(AppStrings.keepGroup),
               ),
               CheckedPopupMenuItem(
                 value: 'keep_enable',
                 checked: _keepEnable,
-                child: const Text('保留启用状态'),
+                child: Text(AppStrings.keepEnabledState),
               ),
               CheckedPopupMenuItem(
                 value: 'show_comment',
                 checked: _showComment,
-                child: const Text('显示源注释'),
+                child: Text(AppStrings.showSourceComment),
               ),
             ],
           ),
         ],
       ),
       body: widget.sources.isEmpty
-          ? const Center(child: Text('格式错误，未解析到书源'))
+          ? Center(child: Text(AppStrings.noSourcesParsed))
           : ListView.separated(
               // [LAYOUT_PLAN P2] 页面水平边距统一 16dp（全局标尺）
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -333,8 +336,10 @@ class _SourceImportConfirmScreenState
                     },
                     child: Text(
                       _isSelectAll
-                          ? '取消全选（$_selectCount/${widget.sources.length}）'
-                          : '全选（$_selectCount/${widget.sources.length}）',
+                          ? AppStrings.deselectAllCount(
+                              _selectCount, widget.sources.length)
+                          : AppStrings.selectAllCount(
+                              _selectCount, widget.sources.length),
                     ),
                   ),
                 ),
@@ -342,7 +347,7 @@ class _SourceImportConfirmScreenState
                   onPressed: _importing
                       ? null
                       : () => Navigator.of(context).pop(false),
-                  child: const Text('取消'),
+                  child: Text(AppStrings.cancel),
                 ),
                 const SizedBox(width: 8),
                 FilledButton(
@@ -354,7 +359,7 @@ class _SourceImportConfirmScreenState
                           height: 16,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('确认'),
+                      : Text(AppStrings.confirmLabel),
                 ),
               ],
             ),
@@ -401,11 +406,18 @@ class _SourceImportConfirmScreenState
     final colorScheme = Theme.of(context).colorScheme;
 
     final (label, color) = switch (status) {
-      _ImportStatus.isNew => ('新增', AppColorsExt.importNew(colorScheme)),
-      _ImportStatus.isUpdate =>
-        ('更新', AppColorsExt.importUpdate(colorScheme)),
-      _ImportStatus.exists =>
-        ('已有', colorScheme.onSurfaceVariant),
+      _ImportStatus.isNew => (
+        AppStrings.importStatusNew,
+        AppColorsExt.importNew(colorScheme),
+      ),
+      _ImportStatus.isUpdate => (
+        AppStrings.importStatusUpdate,
+        AppColorsExt.importUpdate(colorScheme),
+      ),
+      _ImportStatus.exists => (
+        AppStrings.importStatusExists,
+        colorScheme.onSurfaceVariant,
+      ),
     };
 
     return InkWell(
@@ -456,7 +468,7 @@ class _SourceImportConfirmScreenState
             ),
             TextButton(
               onPressed: () => _showSourceJson(source),
-              child: const Text('打开'),
+              child: Text(AppStrings.open),
             ),
           ],
         ),

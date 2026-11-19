@@ -5,6 +5,7 @@ import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 import 'package:url_launcher/url_launcher.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../widgets/custom_refresh_indicator.dart';
@@ -71,7 +72,7 @@ class _RssFavoritesScreenState extends ConsumerState<RssFavoritesScreen> {
   }
 
   String _displayName(String origin) =>
-      _sourceNames[origin] ?? (origin.isEmpty ? '未知来源' : origin);
+      _sourceNames[origin] ?? (origin.isEmpty ? AppStrings.unknownSourceLabel : origin);
 
   Future<void> _unstar(RssStar star) async {
     // 先从本地移除，提升响应速度
@@ -80,15 +81,17 @@ class _RssFavoritesScreenState extends ConsumerState<RssFavoritesScreen> {
     try {
       await ref.read(bookApiProvider).deleteRssStar(star.link);
       messenger.showSnackBar(
-        const SnackBar(
-          content: Text('已取消收藏'),
-          duration: Duration(seconds: 1),
+        SnackBar(
+          content: Text(AppStrings.rssUnstarred),
+          duration: const Duration(seconds: 1),
         ),
       );
     } catch (e) {
       // 失败时恢复
       setState(() => _stars.add(star));
-      messenger.showSnackBar(SnackBar(content: Text('操作失败：${errorMessage(e)}')));
+      messenger.showSnackBar(
+          SnackBar(content: Text(AppStrings.rssOperationFailed(errorMessage(e)))),
+        );
     }
   }
 
@@ -105,11 +108,11 @@ class _RssFavoritesScreenState extends ConsumerState<RssFavoritesScreen> {
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       topBar: LegadoAppBar(
-        title: const Text('RSS 收藏'),
+        title: Text(AppStrings.rssFavorites),
         actions: [
           IconButton(
             icon: const Icon(Symbols.refresh_rounded),
-            tooltip: '刷新',
+            tooltip: AppStrings.refreshAction,
             onPressed: _load,
           ),
         ],
@@ -120,16 +123,16 @@ class _RssFavoritesScreenState extends ConsumerState<RssFavoritesScreen> {
 
   Widget _buildBody() {
     if (_loading) {
-      return const LoadingIndicator(message: '加载收藏...');
+      return LoadingIndicator(message: AppStrings.loadingFavorites);
     }
     if (_error != null) {
       return ErrorView(message: _error!, onRetry: _load);
     }
     if (_stars.isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: Symbols.star_outline_rounded,
-        title: '暂无收藏文章',
-        subtitle: '浏览 RSS 文章时点亮星标即可收藏',
+        title: AppStrings.noFavoriteArticles,
+        subtitle: AppStrings.noFavoriteArticlesHint,
       );
     }
 
@@ -221,7 +224,7 @@ class _RssFavoritesScreenState extends ConsumerState<RssFavoritesScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      star.title.isEmpty ? '（无标题）' : star.title,
+                      star.title.isEmpty ? AppStrings.untitledLabel : star.title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.titleSmall?.copyWith(
@@ -264,7 +267,7 @@ class _RssFavoritesScreenState extends ConsumerState<RssFavoritesScreen> {
               const SizedBox(width: 8),
               IconButton(
                 icon: Icon(Symbols.star_rounded, color: colorScheme.secondary),
-                tooltip: '取消收藏',
+                tooltip: AppStrings.rssUnstar,
                 onPressed: () => _unstar(star),
               ),
             ],

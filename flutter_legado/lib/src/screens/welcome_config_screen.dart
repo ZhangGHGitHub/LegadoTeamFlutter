@@ -7,6 +7,7 @@ import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 
 import '../constants/pref_keys.dart';
+import '../l10n/app_strings.dart';
 import '../providers/providers.dart';
 import '../services/settings_service.dart';
 import '../widgets/app_progress_indicator.dart';
@@ -82,18 +83,18 @@ class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
           children: [
             ListTile(
               leading: const Icon(Symbols.photo_rounded),
-              title: const Text('选择图片'),
+              title: Text(AppStrings.pickImage),
               onTap: () => Navigator.pop(ctx, 'select'),
             ),
             if (current.isNotEmpty)
               ListTile(
                 leading: const Icon(Symbols.delete_rounded),
-                title: const Text('删除'),
+                title: Text(AppStrings.delete),
                 onTap: () => Navigator.pop(ctx, 'delete'),
               ),
             ListTile(
               leading: const Icon(Symbols.close_rounded),
-              title: const Text('取消'),
+              title: Text(AppStrings.cancel),
               onTap: () => Navigator.pop(ctx),
             ),
           ],
@@ -104,7 +105,7 @@ class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
     if (action == 'select') {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.image,
-        dialogTitle: '选择欢迎页背景',
+        dialogTitle: AppStrings.pickWelcomeBackground,
       );
       final path = result?.files.single.path;
       if (path == null || !mounted) return;
@@ -138,14 +139,14 @@ class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
   Widget build(BuildContext context) {
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
-      topBar: LegadoAppBar(title: const Text('欢迎页样式')),
+      topBar: LegadoAppBar(title: Text(AppStrings.welcomePageStyle)),
       body: _loading
           // [STAGE-UI-P43UNIFY2 B4] .adaptive() → 标准环（参考版无 adaptive 用法）
           ? const Center(child: AppCircularProgressIndicator())
           : IosGroupedBody(
               child: ListView(
                 children: [
-                  const IosSectionHeader('显示时长'),
+                  IosSectionHeader(AppStrings.displayDuration),
                   IosGroup(
                       flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
                       children: [
@@ -155,7 +156,7 @@ class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
                         children: [
                           Expanded(
                             child: Text(
-                              '启动闪屏停留 $_showTime 毫秒',
+                              AppStrings.splashDurationMs(_showTime),
                               style: Theme.of(context).textTheme.bodyLarge,
                             ),
                           ),
@@ -184,7 +185,7 @@ class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                       child: Text(
-                        '设为 0 则跳过闪屏直接进入主页',
+                        AppStrings.splashDurationHint,
                         // [MD3 全量清点] Colors.grey → onSurfaceVariant token
                         style: TextStyle(
                           fontSize: 13,
@@ -193,13 +194,13 @@ class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
                       ),
                     ),
                   ]),
-                  const IosSectionHeader('自定义'),
+                  IosSectionHeader(AppStrings.customAction),
                   IosGroup(
                       flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
                       children: [
                     SwitchListTile.adaptive(
-                      title: const Text('自定义欢迎页'),
-                      subtitle: const Text('启用后可设置日/夜背景图'),
+                      title: Text(AppStrings.customWelcomeLabel),
+                      subtitle: Text(AppStrings.customWelcomeHint),
                       value: _customWelcome,
                       onChanged: (v) {
                         setState(() => _customWelcome = v);
@@ -207,19 +208,21 @@ class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
                       },
                     ),
                   ]),
-                  const IosSectionHeader('白天'),
+                  IosSectionHeader(AppStrings.dayLabel),
                   IosGroup(
                       flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
                       children: [
                     IosListTile(
                       icon: Symbols.wallpaper_rounded,
-                      title: '背景图片',
-                      subtitle: _imageDay.isEmpty ? '选择图片' : _imageDay,
+                      title: AppStrings.backgroundImages,
+                      subtitle: _imageDay.isEmpty
+                          ? AppStrings.pickImage
+                          : _imageDay,
                       onTap: () => _pickImage(dark: false),
                     ),
                     SwitchListTile.adaptive(
-                      title: const Text('显示文字'),
-                      subtitle: const Text('阅读 / 享受美好时光 / 品读万千故事'),
+                      title: Text(AppStrings.showWelcomeText),
+                      subtitle: Text(AppStrings.welcomeSlogan),
                       value: _showText,
                       onChanged: (v) {
                         setState(() => _showText = v);
@@ -227,8 +230,8 @@ class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
                       },
                     ),
                     SwitchListTile.adaptive(
-                      title: const Text('显示图标'),
-                      subtitle: const Text('默认书本图标'),
+                      title: Text(AppStrings.showIconLabel),
+                      subtitle: Text(AppStrings.defaultBookIcon),
                       value: _showIcon,
                       onChanged: (v) {
                         setState(() => _showIcon = v);
@@ -236,19 +239,21 @@ class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
                       },
                     ),
                   ]),
-                  const IosSectionHeader('夜间'),
+                  IosSectionHeader(AppStrings.nightMode),
                   IosGroup(
                       flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
                       children: [
                     IosListTile(
                       icon: Symbols.wallpaper_rounded,
-                      title: '背景图片',
-                      subtitle: _imageNight.isEmpty ? '选择图片' : _imageNight,
+                      title: AppStrings.backgroundImages,
+                      subtitle: _imageNight.isEmpty
+                          ? AppStrings.pickImage
+                          : _imageNight,
                       onTap: () => _pickImage(dark: true),
                     ),
                     SwitchListTile.adaptive(
-                      title: const Text('显示文字'),
-                      subtitle: const Text('阅读 / 享受美好时光 / 品读万千故事'),
+                      title: Text(AppStrings.showWelcomeText),
+                      subtitle: Text(AppStrings.welcomeSlogan),
                       value: _showTextDark,
                       onChanged: (v) {
                         setState(() => _showTextDark = v);
@@ -256,8 +261,8 @@ class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
                       },
                     ),
                     SwitchListTile.adaptive(
-                      title: const Text('显示图标'),
-                      subtitle: const Text('默认书本图标'),
+                      title: Text(AppStrings.showIconLabel),
+                      subtitle: Text(AppStrings.defaultBookIcon),
                       value: _showIconDark,
                       onChanged: (v) {
                         setState(() => _showIconDark = v);
@@ -265,9 +270,7 @@ class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
                       },
                     ),
                   ]),
-                  const IosSectionFooter(
-                    '闪屏结构对齐原版 WelcomeActivity；背景图仅在开启「自定义欢迎页」时生效。',
-                  ),
+                  IosSectionFooter(AppStrings.welcomeFooterHint),
                 ],
               ),
             ),

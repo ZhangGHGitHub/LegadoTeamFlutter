@@ -30,6 +30,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/reader_theme.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../providers/reader/reader_theme_notifier.dart';
@@ -207,9 +208,9 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
 
       await ref.read(readerThemeProvider.notifier).markCurrent(theme.id);
       if (!mounted || !showMessage) return;
-      _showSnack('已应用「${theme.name}」');
+      _showSnack(AppStrings.themeAppliedQuote(theme.name));
     } catch (e) {
-      if (mounted) _showSnack('应用主题失败：${errorMessage(e)}');
+      if (mounted) _showSnack(AppStrings.applyThemeFailed(errorMessage(e)));
     } finally {
       if (mounted) setState(() => _applying = false);
     }
@@ -219,10 +220,11 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
 
   Future<void> _createTheme() async {
     final themeName = await _askName(
-      title: '新建主题',
-      initialValue:
-          '主题${ref.read(readerThemeProvider).customThemes.length + 1}',
-      hint: '以当前阅读样式另存为',
+      title: AppStrings.newTheme,
+      initialValue: AppStrings.themeDefaultName(
+        ref.read(readerThemeProvider).customThemes.length + 1,
+      ),
+      hint: AppStrings.themeSaveAsHint,
     );
     if (themeName == null) return;
     final style = await _snapshotCurrentStyle();
@@ -231,22 +233,24 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
         .read(readerThemeProvider.notifier)
         .addTheme(name: themeName, style: style);
     if (!mounted) return;
-    _showSnack('已新建「${theme.name}」');
+    _showSnack(AppStrings.themeCreated(theme.name));
     _scrollToBottomSoon();
   }
 
   Future<void> _renameTheme(ReaderTheme theme) async {
     final newName = await _askName(
-      title: '重命名主题',
+      title: AppStrings.renameTheme,
       initialValue: theme.name,
-      hint: '主题名称',
+      hint: AppStrings.themeName,
     );
     if (newName == null) return;
     final actualName = await ref
         .read(readerThemeProvider.notifier)
         .renameTheme(theme.id, newName);
     if (!mounted) return;
-    _showSnack(actualName == null ? '重命名失败' : '已重命名为「$actualName」');
+    _showSnack(actualName == null
+        ? AppStrings.renameFailed
+        : AppStrings.themeRenamed(actualName));
   }
 
   Future<void> _confirmDelete(Set<String> ids) async {
@@ -254,16 +258,16 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('删除主题'),
-        content: Text('确定删除选中的 ${ids.length} 个主题？内置主题不受影响。'),
+        title: Text(AppStrings.deleteTheme),
+        content: Text(AppStrings.deleteThemesConfirm(ids.length)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('删除'),
+            child: Text(AppStrings.delete),
           ),
         ],
       ),
@@ -274,7 +278,7 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
         .deleteThemes(ids);
     if (!mounted) return;
     setState(() => _selectedIds.removeAll(ids));
-    _showSnack('已删除 $count 个主题');
+    _showSnack(AppStrings.themesDeleted(count));
   }
 
   Future<void> _moveSelected(int delta) async {
@@ -300,16 +304,16 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('恢复默认主题'),
-        content: const Text('将删除全部自建主题，并把阅读样式恢复为内置「预设1」，是否继续？'),
+        title: Text(AppStrings.restoreDefaultTheme),
+        content: Text(AppStrings.restoreDefaultThemeConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('恢复'),
+            child: Text(AppStrings.restore),
           ),
         ],
       ),
@@ -325,7 +329,7 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
     );
     await _applyTheme(defaultTheme, showMessage: false);
     if (!mounted) return;
-    _showSnack('已恢复默认主题，阅读样式已应用「${defaultTheme.name}」');
+    _showSnack(AppStrings.themeDefaultsRestored(defaultTheme.name));
   }
 
   // ===== 导入 / 导出 / 分享 =====
@@ -345,12 +349,14 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
           (file.path == null ? null : await File(file.path!).readAsBytes());
       if (!mounted) return;
       if (bytes == null) {
-        _showSnack('读取文件失败');
+        _showSnack(AppStrings.readFileFailed);
         return;
       }
       await _doImport(utf8.decode(bytes, allowMalformed: true));
     } catch (e) {
-      if (mounted) _showSnack('导入失败：${errorMessage(e)}');
+      if (mounted) {
+        _showSnack(AppStrings.importFailedShortWithReason(errorMessage(e)));
+      }
     }
   }
 
@@ -359,7 +365,7 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
     if (!mounted) return;
     final text = data?.text;
     if (text == null || text.trim().isEmpty) {
-      _showSnack('剪贴板没有主题 JSON');
+      _showSnack(AppStrings.clipboardNoThemeJson);
       return;
     }
     await _doImport(text);
@@ -371,12 +377,16 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
           .read(readerThemeProvider.notifier)
           .importThemes(raw);
       if (!mounted) return;
-      _showSnack('已导入 ${imported.length} 个主题');
+      _showSnack(AppStrings.themesImported(imported.length));
       _scrollToBottomSoon();
     } on FormatException catch (e) {
-      if (mounted) _showSnack('导入失败：${e.message}');
+      if (mounted) {
+        _showSnack(AppStrings.importFailedShortWithReason(e.message));
+      }
     } catch (e) {
-      if (mounted) _showSnack('导入失败：${errorMessage(e)}');
+      if (mounted) {
+        _showSnack(AppStrings.importFailedShortWithReason(errorMessage(e)));
+      }
     }
   }
 
@@ -387,7 +397,8 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
         : const JsonEncoder.withIndent('  ').convert(<Map<String, dynamic>>[
             for (final theme in themes) theme.toJson(),
           ]);
-    final name = themes.length == 1 ? themes.single.name : '阅读主题';
+    final name =
+        themes.length == 1 ? themes.single.name : AppStrings.readingTheme;
     try {
       final saved = await const ExportFileService().saveToLocal(
         fileName: '${_safeFileName(name)}.json',
@@ -395,9 +406,11 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
       );
       if (!mounted) return;
       if (saved == null) return; // 用户取消
-      _showSnack('已导出「$name」');
+      _showSnack(AppStrings.themeExported(name));
     } catch (e) {
-      if (mounted) _showSnack('导出失败：${errorMessage(e)}');
+      if (mounted) {
+        _showSnack(AppStrings.exportFailedWithReason(errorMessage(e)));
+      }
     }
   }
 
@@ -408,7 +421,8 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
         : const JsonEncoder.withIndent('  ').convert(<Map<String, dynamic>>[
             for (final theme in themes) theme.toJson(),
           ]);
-    final name = themes.length == 1 ? themes.single.name : '阅读主题';
+    final name =
+        themes.length == 1 ? themes.single.name : AppStrings.readingTheme;
     try {
       final dir = await getTemporaryDirectory();
       final file = File(
@@ -427,14 +441,14 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
         } catch (_) {}
       }
     } catch (e) {
-      if (mounted) _showSnack('分享失败：${errorMessage(e)}');
+      if (mounted) _showSnack(AppStrings.shareFailed(errorMessage(e)));
     }
   }
 
   /// 文件名净化：去掉 Windows/Android 文件系统非法字符
   String _safeFileName(String name) {
     final sanitized = name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
-    return sanitized.isEmpty ? '阅读主题' : sanitized;
+    return sanitized.isEmpty ? AppStrings.readingTheme : sanitized;
   }
 
   // ===== 定位 / 回顶 / 回底 =====
@@ -614,7 +628,7 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
     }
     // 应用进行中给出点击反馈，而不是静默吞掉（批38b 审查 P3-5）
     if (_applying) {
-      _showSnack('正在应用主题…');
+      _showSnack(AppStrings.applyingTheme);
       return;
     }
     unawaited(_applyTheme(theme));
@@ -638,12 +652,14 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
                 theme.name,
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
-              subtitle: Text(theme.builtIn ? '内置主题' : '自建主题'),
+              subtitle: Text(theme.builtIn
+                  ? AppStrings.builtInTheme
+                  : AppStrings.customThemeLabel),
             ),
             const Divider(height: 1),
             ListTile(
               leading: const Icon(Icons.upload_file_outlined),
-              title: const Text('导出 JSON'),
+              title: Text(AppStrings.exportJson),
               onTap: () {
                 Navigator.pop(sheetContext);
                 unawaited(_exportThemes(<ReaderTheme>[theme]));
@@ -651,7 +667,7 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.share_outlined),
-              title: const Text('分享 JSON'),
+              title: Text(AppStrings.shareJson),
               onTap: () {
                 Navigator.pop(sheetContext);
                 unawaited(_shareThemes(<ReaderTheme>[theme]));
@@ -660,7 +676,7 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
             if (!theme.builtIn) ...[
               ListTile(
                 leading: const Icon(Icons.drive_file_rename_outline),
-                title: const Text('重命名'),
+                title: Text(AppStrings.rename),
                 onTap: () {
                   Navigator.pop(sheetContext);
                   unawaited(_renameTheme(theme));
@@ -672,7 +688,7 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
                   color: Theme.of(context).colorScheme.error,
                 ),
                 title: Text(
-                  '删除',
+                  AppStrings.delete,
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
                 onTap: () {
@@ -739,10 +755,12 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('阅读主题'),
+        title: Text(AppStrings.readingTheme),
         actions: <Widget>[
           IconButton(
-            tooltip: _gridMode ? '切换为列表' : '切换为网格',
+            tooltip: _gridMode
+                ? AppStrings.switchToList
+                : AppStrings.switchToGrid,
             icon: Icon(
               _gridMode ? Icons.view_list_rounded : Icons.grid_view_rounded,
             ),
@@ -752,7 +770,7 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
           ),
           if (_gridMode)
             PopupMenuButton<int>(
-              tooltip: '网格列数',
+              tooltip: AppStrings.gridColumnsLabel,
               icon: const Icon(Icons.view_column_rounded),
               enabled: loaded,
               initialValue: themeState.gridColumns,
@@ -772,7 +790,7 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
                   CheckedPopupMenuItem<int>(
                     value: columns,
                     checked: columns == themeState.gridColumns,
-                    child: Text('$columns 列'),
+                    child: Text(AppStrings.columnsCount(columns)),
                   ),
               ],
             ),
@@ -782,18 +800,18 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
                 _manageMode = false;
                 _selectedIds.clear();
               }),
-              child: const Text('完成'),
+              child: Text(AppStrings.doneLabel),
             )
           else
             IconButton(
-              tooltip: '管理主题',
+              tooltip: AppStrings.manageThemes,
               icon: const Icon(Icons.checklist_rounded),
               onPressed: loaded
                   ? () => setState(() => _manageMode = true)
                   : null,
             ),
           PopupMenuButton<String>(
-            tooltip: '更多',
+            tooltip: AppStrings.moreActions,
             enabled: loaded,
             onSelected: (value) {
               switch (value) {
@@ -807,15 +825,24 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
                   unawaited(_restoreDefaults());
               }
             },
-            itemBuilder: (menuContext) => const <PopupMenuEntry<String>>[
-              PopupMenuItem<String>(value: 'create', child: Text('新建主题')),
-              PopupMenuItem<String>(value: 'import_file', child: Text('从文件导入')),
+            itemBuilder: (menuContext) => <PopupMenuEntry<String>>[
+              PopupMenuItem<String>(
+                value: 'create',
+                child: Text(AppStrings.newTheme),
+              ),
+              PopupMenuItem<String>(
+                value: 'import_file',
+                child: Text(AppStrings.importFromFile),
+              ),
               PopupMenuItem<String>(
                 value: 'import_clipboard',
-                child: Text('从剪贴板导入'),
+                child: Text(AppStrings.importFromClipboard),
               ),
-              PopupMenuDivider(),
-              PopupMenuItem<String>(value: 'restore', child: Text('恢复默认主题')),
+              const PopupMenuDivider(),
+              PopupMenuItem<String>(
+                value: 'restore',
+                child: Text(AppStrings.restoreDefaultTheme),
+              ),
             ],
           ),
         ],
@@ -829,10 +856,12 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
                     if (_manageMode) _buildManageHeader(visibleThemes),
                     Expanded(
                       child: visibleThemes.isEmpty && !searchEmpty
-                          ? const Center(
+                          ? Center(
                               child: Text(
-                                '没有匹配的主题',
-                                key: ValueKey('reader-theme-search-empty'),
+                                AppStrings.noMatchingTheme,
+                                key: const ValueKey(
+                                  'reader-theme-search-empty',
+                                ),
                               ),
                             )
                           : _gridMode
@@ -884,13 +913,13 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
           isDense: true,
           filled: true,
           fillColor: colorScheme.surfaceContainerLow,
-          hintText: '搜索主题（共 ${themeState.themes.length} 个）',
+          hintText: AppStrings.searchThemeHint(themeState.themes.length),
           prefixIcon: const Icon(Icons.search_rounded, size: 20),
           suffixIcon: _searchQuery.isEmpty
               ? null
               : IconButton(
                   key: const ValueKey('reader-theme-search-clear'),
-                  tooltip: '清除搜索',
+                  tooltip: AppStrings.clearSearch,
                   icon: const Icon(Icons.close_rounded, size: 20),
                   onPressed: _clearSearch,
                 ),
@@ -948,17 +977,17 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
       child: Row(
         children: <Widget>[
           Text(
-            '已选 ${_selectedIds.length}',
+            AppStrings.themesSelected(_selectedIds.length),
             style: Theme.of(context).textTheme.labelLarge,
           ),
           const Spacer(),
           TextButton(
             onPressed: () => _selectAll(visibleThemes),
-            child: const Text('全选'),
+            child: Text(AppStrings.selectAll),
           ),
           TextButton(
             onPressed: () => _invertSelection(visibleThemes),
-            child: const Text('反选'),
+            child: Text(AppStrings.invertSelection),
           ),
         ],
       ),
@@ -1020,45 +1049,45 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
             children: <Widget>[
               action(
                 icon: Icons.arrow_upward_rounded,
-                label: '上移',
+                label: AppStrings.moveUp,
                 onTap: single ? () => unawaited(_moveSelected(-1)) : null,
               ),
               action(
                 icon: Icons.arrow_downward_rounded,
-                label: '下移',
+                label: AppStrings.moveDown,
                 onTap: single ? () => unawaited(_moveSelected(1)) : null,
               ),
               action(
                 icon: Icons.vertical_align_top_rounded,
-                label: '置顶',
+                label: AppStrings.pinToTop,
                 onTap: hasSelection
                     ? () => unawaited(_moveSelectedToEdge(toTop: true))
                     : null,
               ),
               action(
                 icon: Icons.vertical_align_bottom_rounded,
-                label: '置底',
+                label: AppStrings.rssMoveToBottom,
                 onTap: hasSelection
                     ? () => unawaited(_moveSelectedToEdge(toTop: false))
                     : null,
               ),
               action(
                 icon: Icons.upload_file_outlined,
-                label: '导出',
+                label: AppStrings.exportAction,
                 onTap: hasSelection
                     ? () => unawaited(_exportThemes(selectedThemes))
                     : null,
               ),
               action(
                 icon: Icons.share_outlined,
-                label: '分享',
+                label: AppStrings.shareAction,
                 onTap: hasSelection
                     ? () => unawaited(_shareThemes(selectedThemes))
                     : null,
               ),
               action(
                 icon: Icons.delete_outline,
-                label: '删除',
+                label: AppStrings.delete,
                 danger: true,
                 onTap: hasSelection
                     ? () => unawaited(
@@ -1111,17 +1140,17 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
         children: <Widget>[
           fab(
             icon: Icons.my_location_rounded,
-            tooltip: '定位当前',
+            tooltip: AppStrings.locateCurrent,
             onTap: currentId.isEmpty ? null : () => unawaited(_locateCurrent()),
           ),
           fab(
             icon: Icons.vertical_align_top_rounded,
-            tooltip: '回到顶部',
+            tooltip: AppStrings.backToTop,
             onTap: () => unawaited(_scrollToEdge(toBottom: false)),
           ),
           fab(
             icon: Icons.vertical_align_bottom_rounded,
-            tooltip: '回到底部',
+            tooltip: AppStrings.backToBottom,
             onTap: () => unawaited(_scrollToEdge(toBottom: true)),
           ),
         ],
@@ -1177,9 +1206,9 @@ class _ThemeNameDialogState extends State<_ThemeNameDialog> {
       actions: <Widget>[
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
-        FilledButton(onPressed: _confirm, child: const Text('确定')),
+        FilledButton(onPressed: _confirm, child: Text(AppStrings.confirm)),
       ],
     );
   }
@@ -1335,7 +1364,7 @@ class ReaderThemeCard extends StatelessWidget {
                               mainAxisSize: MainAxisSize.min,
                               children: <Widget>[
                                 Text(
-                                  '阅读',
+                                  AppStrings.appTitle,
                                   style: TextStyle(
                                     color: _foreground,
                                     fontSize: 22,
@@ -1464,7 +1493,7 @@ class ReaderThemeAddCard extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              '新建主题',
+              AppStrings.newTheme,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
@@ -1584,7 +1613,8 @@ class ReaderThemeAddChip extends StatelessWidget {
                 color: colorScheme.onSurfaceVariant,
               ),
               const SizedBox(width: 6),
-              Text('新建主题', style: Theme.of(context).textTheme.labelLarge),
+              Text(AppStrings.newTheme,
+                  style: Theme.of(context).textTheme.labelLarge),
             ],
           ),
         ),
