@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../routes.dart';
@@ -65,9 +66,9 @@ Future<void> runChangeSourceFlow(
   if (result is! String) return; // 取消 / 关闭 pop null → 不做任何事
   if (!context.mounted) return; // 离场：不展示进行中条、不发起重载
   messenger.showSnackBar(
-    const SnackBar(
-      content: Text('正在更换书源…'),
-      duration: Duration(minutes: 10), // 挂起保险（见文件头语义重估）
+    SnackBar(
+      content: Text(AppStrings.switchingSourceInProgress),
+      duration: const Duration(minutes: 10), // 挂起保险（见文件头语义重估）
     ),
   );
   final err = await notifier.reloadAfterSourceChange(result); // 不抛异常
@@ -75,7 +76,13 @@ Future<void> runChangeSourceFlow(
   messenger.clearSnackBars();
   if (!context.mounted) return; // 结果条仅在阅读器仍在场时展示
   if (err != null) {
-    messenger.showSnackBar(SnackBar(content: Text('更换书源后重载失败：${errorMessage(err)}')));
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          AppStrings.reloadAfterSourceChangeFailed(errorMessage(err)),
+        ),
+      ),
+    );
   }
   // 成功不弹阅读器侧结果条（去重：换源页「已切换到」为唯一成功反馈）
 }

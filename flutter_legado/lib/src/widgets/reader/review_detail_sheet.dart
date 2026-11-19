@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../services/book_api.dart';
 import '../../utils/error_message.dart';
 
@@ -200,7 +201,7 @@ class _ReviewDetailSheetState extends State<ReviewDetailSheet> {
         if (list.isEmpty) _hasMore = false;
         _loading = false;
         if (!append && list.isEmpty) {
-          _error = '暂无评论';
+          _error = AppStrings.noComments;
         }
       });
     } catch (e) {
@@ -382,7 +383,7 @@ class _ReviewDetailSheetState extends State<ReviewDetailSheet> {
                           child: Text(
                             item.name?.isNotEmpty == true
                                 ? item.name!
-                                : '匿名',
+                                : AppStrings.anonymous,
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
@@ -472,10 +473,11 @@ class _ReviewDetailSheetState extends State<ReviewDetailSheet> {
                             },
                             child: Text(
                               _replyLoading.contains(key)
-                                  ? '加载中…'
+                                  ? AppStrings.loadingDots
                                   : expanded
-                                      ? '收起回复'
-                                      : '查看回复${(item.replyCount ?? replies.length) > 0 ? ' (${item.replyCount ?? replies.length})' : ''}',
+                                  ? AppStrings.collapseReplies
+                                  : '${AppStrings.viewReplies}'
+                                        '${(item.replyCount ?? replies.length) > 0 ? ' (${item.replyCount ?? replies.length})' : ''}',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: CupertinoColors.activeBlue

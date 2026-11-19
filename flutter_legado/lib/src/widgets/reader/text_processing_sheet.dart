@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
@@ -153,7 +154,7 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
     try {
       await _readerNotifier.reloadChapterContent();
     } catch (e) {
-      _showInline('重新加载正文失败：${errorMessage(e)}');
+      _showInline(AppStrings.reloadContentFailed(errorMessage(e)));
     }
   }
 
@@ -173,7 +174,7 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
           _inlineMessage = null;
         });
       } else {
-        _showInline('切换替换净化失败，请重试');
+        _showInline(AppStrings.toggleReplaceFailedRetry);
       }
     } finally {
       _busy = false;
@@ -193,7 +194,7 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
       }
       await _reloadChapter();
     } catch (e) {
-      _showInline('更新替换规则失败：${errorMessage(e)}');
+      _showInline(AppStrings.updateReplaceRuleFailed(errorMessage(e)));
     }
   }
 
@@ -201,18 +202,18 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除替换规则？'),
+        title: Text(AppStrings.deleteReplaceRuleConfirm),
         content: Text(rule.name.isEmpty ? rule.pattern : rule.name),
         actions: [
           TextButton(
             key: const ValueKey('text-processing-delete-cancel'),
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             key: const ValueKey('text-processing-delete-confirm'),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('删除'),
+            child: Text(AppStrings.delete),
           ),
         ],
       ),
@@ -227,7 +228,7 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
       }
       await _reloadChapter();
     } catch (e) {
-      _showInline('删除替换规则失败：${errorMessage(e)}');
+      _showInline(AppStrings.deleteReplaceRuleFailed(errorMessage(e)));
     }
   }
 
@@ -257,10 +258,10 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: _buildBookCard(theme),
           ),
-          const TabBar(
+          TabBar(
             tabs: [
-              Tab(text: '替换净化'),
-              Tab(text: '内容处理'),
+              Tab(text: AppStrings.replacePurifyLabel),
+              Tab(text: AppStrings.contentProcessing),
             ],
           ),
           Expanded(
@@ -309,7 +310,9 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  book?.name.isNotEmpty == true ? book!.name : '未打开书籍',
+                  book?.name.isNotEmpty == true
+                      ? book!.name
+                      : AppStrings.noBookOpened,
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -342,7 +345,10 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
           children: [
             Text(_error!, textAlign: TextAlign.center),
             const SizedBox(height: 12),
-            ElevatedButton(onPressed: _loadRules, child: const Text('重试')),
+            ElevatedButton(
+              onPressed: _loadRules,
+              child: Text(AppStrings.retry),
+            ),
           ],
         ),
       );
@@ -355,11 +361,11 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
             key: const ValueKey('text-processing-search'),
             controller: _searchCtrl,
             onChanged: (v) => setState(() => _query = v),
-            decoration: const InputDecoration(
-              hintText: '搜索规则',
-              prefixIcon: Icon(Icons.search),
+            decoration: InputDecoration(
+              hintText: AppStrings.sourceSearchRules,
+              prefixIcon: const Icon(Icons.search),
               isDense: true,
-              border: OutlineInputBorder(),
+              border: const OutlineInputBorder(),
             ),
           ),
         ),
@@ -367,8 +373,8 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
           key: const ValueKey('text-processing-master-switch'),
           dense: true,
           contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-          title: const Text('使用替换净化'),
-          subtitle: const Text('关闭后本章不应用任何替换规则'),
+          title: Text(AppStrings.useReplacement),
+          subtitle: Text(AppStrings.useReplacementDesc),
           value: _replaceEnabled,
           onChanged: _busy ? null : _toggleMaster,
         ),
@@ -393,7 +399,7 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
             key: const ValueKey('text-processing-master-off'),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: Text(
-              '本书替换净化已关闭',
+              AppStrings.replaceDisabledForBook,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -407,7 +413,7 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
             key: const ValueKey('text-processing-manage'),
             onPressed: _openManage,
             icon: const Icon(Icons.settings_outlined, size: 18),
-            label: const Text('管理替换规则'),
+            label: Text(AppStrings.manageReplaceRules),
           ),
         ),
       ],
@@ -420,8 +426,8 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
       return Center(
         child: Text(
           _query.isEmpty && _filter == _ReplaceFilter.all
-              ? '暂无替换规则'
-              : '没有符合条件的规则',
+              ? AppStrings.noReplaceRules
+              : AppStrings.noMatchingRules,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
@@ -456,14 +462,14 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      rule.name.isEmpty ? '（未命名规则）' : rule.name,
+                      rule.name.isEmpty ? AppStrings.unnamedRule : rule.name,
                       style: theme.textTheme.titleSmall,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${rule.isRegex ? '正则' : '文本'}：${rule.pattern}'
+                      '${rule.isRegex ? AppStrings.regexLabel : AppStrings.textLabel}：${rule.pattern}'
                       ' → ${rule.replacement.isEmpty ? '∅' : rule.replacement}',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
@@ -473,7 +479,7 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
                     ),
                     if (group.isNotEmpty)
                       Text(
-                        '分组：$group',
+                        AppStrings.groupNamesLabel(group),
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: theme.colorScheme.secondary,
                         ),
@@ -498,9 +504,9 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
                     _deleteRule(rule);
                   }
                 },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'edit', child: Text('编辑')),
-                  PopupMenuItem(value: 'delete', child: Text('删除')),
+                itemBuilder: (_) => [
+                  PopupMenuItem(value: 'edit', child: Text(AppStrings.edit)),
+                  PopupMenuItem(value: 'delete', child: Text(AppStrings.delete)),
                 ],
               ),
             ],
@@ -521,10 +527,10 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
             color: theme.colorScheme.outline,
           ),
           const SizedBox(height: 12),
-          Text('暂无 AI 处理记录', style: theme.textTheme.titleSmall),
+          Text(AppStrings.noAiRecords, style: theme.textTheme.titleSmall),
           const SizedBox(height: 6),
           Text(
-            'AI 内容处理暂未支持',
+            AppStrings.aiContentProcessingUnsupported,
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -535,9 +541,9 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
   }
 
   String _filterLabel(_ReplaceFilter filter) => switch (filter) {
-    _ReplaceFilter.all => '全部',
-    _ReplaceFilter.enabled => '已启用',
-    _ReplaceFilter.disabled => '已停用',
-    _ReplaceFilter.effective => '生效',
+    _ReplaceFilter.all => AppStrings.allBooks,
+    _ReplaceFilter.enabled => AppStrings.rssEnabled,
+    _ReplaceFilter.disabled => AppStrings.disabledLabel,
+    _ReplaceFilter.effective => AppStrings.activeLabel,
   };
 }

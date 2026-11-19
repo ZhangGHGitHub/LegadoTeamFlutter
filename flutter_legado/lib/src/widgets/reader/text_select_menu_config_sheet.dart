@@ -10,6 +10,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../models/selection_menu_config.dart';
 import '../../screens/reader_config_panel.dart';
 
@@ -143,7 +144,7 @@ class _TextSelectMenuConfigSheetState extends State<TextSelectMenuConfigSheet> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      '编辑选择菜单',
+                      AppStrings.editSelectionMenu,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
@@ -151,7 +152,7 @@ class _TextSelectMenuConfigSheetState extends State<TextSelectMenuConfigSheet> {
                     ),
                   ),
                   IconButton(
-                    tooltip: '关闭',
+                    tooltip: AppStrings.closeLabel,
                     icon: const Icon(Icons.close),
                     onPressed: () => Navigator.pop(context),
                   ),
@@ -173,7 +174,7 @@ class _TextSelectMenuConfigSheetState extends State<TextSelectMenuConfigSheet> {
                       key: const ValueKey('select-menu-expand-switch'),
                       dense: true,
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('多行展示'),
+                      title: Text(AppStrings.multilineDisplay),
                       value: _expand,
                       onChanged: (v) => setState(() => _expand = v),
                     ),
@@ -181,13 +182,13 @@ class _TextSelectMenuConfigSheetState extends State<TextSelectMenuConfigSheet> {
                       key: const ValueKey('select-menu-icon-switch'),
                       dense: true,
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('展示图标'),
+                      title: Text(AppStrings.showIcons),
                       value: _showIcon,
                       onChanged: (v) => setState(() => _showIcon = v),
                     ),
-                    _buildGroup('一级菜单', primary, 0),
-                    _buildGroup('折叠菜单', collapsed, 1),
-                    _buildGroup('已隐藏项目', hidden, 2),
+                    _buildGroup(AppStrings.primaryMenu, primary, 0),
+                    _buildGroup(AppStrings.collapsedMenu, collapsed, 1),
+                    _buildGroup(AppStrings.hiddenItems, hidden, 2),
                     const SizedBox(height: 8),
                     // [审查 P3] 320dp/1.3 下三个按钮的最小宽度超出可用
                     // 宽度；窄屏改为 Wrap，避免底部操作行横向溢出。
@@ -196,17 +197,17 @@ class _TextSelectMenuConfigSheetState extends State<TextSelectMenuConfigSheet> {
                         final restore = TextButton(
                           key: const ValueKey('select-menu-restore'),
                           onPressed: _restoreDefaults,
-                          child: const Text('恢复默认'),
+                          child: Text(AppStrings.restoreDefault),
                         );
                         final cancel = TextButton(
                           key: const ValueKey('select-menu-cancel'),
                           onPressed: () => Navigator.pop(context),
-                          child: const Text('取消'),
+                          child: Text(AppStrings.cancel),
                         );
                         final save = FilledButton(
                           key: const ValueKey('select-menu-save'),
                           onPressed: _confirm,
-                          child: const Text('保存'),
+                          child: Text(AppStrings.save),
                         );
                         if (constraints.maxWidth < 300) {
                           return Wrap(
@@ -261,7 +262,7 @@ class _TextSelectMenuConfigSheetState extends State<TextSelectMenuConfigSheet> {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
-                '暂无',
+                AppStrings.notAvailable,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -330,7 +331,7 @@ class _TextSelectMenuConfigSheetState extends State<TextSelectMenuConfigSheet> {
         children: [
           IconButton(
             key: ValueKey('select-menu-up-${def.id}'),
-            tooltip: '上移',
+            tooltip: AppStrings.moveUp,
             style: compact,
             iconSize: 18,
             icon: const Icon(Icons.keyboard_arrow_up),
@@ -338,7 +339,7 @@ class _TextSelectMenuConfigSheetState extends State<TextSelectMenuConfigSheet> {
           ),
           IconButton(
             key: ValueKey('select-menu-down-${def.id}'),
-            tooltip: '下移',
+            tooltip: AppStrings.moveDown,
             style: compact,
             iconSize: 18,
             icon: const Icon(Icons.keyboard_arrow_down),
@@ -346,15 +347,18 @@ class _TextSelectMenuConfigSheetState extends State<TextSelectMenuConfigSheet> {
           ),
           PopupMenuButton<int>(
             key: ValueKey('select-menu-move-${def.id}'),
-            tooltip: '移动到',
+            tooltip: AppStrings.moveTo,
             style: compact,
             iconSize: 18,
             icon: const Icon(Icons.swap_horiz),
             onSelected: (value) => _moveToState(def.id, value),
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 0, child: Text('移至一级')),
-              PopupMenuItem(value: 1, child: Text('移至折叠')),
-              PopupMenuItem(value: 2, child: Text('移至隐藏')),
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                  value: 0, child: Text(AppStrings.moveToPrimary)),
+              PopupMenuItem(
+                  value: 1, child: Text(AppStrings.moveToCollapsed)),
+              PopupMenuItem(
+                  value: 2, child: Text(AppStrings.moveToHidden)),
             ],
           ),
         ],

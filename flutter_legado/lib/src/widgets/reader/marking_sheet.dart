@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../providers/book_marking/book_marking_notifier.dart';
 import '../../utils/error_message.dart';
@@ -141,7 +142,7 @@ class _MarkingSheetState extends ConsumerState<MarkingSheet> {
     if (_saving) return;
     // [P2-4] 空作者照常保存（与书签同口径），只要求书名/书源非空
     if (widget.bookName.isEmpty || widget.bookUrl.isEmpty) {
-      _toast('无法保存笔记：未打开书籍');
+      _toast(AppStrings.noteNoBook);
       return;
     }
     setState(() => _saving = true);
@@ -166,7 +167,7 @@ class _MarkingSheetState extends ConsumerState<MarkingSheet> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
-      _toast('保存笔记失败：${errorMessage(e)}');
+      _toast(AppStrings.saveNoteFailed(errorMessage(e)));
     }
   }
 
@@ -176,18 +177,18 @@ class _MarkingSheetState extends ConsumerState<MarkingSheet> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除笔记？'),
-        content: const Text('删除后不可恢复。'),
+        title: Text(AppStrings.deleteNoteConfirm),
+        content: Text(AppStrings.deleteNoteIrreversible),
         actions: [
           TextButton(
             key: const ValueKey('marking-delete-cancel'),
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             key: const ValueKey('marking-delete-confirm'),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('删除'),
+            child: Text(AppStrings.delete),
           ),
         ],
       ),
@@ -199,7 +200,7 @@ class _MarkingSheetState extends ConsumerState<MarkingSheet> {
       Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
-      _toast('删除笔记失败：${errorMessage(e)}');
+      _toast(AppStrings.deleteNoteFailed(errorMessage(e)));
     }
   }
 
@@ -231,7 +232,7 @@ class _MarkingSheetState extends ConsumerState<MarkingSheet> {
                 children: [
                   Expanded(
                     child: Text(
-                      _editing ? '编辑笔记' : '笔记',
+                      _editing ? AppStrings.editNote : AppStrings.note,
                       key: const ValueKey('marking-sheet-title'),
                       style: theme.textTheme.titleMedium,
                     ),
@@ -239,7 +240,7 @@ class _MarkingSheetState extends ConsumerState<MarkingSheet> {
                   if (_editing)
                     IconButton(
                       key: const ValueKey('marking-delete'),
-                      tooltip: '删除笔记',
+                      tooltip: AppStrings.deleteNote,
                       icon: const Icon(Icons.delete_outline),
                       onPressed: _delete,
                     ),
@@ -256,7 +257,9 @@ class _MarkingSheetState extends ConsumerState<MarkingSheet> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  _previewText.isEmpty ? '（无选中文本）' : _previewText,
+                  _previewText.isEmpty
+                      ? AppStrings.noSelectedText
+                      : _previewText,
                   key: const ValueKey('marking-preview'),
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
@@ -265,7 +268,7 @@ class _MarkingSheetState extends ConsumerState<MarkingSheet> {
               ),
               const SizedBox(height: 12),
               Text(
-                '颜色',
+                AppStrings.colorLabel,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.outline,
                 ),
@@ -295,7 +298,7 @@ class _MarkingSheetState extends ConsumerState<MarkingSheet> {
               ),
               const SizedBox(height: 12),
               Text(
-                '效果',
+                AppStrings.effectLabel,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.outline,
                 ),
@@ -319,10 +322,10 @@ class _MarkingSheetState extends ConsumerState<MarkingSheet> {
                 key: const ValueKey('marking-note-field'),
                 controller: _noteCtrl,
                 maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: '备注',
-                  hintText: '输入备注…',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: AppStrings.markingNoteLabel,
+                  hintText: AppStrings.noteHint,
+                  border: const OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 16),
@@ -330,7 +333,9 @@ class _MarkingSheetState extends ConsumerState<MarkingSheet> {
                 key: const ValueKey('marking-save'),
                 onPressed: _saving ? null : _save,
                 icon: const Icon(Icons.save_outlined),
-                label: Text(_saving ? '保存中…' : '保存'),
+                label: Text(
+                  _saving ? AppStrings.savingInProgress : AppStrings.save,
+                ),
               ),
             ],
           ),

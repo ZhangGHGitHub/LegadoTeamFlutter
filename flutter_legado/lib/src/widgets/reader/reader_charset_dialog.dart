@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart' show BookType;
 import '../../providers/providers.dart' show bookApiProvider;
 import '../../providers/reader/reader_notifier.dart';
@@ -42,16 +43,16 @@ void showReaderCharsetDialog(BuildContext context, WidgetRef ref) {
     context: context,
     builder: (dialogContext) => StatefulBuilder(
       builder: (ctx, setDialogState) => AlertDialog(
-        title: const Text('设置编码'),
+        title: Text(AppStrings.setCharset),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: ctrl,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'charset',
-                hintText: '如 UTF-8 / GBK',
-                border: OutlineInputBorder(),
+                hintText: AppStrings.charsetHint,
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
@@ -72,19 +73,21 @@ void showReaderCharsetDialog(BuildContext context, WidgetRef ref) {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () {
               final charset = ctrl.text.trim();
               Navigator.pop(dialogContext);
               if (charset.isEmpty) {
-                messenger.showSnackBar(const SnackBar(content: Text('编码不能为空')));
+                messenger.showSnackBar(
+                  SnackBar(content: Text(AppStrings.charsetRequired)),
+                );
                 return;
               }
               unawaited(_applyCharset(context, ref, charset));
             },
-            child: const Text('确定'),
+            child: Text(AppStrings.confirm),
           ),
         ],
       ),
@@ -111,17 +114,27 @@ Future<void> _applyCharset(
     if (!BookType.isLocalBook(updated)) {
       // 在线书不需要重新解码（编码只对本地文本生效），仅同步内存状态
       notifier.updateCurrentBook(updated);
-      messenger.showSnackBar(SnackBar(content: Text('已设置编码：$applied')));
+      messenger.showSnackBar(
+        SnackBar(content: Text(AppStrings.charsetApplied(applied))),
+      );
       return;
     }
     // 本地书：目录/正文都要按新编码重读；失败不得提示成功
     final error = await notifier.reloadAfterCharsetChange(updated);
     if (error != null) {
-      messenger.showSnackBar(SnackBar(content: Text('设置编码失败：${errorMessage(error)}')));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(AppStrings.setCharsetFailed(errorMessage(error))),
+        ),
+      );
       return;
     }
-    messenger.showSnackBar(SnackBar(content: Text('已设置编码：$applied')));
+    messenger.showSnackBar(
+      SnackBar(content: Text(AppStrings.charsetApplied(applied))),
+    );
   } catch (e) {
-    messenger.showSnackBar(SnackBar(content: Text('设置编码失败: ${errorMessage(e)}')));
+    messenger.showSnackBar(
+      SnackBar(content: Text(AppStrings.setCharsetFailed(errorMessage(e)))),
+    );
   }
 }

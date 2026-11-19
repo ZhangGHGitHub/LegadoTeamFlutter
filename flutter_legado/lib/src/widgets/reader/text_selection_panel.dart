@@ -17,6 +17,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../providers/book_marking/book_marking_notifier.dart';
 import '../../providers/providers.dart';
@@ -143,9 +144,9 @@ Future<void> openMarkingForSelection(
   if (book == null) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('无法添加笔记：未打开书籍'),
-          duration: Duration(seconds: 2),
+        SnackBar(
+          content: Text(AppStrings.noteNoBook),
+          duration: const Duration(seconds: 2),
         ),
       );
     }
@@ -338,7 +339,7 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
               Row(
                 children: [
                   Text(
-                    '已选文本',
+                    AppStrings.selectedText,
                     style: theme.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
@@ -350,7 +351,7 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
                   // 「可见不可点」），高亮/关闭必须始终可达。
                   Expanded(
                     child: Text(
-                      '${_selectedText.length} 字',
+                      AppStrings.charCount('${_selectedText.length}'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodySmall?.copyWith(
@@ -365,11 +366,11 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
                     onPressed: () => setState(
                       () => _showHighlightColors = !_showHighlightColors,
                     ),
-                    child: const Text('高亮'),
+                    child: Text(AppStrings.highlightLabel),
                   ),
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('关闭'),
+                    child: Text(AppStrings.closeLabel),
                   ),
                 ],
               ),
@@ -417,7 +418,7 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
               ),
               const SizedBox(height: 4),
               Text(
-                '提示：长按上方文本可精细调整选区，未选择时默认操作整段',
+                AppStrings.selectionPanelHint,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.outline,
                 ),
@@ -453,7 +454,7 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
                   ),
                   IconButton(
                     key: const ValueKey('selection-panel-manage'),
-                    tooltip: '管理选择菜单',
+                    tooltip: AppStrings.manageSelectionMenu,
                     visualDensity: VisualDensity.compact,
                     icon: const Icon(Icons.settings_outlined, size: 20),
                     onPressed: () => unawaited(
@@ -479,7 +480,7 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
                           child: Row(
                             children: [
                               Text(
-                                '高亮颜色',
+                                AppStrings.highlightColor,
                                 style: theme.textTheme.bodySmall?.copyWith(
                                   color: theme.colorScheme.outline,
                                 ),
@@ -661,9 +662,11 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('高亮', style: Theme.of(ctx).textTheme.titleMedium),
+              Text(AppStrings.highlightLabel,
+                  style: Theme.of(ctx).textTheme.titleMedium),
               const SizedBox(height: 12),
-              Text('样式颜色', style: Theme.of(ctx).textTheme.bodySmall),
+              Text(AppStrings.styleColor,
+                  style: Theme.of(ctx).textTheme.bodySmall),
               const SizedBox(height: 8),
               ValueListenableBuilder<Color>(
                 valueListenable: selectedColor,
@@ -698,19 +701,21 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
               TextField(
                 controller: noteCtrl,
                 maxLines: 3,
-                decoration: const InputDecoration(labelText: '笔记（可选）'),
+                decoration: InputDecoration(
+                  labelText: AppStrings.noteOptional,
+                ),
               ),
               const SizedBox(height: 16),
               Row(
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(ctx, false),
-                    child: const Text('取消'),
+                    child: Text(AppStrings.cancel),
                   ),
                   const Spacer(),
                   FilledButton(
                     onPressed: () => Navigator.pop(ctx, true),
-                    child: const Text('保存高亮'),
+                    child: Text(AppStrings.saveHighlight),
                   ),
                 ],
               ),
@@ -732,7 +737,7 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
     final state = ref.read(readerNotifierProvider);
     final book = state.currentBook;
     if (book == null) {
-      _toast('无法添加高亮：未打开书籍');
+      _toast(AppStrings.highlightNoBook);
       return;
     }
     final chapter = state.currentChapter;
@@ -776,10 +781,14 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
       // 缺陷修复：正文渲染须按章消费 highlights 表。自增修订号让阅读页
       // 立即重拉当前章并内联渲染（此前保存成功但正文无任何变化）。
       ref.read(bookHighlightsRevisionProvider.notifier).state++;
-      _toast(note.isEmpty ? '已添加高亮' : '已添加高亮与笔记');
+      _toast(
+        note.isEmpty
+            ? AppStrings.highlightAdded
+            : AppStrings.highlightAndNoteAdded,
+      );
       _close();
     } catch (e) {
-      _toast('添加高亮失败：${errorMessage(e)}');
+      _toast(AppStrings.addHighlightFailed(errorMessage(e)));
     }
   }
 }
@@ -905,7 +914,7 @@ class ReaderSelectionToolbar extends ConsumerWidget {
     ];
     final manage = IconButton(
       key: const ValueKey('selection-menu-manage'),
-      tooltip: '管理选择菜单',
+      tooltip: AppStrings.manageSelectionMenu,
       visualDensity: VisualDensity.compact,
       icon: const Icon(Icons.settings_outlined, size: 20),
       onPressed: () {
@@ -971,9 +980,9 @@ class ReaderSelectionToolbar extends ConsumerWidget {
           divider,
           _buildActionButton(
             context,
-            const SelectionMenuItemDef(
+            SelectionMenuItemDef(
               id: 'menu_more',
-              label: '更多',
+              label: AppStrings.moreActions,
               icon: Icons.more_horiz,
               implemented: true,
             ),

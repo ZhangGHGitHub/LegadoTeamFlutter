@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart'
     show Book, TocRuleReloadResult, TxtTocRule;
 import '../../providers/providers.dart' show bookApiProvider;
@@ -38,7 +39,9 @@ Future<void> showReaderTocRuleDialog(
 }) async {
   final messenger = ScaffoldMessenger.of(context);
   if (!isLocalTxtBook(book)) {
-    messenger.showSnackBar(const SnackBar(content: Text('TXT 目录规则仅适用于本地 TXT 书籍')));
+    messenger.showSnackBar(
+      SnackBar(content: Text(AppStrings.tocRuleLocalTxtOnly)),
+    );
     return;
   }
   await showDialog<void>(
@@ -54,7 +57,11 @@ Future<void> showReaderTocRuleDialog(
           final result = await onApplied(updated);
           if (result.error != null) {
             messenger.showSnackBar(
-              SnackBar(content: Text('应用目录规则后重载失败：${result.error}')),
+              SnackBar(
+                content: Text(
+                  AppStrings.applyTocRuleReloadFailed('${result.error}'),
+                ),
+              ),
             );
             return;
           }
@@ -62,17 +69,25 @@ Future<void> showReaderTocRuleDialog(
           // 只有选了具体规则却回退默认，才提示「未命中」。
           if (ruleJson != null && !result.usedCustomRule) {
             messenger.showSnackBar(
-              const SnackBar(content: Text('规则未命中，已回退默认规则')),
+              SnackBar(content: Text(AppStrings.tocRuleNotMatched)),
             );
             return;
           }
           messenger.showSnackBar(
             SnackBar(
-              content: Text(ruleJson == null ? '已恢复默认目录规则' : '已应用目录规则'),
+              content: Text(
+                ruleJson == null
+                    ? AppStrings.defaultTocRuleRestored
+                    : AppStrings.tocRuleApplied,
+              ),
             ),
           );
         } catch (e) {
-          messenger.showSnackBar(SnackBar(content: Text('设置目录规则失败: ${errorMessage(e)}')));
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(AppStrings.setTocRuleFailed(errorMessage(e))),
+            ),
+          );
         }
       },
     ),
@@ -141,7 +156,7 @@ class _TxtTocRuleDialogState extends ConsumerState<_TxtTocRuleDialog> {
         (MediaQuery.sizeOf(context).height * 0.45).clamp(160.0, 360.0);
     return AlertDialog(
       scrollable: true,
-      title: const Text('TXT 目录规则'),
+      title: Text(AppStrings.txtTocRulesLabel),
       content: SizedBox(
         width: double.maxFinite,
         child: Column(
@@ -168,13 +183,17 @@ class _TxtTocRuleDialogState extends ConsumerState<_TxtTocRuleDialog> {
                       children: [
                         RadioListTile<String?>(
                           value: _defaultRuleValue,
-                          title: const Text('默认规则'),
-                          subtitle: const Text('自动识别常见章节标题（推荐）'),
+                          title: Text(AppStrings.defaultRule),
+                          subtitle: Text(AppStrings.defaultRuleDesc),
                         ),
                         for (final rule in rules)
                           RadioListTile<String?>(
                             value: rule.id.toString(),
-                            title: Text(rule.name.isEmpty ? '未命名规则' : rule.name),
+                            title: Text(
+                              rule.name.isEmpty
+                                  ? AppStrings.unnamedRule
+                                  : rule.name,
+                            ),
                             subtitle: Text(
                               rule.example?.isNotEmpty == true
                                   ? rule.example!
@@ -189,15 +208,15 @@ class _TxtTocRuleDialogState extends ConsumerState<_TxtTocRuleDialog> {
                 ),
               ),
             if (rules.isEmpty)
-              const Padding(
-                padding: EdgeInsets.only(top: 4),
-                child: Text('规则库暂无启用的规则，可在「管理规则」中导入或新增'),
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(AppStrings.noEnabledTocRulesHint),
               ),
             if (currentCustomRule != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
-                  '当前书使用规则库之外的规则：$currentCustomRule',
+                  AppStrings.customTocRuleInUse(currentCustomRule),
                   style: Theme.of(context).textTheme.bodySmall,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -207,7 +226,7 @@ class _TxtTocRuleDialogState extends ConsumerState<_TxtTocRuleDialog> {
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
-                  '规则加载失败：${state.error}',
+                  AppStrings.loadRulesFailed('${state.error}'),
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
               ),
@@ -221,16 +240,16 @@ class _TxtTocRuleDialogState extends ConsumerState<_TxtTocRuleDialog> {
             if (!mounted) return;
             await ref.read(txtTocRulesNotifierProvider.notifier).load();
           },
-          child: const Text('管理规则'),
+          child: Text(AppStrings.manageRules),
         ),
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         FilledButton(
           // 当前书是规则库外规则时需先选「默认规则」或具体规则
           onPressed: selected == null ? null : () => _apply(rules, selected),
-          child: const Text('确定'),
+          child: Text(AppStrings.confirm),
         ),
       ],
     );

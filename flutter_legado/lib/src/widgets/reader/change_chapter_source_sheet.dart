@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../../l10n/app_strings.dart';
 import '../../models/book_chapter.dart';
 import '../../models/source_match.dart';
 import '../../providers/providers.dart';
@@ -188,7 +189,7 @@ class _ChangeChapterSourceSheetState
         );
       }
       if (raw.trim().isEmpty) {
-        throw StateError('未获取到章节正文');
+        throw StateError(AppStrings.noChapterContent);
       }
       await _api.saveChapterContent(
         bookUrl: widget.bookUrl,
@@ -201,13 +202,19 @@ class _ChangeChapterSourceSheetState
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已替换本章正文（${match.sourceName}）')),
+        SnackBar(
+          content: Text(AppStrings.chapterContentReplaced(match.sourceName)),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
       setState(() => _applying = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('单章换源失败：${errorMessage(e)}')),
+        SnackBar(
+          content: Text(
+            AppStrings.singleChapterSourceFailed(errorMessage(e)),
+          ),
+        ),
       );
     }
   }
@@ -235,7 +242,7 @@ class _ChangeChapterSourceSheetState
               children: [
                 if (_selected != null)
                   IconButton(
-                    tooltip: '返回书源列表',
+                    tooltip: AppStrings.backToSourceList,
                     onPressed: _applying ? null : _backToSources,
                     icon: const Icon(Icons.arrow_back_ios_new, size: 18),
                   ),
@@ -244,7 +251,9 @@ class _ChangeChapterSourceSheetState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        _selected == null ? '单章换源' : '选择章节',
+                        _selected == null
+                            ? AppStrings.singleChapterChangeSource
+                            : AppStrings.selectChapter,
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.w600,
                             ),
@@ -264,7 +273,7 @@ class _ChangeChapterSourceSheetState
                   ),
                 ),
                 IconButton(
-                  tooltip: '刷新',
+                  tooltip: AppStrings.refreshAction,
                   onPressed: (_loading || _applying)
                       ? null
                       : () {
@@ -285,7 +294,7 @@ class _ChangeChapterSourceSheetState
               child: TextField(
                 onChanged: (v) => setState(() => _filter = v),
                 decoration: InputDecoration(
-                  hintText: '筛选书源 / 书名',
+                  hintText: AppStrings.filterSourceOrTitle,
                   isDense: true,
                   prefixIcon: const Icon(Icons.search, size: 20),
                   filled: true,
@@ -331,7 +340,10 @@ class _ChangeChapterSourceSheetState
             children: [
               Text(_error!, textAlign: TextAlign.center),
               const SizedBox(height: 12),
-              TextButton(onPressed: _search, child: const Text('重试')),
+              TextButton(
+                onPressed: _search,
+                child: Text(AppStrings.retry),
+              ),
             ],
           ),
         ),
@@ -341,7 +353,7 @@ class _ChangeChapterSourceSheetState
     if (list.isEmpty) {
       return Center(
         child: Text(
-          '没有可用书源',
+          AppStrings.noSourcesAvailable,
           style: TextStyle(color: scheme.onSurfaceVariant),
         ),
       );
@@ -362,7 +374,7 @@ class _ChangeChapterSourceSheetState
             [
               if (m.latestChapter != null && m.latestChapter!.isNotEmpty)
                 m.latestChapter!,
-              '匹配 ${m.score.toStringAsFixed(0)}',
+              AppStrings.matchScore(m.score.toStringAsFixed(0)),
             ].join(' · '),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
@@ -390,7 +402,7 @@ class _ChangeChapterSourceSheetState
               const SizedBox(height: 12),
               TextButton(
                 onPressed: () => _openToc(_selected!),
-                child: const Text('重试'),
+                child: Text(AppStrings.retry),
               ),
             ],
           ),
@@ -399,7 +411,10 @@ class _ChangeChapterSourceSheetState
     }
     if (_toc.isEmpty) {
       return Center(
-        child: Text('目录为空', style: TextStyle(color: scheme.onSurfaceVariant)),
+        child: Text(
+          AppStrings.catalogEmpty,
+          style: TextStyle(color: scheme.onSurfaceVariant),
+        ),
       );
     }
     final highlight = _matchChapterIndex(_toc);

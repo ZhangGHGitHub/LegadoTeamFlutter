@@ -8,6 +8,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../providers/providers.dart'
     show bookApiProvider, replaceEnableDefaultProvider;
@@ -174,7 +175,11 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('设置保存失败: ${errorMessage(e)}')));
+      ).showSnackBar(
+        SnackBar(
+          content: Text(AppStrings.settingsSaveFailedWith(errorMessage(e))),
+        ),
+      );
     }
   }
 
@@ -581,7 +586,10 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     // 与换源流程 _applying 防重入同形态；notifier 侧 _refreshing 兜底）
     if (notifier.isRefreshing) return;
     messenger.showSnackBar(
-      const SnackBar(content: Text('正在刷新正文…'), duration: Duration(minutes: 10)),
+      SnackBar(
+        content: Text(AppStrings.refreshingContent),
+        duration: const Duration(minutes: 10),
+      ),
     );
     final err = await notifier.refreshChapterContent();
     // [SB-HUNT | 2026-09-25] 必收清理（与换源流程统一）：先 clearSnackBars
@@ -590,7 +598,13 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     messenger.clearSnackBars();
     if (!context.mounted) return;
     messenger.showSnackBar(
-      SnackBar(content: Text(err == null ? '正文已刷新' : '刷新正文失败：${errorMessage(err)}')),
+      SnackBar(
+        content: Text(
+          err == null
+              ? AppStrings.contentRefreshed
+              : AppStrings.refreshContentFailed(errorMessage(err)),
+        ),
+      ),
     );
   }
 
@@ -813,9 +827,11 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
           children: [
             ListTile(
               leading: const Icon(Symbols.article_rounded),
-              title: const Text('单章换源'),
+              title: Text(AppStrings.singleChapterChangeSource),
               subtitle: Text(
-                chapter?.title.isNotEmpty == true ? chapter!.title : '仅替换当前章正文',
+                chapter?.title.isNotEmpty == true
+                    ? chapter!.title
+                    : AppStrings.replaceCurrentChapterOnly,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -833,8 +849,8 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
             ),
             ListTile(
               leading: const Icon(Symbols.swap_horiz_rounded),
-              title: const Text('换书源'),
-              subtitle: const Text('切换整本书的书源'),
+              title: Text(AppStrings.changeBookSource),
+              subtitle: Text(AppStrings.changeBookSourceDesc),
               onTap: () {
                 Navigator.pop(sheetCtx);
                 unawaited(_changeSourceFlow(context, book));
@@ -928,7 +944,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                     icon: Icon(
                       Symbols.arrow_back_rounded,
                       size: 20,
-                      semanticLabel: '退出阅读',
+                      semanticLabel: AppStrings.exitReading,
                       color: colors.onSurfaceVariant,
                     ),
                     padding: EdgeInsets.zero,
@@ -937,7 +953,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                       height: 40,
                     ),
                     visualDensity: VisualDensity.compact,
-                    tooltip: '退出阅读',
+                    tooltip: AppStrings.exitReading,
                     onPressed: widget.onBack,
                   ),
                   const SizedBox(width: 16),
@@ -1278,7 +1294,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     );
     final reSegmentEnabled = book?.readConfig?.reSegment ?? false;
     return PopupMenuButton<String>(
-      tooltip: '更多',
+      tooltip: AppStrings.moreActions,
       position: PopupMenuPosition.under,
       padding: EdgeInsets.zero,
       onSelected: (value) {
@@ -1333,34 +1349,52 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       },
       child: _topBarIconVisual(
         icon: Symbols.more_vert_rounded,
-        label: '更多',
+        label: AppStrings.moreActions,
         style: style,
         colors: colors,
         merged: merged,
       ),
       itemBuilder: (_) => [
-        const PopupMenuItem(value: 'addBookmark', child: Text('添加书签')),
-        const PopupMenuItem(value: 'highlightRule', child: Text('高亮规则')),
+        PopupMenuItem(
+          value: 'addBookmark',
+          child: Text(AppStrings.addBookmark),
+        ),
+        PopupMenuItem(
+          value: 'highlightRule',
+          child: Text(AppStrings.highlightRulesMenu),
+        ),
         CheckedPopupMenuItem(
           value: 'enableReplace',
           checked: replaceEnabled,
-          child: const Text('使用替换规则'),
+          child: Text(AppStrings.useReplaceRules),
         ),
         CheckedPopupMenuItem(
           value: 'reSegment',
           checked: reSegmentEnabled,
-          child: const Text('重新分段'),
+          child: Text(AppStrings.reSegment),
         ),
-        const PopupMenuItem(value: 'manageReplace', child: Text('管理替换规则')),
-        const PopupMenuItem(value: 'textProcessing', child: Text('文字处理')),
-        const PopupMenuItem(value: 'effectiveReplaces', child: Text('有效替换规则')),
-        const PopupMenuItem(value: 'toc', child: Text('查看目录')),
+        PopupMenuItem(
+          value: 'manageReplace',
+          child: Text(AppStrings.manageReplaceRules),
+        ),
+        PopupMenuItem(
+          value: 'textProcessing',
+          child: Text(AppStrings.textProcessing),
+        ),
+        PopupMenuItem(
+          value: 'effectiveReplaces',
+          child: Text(AppStrings.effectiveReplaceRules),
+        ),
+        PopupMenuItem(value: 'toc', child: Text(AppStrings.viewCatalog)),
         CheckedPopupMenuItem(
           value: 'reverseTocDisplay',
           checked: book?.readConfig?.reverseTocDisplay ?? false,
-          child: const Text('目录显示反转'),
+          child: Text(AppStrings.reverseTocDisplay),
         ),
-        const PopupMenuItem(value: 'settings', child: Text('界面设置')),
+        PopupMenuItem(
+          value: 'settings',
+          child: Text(AppStrings.interfaceSettings),
+        ),
         // [批37] 顶栏未显示的动作兜底（换源/刷新/缓存/编码等）
         if (hiddenActions.isNotEmpty) ...[
           const PopupMenuDivider(),
@@ -1434,30 +1468,30 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     final items = <_ReaderMenuAction>[
       _ReaderMenuAction(
         icon: Symbols.search_rounded,
-        label: '全文搜索',
+        label: AppStrings.searchContent,
         onTap: widget.onOpenContentSearch,
       ),
       _ReaderMenuAction(
         icon: autoPageActive
             ? Symbols.pause_rounded
             : Symbols.play_arrow_rounded,
-        label: '自动翻页',
+        label: AppStrings.autoPageTurn,
         onTap: widget.onToggleAutoPage,
         active: autoPageActive,
       ),
       _ReaderMenuAction(
         icon: Symbols.format_list_bulleted_rounded,
-        label: '目录',
+        label: AppStrings.catalog,
         onTap: widget.onOpenCatalog,
       ),
       _ReaderMenuAction(
         icon: Symbols.headphones_rounded,
-        label: '朗读',
+        label: AppStrings.readAloud,
         onTap: widget.onReadAloud,
       ),
       _ReaderMenuAction(
         icon: Symbols.settings_rounded,
-        label: '设置',
+        label: AppStrings.settings,
         onTap: widget.onOpenSettings,
       ),
     ];
@@ -1833,7 +1867,9 @@ class _HorizontalBrightnessRowState extends State<_HorizontalBrightnessRow> {
               _auto ? Icons.brightness_auto : Icons.brightness_auto_outlined,
               color: fg,
             ),
-            tooltip: _auto ? '关闭自动亮度' : '自动亮度',
+            tooltip: _auto
+                ? AppStrings.disableAutoBrightness
+                : AppStrings.autoBrightness,
             // [批1b-1 审查回修 P2-5] 双向切换：开启后可关闭（对齐参考版
             // onToggleAuto = ToggleBrightnessAuto(!brightnessAuto)）
             onPressed: () async {
@@ -1926,7 +1962,9 @@ class _VerticalBrightnessBarState extends State<_VerticalBrightnessBar> {
                       : Icons.brightness_auto_outlined,
                   color: fg,
                 ),
-                tooltip: _auto ? '关闭自动亮度' : '自动亮度',
+                tooltip: _auto
+                ? AppStrings.disableAutoBrightness
+                : AppStrings.autoBrightness,
                 // [批1b-1 审查回修 P2-5] 双向切换：开启后可关闭（对齐参考版
                 // onToggleAuto = ToggleBrightnessAuto(!brightnessAuto)）
                 onPressed: () async {

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../providers/reader/reader_theme_notifier.dart';
@@ -74,15 +75,20 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
   /// 注入（与边距卡 `_dragValue/_commitValue` 形态对齐）。
   double? _fontSizePreview;
 
-  static const _tabLabels = ['全局', '菜单', '信息', '更多'];
+  List<String> get _tabLabels => [
+    AppStrings.globalSection,
+    AppStrings.menuTab,
+    AppStrings.infoTab,
+    AppStrings.moreActions,
+  ];
 
   /// 翻页动画标签（顺序对齐原版 page_anim 数组）
-  static const _flipLabels = {
-    PageTurnMode.cover: '覆盖',
-    PageTurnMode.slide: '滑动',
-    PageTurnMode.simulate: '仿真',
-    PageTurnMode.scroll: '滚动',
-    PageTurnMode.none: '无动画',
+  Map<PageTurnMode, String> get _flipLabels => {
+    PageTurnMode.cover: AppStrings.flipCover,
+    PageTurnMode.slide: AppStrings.flipSlide,
+    PageTurnMode.simulate: AppStrings.flipSimulate,
+    PageTurnMode.scroll: AppStrings.flipScroll,
+    PageTurnMode.none: AppStrings.flipNone,
   };
 
   /// 自定义配色对话框可选色板（自绘色块网格，不引入 pub 依赖）
@@ -188,7 +194,7 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
         ),
         const SizedBox(width: 14),
         Text(
-          '阅读界面',
+          AppStrings.readingInterface,
           style: Theme.of(context)
               .textTheme
               .titleLarge
@@ -284,7 +290,7 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
             ),
             const SizedBox(height: 10),
             Text(
-              '更多',
+              AppStrings.moreActions,
               textAlign: TextAlign.center,
               style: Theme.of(context)
                   .textTheme
@@ -378,11 +384,11 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
                   onTap: () => _showFlipPicker(state, notifier),
                   child: Row(
                     children: [
-                      Text('翻页动画',
+                      Text(AppStrings.pageTurnAnimation,
                           style: Theme.of(context).textTheme.titleMedium),
                       const Spacer(),
                       Text(
-                        _flipLabels[state.pageTurnMode] ?? '覆盖',
+                        _flipLabels[state.pageTurnMode] ?? AppStrings.flipCover,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                               color: Theme.of(context)
                                   .colorScheme
@@ -438,7 +444,8 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
         children: [
           Row(
             children: [
-              Text('字号', style: Theme.of(context).textTheme.titleMedium),
+              Text(AppStrings.textSize,
+                  style: Theme.of(context).textTheme.titleMedium),
               const Spacer(),
               Container(
                 constraints: const BoxConstraints(minWidth: 40),
@@ -584,7 +591,7 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
     final colorScheme = Theme.of(context).colorScheme;
     final previewColor =
         current == null ? null : Color(current.style.backgroundColor);
-    final subtitle = current?.name ?? '未应用主题（自定义）';
+    final subtitle = current?.name ?? AppStrings.customThemeNotApplied;
     return _panelCard(
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute<void>(
@@ -603,7 +610,7 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
               border: Border.all(color: colorScheme.outlineVariant),
             ),
             child: Text(
-              '阅',
+              AppStrings.themePreviewGlyph,
               style: TextStyle(
                 fontSize: 16,
                 color: previewColor == null
@@ -619,7 +626,8 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Text('阅读主题', style: Theme.of(context).textTheme.titleMedium),
+                Text(AppStrings.readingTheme,
+                    style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 2),
                 Text(
                   subtitle,
@@ -657,10 +665,11 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('背景', style: Theme.of(context).textTheme.titleMedium),
+                  Text(AppStrings.backgroundLabel,
+                      style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 2),
                   Text(
-                    '长按自定义',
+                    AppStrings.longPressToCustomize,
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
                           color:
                               Theme.of(context).colorScheme.onSurfaceVariant,
@@ -806,7 +815,7 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
     showDialog<void>(
       context: context,
       builder: (dialogContext) => SimpleDialog(
-        title: const Text('翻页动画'),
+        title: Text(AppStrings.pageTurnAnimation),
         children: [
           for (final mode in PageTurnMode.values)
             ListTile(
@@ -839,7 +848,8 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
         _panelCard(
           child: Row(
             children: [
-              Text('行距', style: Theme.of(context).textTheme.titleMedium),
+              Text(AppStrings.lineHeight,
+                  style: Theme.of(context).textTheme.titleMedium),
               Expanded(
                 child: Slider(
                   value: state.lineHeight.clamp(1.0, 3.0),
@@ -865,14 +875,18 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
         _panelCard(
           child: Row(
             children: [
-              Text('字重', style: Theme.of(context).textTheme.titleMedium),
+              Text(AppStrings.fontWeightLabel,
+                  style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(width: 16),
               Expanded(
                 child: SegmentedButton<int>(
-                  segments: const [
-                    ButtonSegment(value: 0, label: Text('中')),
-                    ButtonSegment(value: 1, label: Text('粗')),
-                    ButtonSegment(value: 2, label: Text('细')),
+                  segments: [
+                    ButtonSegment(
+                        value: 0, label: Text(AppStrings.fontWeightMedium)),
+                    ButtonSegment(
+                        value: 1, label: Text(AppStrings.fontWeightBold)),
+                    ButtonSegment(
+                        value: 2, label: Text(AppStrings.fontWeightLight)),
                   ],
                   selected: {adv.textBold.clamp(0, 2)},
                   onSelectionChanged: (sel) {
@@ -897,11 +911,11 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
           child: SwitchListTile(
             dense: true,
             contentPadding: EdgeInsets.zero,
-            title: const Text('共用布局'),
+            title: Text(AppStrings.sharedLayout),
             subtitle: Text(
               adv.shareLayout
-                  ? '日夜共用边距与排版参数'
-                  : '日夜分别保存布局（切换主题自动切换）',
+                  ? AppStrings.sharedLayoutOnDesc
+                  : AppStrings.sharedLayoutOffDesc,
             ),
             value: adv.shareLayout,
             onChanged: (v) {
@@ -926,13 +940,13 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setDialogState) => AlertDialog(
-          title: const Text('自定义配色'),
+          title: Text(AppStrings.customColors),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('文字颜色',
+                Text(AppStrings.textColorLabel,
                     style: Theme.of(dialogContext).textTheme.bodyMedium),
                 const SizedBox(height: 8),
                 Wrap(
@@ -961,7 +975,7 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                Text('背景颜色',
+                Text(AppStrings.backgroundColorLabel,
                     style: Theme.of(dialogContext).textTheme.bodyMedium),
                 const SizedBox(height: 8),
                 Wrap(
@@ -987,7 +1001,7 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('完成'),
+              child: Text(AppStrings.doneLabel),
             ),
           ],
         ),
@@ -1014,7 +1028,8 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
             width: selected ? 2 : 1,
           ),
         ),
-        child: Text('自动', style: Theme.of(context).textTheme.labelMedium),
+        child: Text(AppStrings.raLevelAuto,
+            style: Theme.of(context).textTheme.labelMedium),
       ),
     );
   }

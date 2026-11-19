@@ -2058,6 +2058,562 @@ class AppStrings {
   static String selectedItemsCount(int count) =>
       _locale == 'zh' ? '已选 $count 项' : '$count selected';
 
+  // ============== L10N 批 1 线 A：书架布局配置 / 阅读器组件 ==============
+  static String get sortLabel => _get('排序', 'Sort');
+  static String get bookshelfGroupStyle => _get('分组样式', 'Group style');
+  static String get bookshelfGroupStyleTabs => _get('顶部标签', 'Top tabs');
+  static String get bookshelfGroupStyleHidden => _get('隐藏标签', 'Hidden tabs');
+  static String get bookshelfGroupStyleFolder => _get('文件夹', 'Folders');
+  static String get hideEmptyGroups => _get('隐藏空分组', 'Hide empty groups');
+  static String get bookshelfSortManualHint => _get('仅列表布局支持拖拽；网格会自动切换为列表，分组展示暂不支持', 'Drag reordering works in list layout only; grid switches to list automatically, and grouped display is not supported yet');
+  static String get sortOrderLabel => _get('排序方向', 'Sort order');
+  static String get bookshelfSectionLayout => _get('布局', 'Layout');
+  static String get bookshelfFolderRoot => _get('文件夹根目录', 'Folder root');
+  static String get folderLayoutMode => _get('文件夹布局模式', 'Folder layout mode');
+  static String get landscapeLabel => _get('横屏', 'Landscape');
+  static String get portraitLabel => _get('竖屏', 'Portrait');
+  static String get layoutList => _get('列表', 'List');
+  static String get layoutGrid => _get('网格', 'Grid');
+  static String get bookshelfRowColumnCount => _get('行列数', 'Rows / columns');
+  static String get bookshelfFolderListCoverWidthDesc => _get('文件夹列表模式封面宽度（与书架列表共用）', 'Cover width in folder list mode (shared with the bookshelf list)');
+  static String get bookshelfListCoverWidth => _get('列表封面宽', 'List cover width');
+  static String get folderListStyle => _get('文件夹列表样式', 'Folder list style');
+  static String get compactList => _get('紧凑列表', 'Compact list');
+  static String get horizontalCovers => _get('横排封面', 'Horizontal covers');
+  static String get horizontalCoverCount => _get('横排封面数量', 'Horizontal cover count');
+  static String get layoutMode => _get('布局模式', 'Layout mode');
+  static String get bookshelfGridStyle => _get('网格样式', 'Grid style');
+  static String get gridStyleStandard => _get('标准', 'Standard');
+  static String get gridStyleCompact => _get('紧凑', 'Compact');
+  static String get gridStyleCoverOnly => _get('仅封面', 'Cover only');
+  static String get bookshelfTitleSmallFont => _get('书名小字体', 'Small title font');
+  static String get bookshelfTitleCenter => _get('书名居中', 'Center title');
+  static String get bookshelfGridCoverWidth => _get('网格封面宽', 'Grid cover width');
+  static String get bookshelfDayCardColor => _get('日间卡片背景色', 'Day card background');
+  static String get bookshelfNightCardColor => _get('夜间卡片背景色', 'Night card background');
+  static String get compactDetails => _get('精简详情', 'Compact details');
+  static String get compactDetailsDesc => _get('只保留书名、作者与未读数', 'Keep only title, author and unread count');
+  static String get bookshelfMoreInfo => _get('更多信息', 'More info');
+  static String get centerCoverVertically => _get('封面垂直居中', 'Center cover vertically');
+  static String get centerCoverVerticallyDesc => _get('关闭后封面顶部对齐', 'When off, covers align to the top');
+  static String get showLatestChapter => _get('显示最新章节', 'Show latest chapter');
+  static String get showSynopsis => _get('显示简介', 'Show synopsis');
+  static String get showSynopsisBelowContent => _get('简介显示在内容下方', 'Show synopsis below the content');
+  static String get synopsisLines => _get('简介行数', 'Synopsis lines');
+  static String get showAllSynopsis => _get('显示全部简介', 'Show the whole synopsis');
+  static String get showTags => _get('显示标签', 'Show tags');
+  static String get bookshelfTitleMaxLines => _get('书名最大行数', 'Max title lines');
+  static String get coverShadow => _get('封面阴影', 'Cover shadow');
+  static String get badgeSection => _get('角标', 'Badges');
+  static String get showUnread => _get('显示未读标志', 'Show unread flag');
+  static String get showUnreadNew => _get('显示新章节标志', 'Show new chapter flag');
+  static String get showWaitUpCount => _get('显示等待更新数量', 'Show pending update count');
+  static String get showGroupBookCount => _get('显示分组书籍数', 'Show group book count');
+  static String get showBookCountFolderDesc => _get('在文件夹卡片、组菜单与组标题显示书籍数', 'Show the book count on folder cards, group menus and group titles');
+  static String get showBookCountDesc => _get('文件夹模式下在分组卡片/组菜单显示书籍数', 'In folder mode, show the book count on group cards and group menus');
+  static String get showLastUpdateTime => _get('显示上次更新时间', 'Show last updated time');
+  static String get showTip => _get('显示书籍类型', 'Show book type');
+  static String get bookshelfSearchDirect => _get('搜索直达', 'Search shortcut');
+  static String get bookshelfSearchButtonHint => _get('开启：点击搜索，长按筛选；关闭：点击筛选，长按搜索。', 'On: tap to search, hold to filter. Off: tap to filter, hold to search.');
+  static String get showBookshelfFastScroller => _get('显示快速滚动条', 'Show quick scroll bar');
+  static String get showMoreGroupsButton => _get('显示更多分组', 'Show more groups');
+  static String get showMoreGroupsButtonDesc => _get('在分组标签行尾显示组菜单按钮', 'Show the group menu button at the end of the group tab row');
+  static String get bookshelfUpdateLimit => _get('更新数量限制', 'Update limit');
+  static String get unlimitedLabel => _get('不限制', 'Unlimited');
+  static String get bookshelfFolderRootHint => _get('文件夹根目录使用独立布局；点按分组卡片进入分组，返回先回到根目录。长按卡片可打开分组菜单。', 'The folder root uses its own layout. Tap a group card to enter the group; Back returns to the root first. Long press a card to open the group menu.');
+  static String get resetLabel => _get('重置', 'Reset');
+  static String get followTheme => _get('跟随主题', 'Follow theme');
+  static String get customized => _get('已自定义', 'Customized');
+  static String get resetFollowTheme => _get('恢复默认（跟随主题）', 'Restore default (follow theme)');
+  static String get bookshelfTagCustom => _get('用户标签', 'User tags');
+  static String get sourceCategories => _get('书源分类', 'Source categories');
+  static String get bookshelfTagWordCount => _get('字数', 'Word count');
+  static String get bookshelfTagContent => _get('标签显示内容', 'Tag display content');
+  static String get bookshelfTagNone => _get('未选择显示内容', 'Nothing selected');
+  static String get autoPageTurn => _get('自动翻页', 'Auto scroll');
+  static String get autoPageSlower => _get('减慢翻页', 'Slower');
+  static String get autoPageFaster => _get('加快翻页', 'Faster');
+  static String get autoPageStop => _get('停止自动翻页', 'Stop auto scroll');
+  static String get switchingSourceInProgress => _get('正在更换书源…', 'Switching source...');
+  static String get singleChapterChangeSource => _get('单章换源', 'Change chapter source');
+  static String get replaceCurrentChapterOnly => _get('仅替换当前章正文', 'Replace only this chapter\'s content');
+  static String get changeBookSource => _get('换书源', 'Change book source');
+  static String get changeBookSourceDesc => _get('切换整本书的书源', 'Switch the source for the whole book');
+  static String get backToSourceList => _get('返回书源列表', 'Back to sources');
+  static String get selectChapter => _get('选择章节', 'Select chapter');
+  static String get filterSourceOrTitle => _get('筛选书源 / 书名', 'Filter sources / titles');
+  static String get noSourcesAvailable => _get('没有可用书源', 'No sources available');
+  static String get catalogEmpty => _get('目录为空', 'The catalog is empty');
+  static String get effectiveReplaceRules => _get('有效替换规则', 'Effective replacement rules');
+  static String get chineseConvertS2T => _get('繁简转换（简转繁）', 'Chinese conversion (Simplified to Traditional)');
+  static String get chineseConvertT2S => _get('繁简转换（繁转简）', 'Chinese conversion (Traditional to Simplified)');
+  static String get replaceDisabledForBook => _get('本书替换净化已关闭', 'Replacement is off for this book');
+  static String get noEffectiveReplaceRules => _get('本章暂无生效替换规则', 'No replacement rules are active in this chapter');
+  static String get reSegment => _get('重新分段', 'Re-segment');
+  static String get unnamedRule => _get('（未命名规则）', '(Unnamed rule)');
+  static String get closeLabel => _get('关闭', 'Close');
+  static String get disableReSegmentFailed => _get('关闭重新分段失败，请重试', 'Failed to turn off re-segmenting. Please try again.');
+  static String get noteNoBook => _get('无法保存笔记：未打开书籍', 'Cannot save the note: no book opened');
+  static String get adjustInReadingSettings => _get('请在阅读设置中调整', 'Adjust it in reading settings');
+  static String get note => _get('笔记', 'Note');
+  static String get editNote => _get('编辑笔记', 'Edit note');
+  static String get deleteNote => _get('删除笔记', 'Delete note');
+  static String get deleteNoteConfirm => _get('删除笔记？', 'Delete this note?');
+  static String get deleteNoteIrreversible => _get('删除后不可恢复。', 'This cannot be undone.');
+  static String get noSelectedText => _get('（无选中文本）', '(No text selected)');
+  static String get colorLabel => _get('颜色', 'Color');
+  static String get effectLabel => _get('效果', 'Effect');
+  static String get markingNoteLabel => _get('备注', 'Note');
+  static String get noteHint => _get('输入备注…', 'Write a note...');
+  static String get savingInProgress => _get('保存中…', 'Saving...');
+  static String get effectSolid => _get('单实线', 'Solid line');
+  static String get effectWave => _get('波浪线', 'Wavy line');
+  static String get effectDashed => _get('虚线', 'Dashed line');
+  static String get effectStrike => _get('删除线', 'Strikethrough');
+  static String get effectHighlight => _get('荧光', 'Highlight');
+  static String get effectBg => _get('背景色', 'Background');
+  static String get effectText => _get('字体色', 'Text color');
+  static String get sleepTimer => _get('定时停止', 'Sleep timer');
+  static String get selectTtsEngine => _get('选择朗读引擎', 'Select speech engine');
+  static String get ttsBookButton => _get('书', 'Book');
+  static String get noChapterSelected => _get('未选择章节', 'No chapter selected');
+  static String get finishThisChapter => _get('读完本章', 'Finish chapter');
+  static String get collapseReadAloudPanel => _get('收起朗读面板', 'Collapse speech panel');
+  static String get previousParagraph => _get('上一段', 'Previous paragraph');
+  static String get nextParagraph => _get('下一段', 'Next paragraph');
+  static String get stopReadAloud => _get('停止朗读', 'Stop');
+  static String get readAloudSettings => _get('朗读设置', 'Speech settings');
+  static String get speedFollowSystem => _get('语速:跟随系统', 'Speed: follow system');
+  static String get speedManual => _get('语速:手动', 'Speed: manual');
+  static String get moveToBackground => _get('转后台', 'Background');
+  static String get speaking => _get('正在朗读', 'Speaking');
+  static String get paused => _get('已暂停', 'Paused');
+  static String get loadingShort => _get('加载中', 'Loading');
+  static String get loadingLabel => _get('加载中', 'Loading');
+  static String get readAloudError => _get('朗读出错', 'Speech error');
+  static String get notStarted => _get('未开始', 'Not started');
+  static String get editContent => _get('编辑内容', 'Edit content');
+  static String get chapterContentSaved => _get('章节内容已保存', 'Chapter content saved');
+  static String get chapterContentSaveFailed => _get('章节内容保存失败', 'Failed to save the chapter content');
+  static String get replaceRuleOff => _get('已关闭替换规则', 'Replacement rules turned off');
+  static String get replaceRuleOn => _get('已开启替换规则', 'Replacement rules turned on');
+  static String get syncReadingProgress => _get('同步阅读进度', 'Sync reading progress');
+  static String get jumpLabel => _get('跳转', 'Go');
+  static String get localProgressUploaded => _get('本地进度较新，已上传到云端', 'Local progress is newer and was uploaded');
+  static String get progressInSync => _get('进度已与云端一致', 'Progress already matches the cloud');
+  static String get enableProgressSyncHint => _get('请先在 WebDAV 设置中开启「同步书籍进度」', 'Turn on "Sync book progress" in WebDAV settings first');
+  static String get replaceRulesLabel => _get('替换规则', 'Replacement rules');
+  static String get dayMode => _get('日间模式', 'Day mode');
+  static String get nightModeLabel => _get('夜间模式', 'Night mode');
+  static String get disableAutoBrightness => _get('关闭自动亮度', 'Turn off auto brightness');
+  static String get autoBrightness => _get('自动亮度', 'Auto brightness');
+  static String get searchContent => _get('全文搜索', 'Search content');
+  static String get setCharset => _get('设置编码', 'Text encoding');
+  static String get charsetHint => _get('如 UTF-8 / GBK', 'e.g. UTF-8 / GBK');
+  static String get charsetRequired => _get('编码不能为空', 'Encoding cannot be empty');
+  static String get localBookNoCache => _get('本地书籍无需缓存', 'Local books need no caching');
+  static String get startChapterIndex => _get('起始章节序号', 'Start chapter');
+  static String get invalidChapterRange => _get('章节范围无效', 'Invalid chapter range');
+  static String get startCaching => _get('开始缓存', 'Start caching');
+  static String get noImages => _get('暂无图片', 'No images');
+  static String get imageLoadFailed => _get('图片加载失败', 'Failed to load the image');
+  static String get noChapterContent => _get('本章无正文', 'No content in this chapter');
+  static String get menuTab => _get('菜单', 'Menu');
+  static String get infoTab => _get('信息', 'Info');
+  static String get readingInterface => _get('阅读界面', 'Reading interface');
+  static String get flipCover => _get('覆盖', 'Cover');
+  static String get flipSlide => _get('滑动', 'Slide');
+  static String get flipSimulate => _get('仿真', 'Simulation');
+  static String get flipScroll => _get('滚动', 'Scroll');
+  static String get flipNone => _get('无动画', 'None');
+  static String get textSize => _get('字号', 'Text size');
+  static String get customThemeNotApplied => _get('未应用主题（自定义）', 'Custom (no theme applied)');
+  static String get themePreviewGlyph => _get('阅', 'Aa');
+  static String get readingTheme => _get('阅读主题', 'Reading theme');
+  static String get backgroundLabel => _get('背景', 'Background');
+  static String get longPressToCustomize => _get('长按自定义', 'Long press to customize');
+  static String get pageTurnAnimation => _get('翻页动画', 'Flip animation');
+  static String get fontWeightLabel => _get('字重', 'Font weight');
+  static String get fontWeightMedium => _get('中', 'Medium');
+  static String get fontWeightBold => _get('粗', 'Bold');
+  static String get fontWeightLight => _get('细', 'Light');
+  static String get sharedLayout => _get('共用布局', 'Shared layout');
+  static String get sharedLayoutOnDesc => _get('日夜共用边距与排版参数', 'Day and night share margins and typography');
+  static String get sharedLayoutOffDesc => _get('日夜分别保存布局（切换主题自动切换）', 'Day and night keep separate layouts (switched with the theme)');
+  static String get customColors => _get('自定义配色', 'Custom colors');
+  static String get textColorLabel => _get('文字颜色', 'Text color');
+  static String get backgroundColorLabel => _get('背景颜色', 'Background color');
+  static String get followBodyFont => _get('跟随正文', 'Follow body font');
+  static String get fontSection => _get('字体', 'Font');
+  static String get selectFont => _get('选择字体', 'Select font');
+  static String get bodyFont => _get('正文字体', 'Body font');
+  static String get letterSpacingLabel => _get('正文字距', 'Letter spacing');
+  static String get firstLineIndent => _get('首行缩进', 'First-line indent');
+  static String get indentNone => _get('无缩进', 'No indent');
+  static String get indent1 => _get('一字符', '1 character');
+  static String get indent2 => _get('二字符', '2 characters');
+  static String get indent3 => _get('三字符', '3 characters');
+  static String get titleFontLabel => _get('标题字体', 'Title font');
+  static String get titleFontDesc => _get('章节标题独立字体', 'Separate font for chapter titles');
+  static String get italicLabel => _get('斜体', 'Italic');
+  static String get italicDesc => _get('正文以斜体显示（测量与渲染同参）', 'Show body text in italic (measured and rendered the same way)');
+  static String get chineseConversion => _get('简繁转换', 'Chinese conversion');
+  static String get t2sShort => _get('繁→简', 'T to S');
+  static String get s2tShort => _get('简→繁', 'S to T');
+  static String get tipNone => _get('无', 'None');
+  static String get bookNameTip => _get('书名', 'Title');
+  static String get chapterNameTip => _get('章节名', 'Chapter name');
+  static String get timeTip => _get('时间', 'Time');
+  static String get batteryIconTip => _get('电量图标', 'Battery icon');
+  static String get batteryPercentTip => _get('电量百分比', 'Battery %');
+  static String get pageNumberTip => _get('页码', 'Page number');
+  static String get readProgressTip => _get('阅读进度', 'Reading progress');
+  static String get chapterProgressTip => _get('章节进度', 'Chapter progress');
+  static String get pageAndProgressTip => _get('页码+进度', 'Page + progress');
+  static String get timeAndBatteryTip => _get('时间+电量', 'Time + battery');
+  static String get timeAndBatteryPercentTip => _get('时间+电量%', 'Time + battery %');
+  static String get hideWhenStatusBarShown => _get('状态栏显示时隐藏', 'Hide when the status bar shows');
+  static String get showLabel => _get('显示', 'Show');
+  static String get bodyTitleLabel => _get('正文标题', 'Body title');
+  static String get alignLeft => _get('居左', 'Left');
+  static String get alignCenter => _get('居中', 'Center');
+  static String get titleSizeLabel => _get('标题字号', 'Title font size');
+  static String get titleTopSpacing => _get('标题上边距', 'Title top margin');
+  static String get titleBottomSpacing => _get('标题下边距', 'Title bottom margin');
+  static String get headerLabel => _get('页眉', 'Header');
+  static String get headerDisplay => _get('页眉显示', 'Header display');
+  static String get headerLeft => _get('页眉左', 'Header left');
+  static String get headerMiddle => _get('页眉中', 'Header center');
+  static String get headerRight => _get('页眉右', 'Header right');
+  static String get footerLabel => _get('页脚', 'Footer');
+  static String get footerDisplay => _get('页脚显示', 'Footer display');
+  static String get footerLeft => _get('页脚左', 'Footer left');
+  static String get footerMiddle => _get('页脚中', 'Footer center');
+  static String get footerRight => _get('页脚右', 'Footer right');
+  static String get legacyStatusBarHint => _get('兼容旧版：下方开关同步控制顶部状态条（隐藏工具栏时）', 'Legacy: the switches below also control the top status strip (when toolbars are hidden)');
+  static String get showBattery => _get('显示电量', 'Show battery');
+  static String get showTime => _get('显示时间', 'Show time');
+  static String get showProgress => _get('显示进度', 'Show progress');
+  static String get showChapterName => _get('显示章节名', 'Show chapter name');
+  static String get tocRuleLocalTxtOnly => _get('TXT 目录规则仅适用于本地 TXT 书籍', 'TXT catalog rules apply to local TXT books only');
+  static String get defaultRule => _get('默认规则', 'Default rule');
+  static String get defaultRuleDesc => _get('自动识别常见章节标题（推荐）', 'Auto-detect common chapter titles (recommended)');
+  static String get noEnabledTocRulesHint => _get('规则库暂无启用的规则，可在「管理规则」中导入或新增', 'No enabled rules yet. Import or add one in Manage rules.');
+  static String get manageRules => _get('管理规则', 'Manage rules');
+  static String get imageStyleLabel => _get('图片样式', 'Image style');
+  static String get imageStyleDefault => _get('默认（文字旁显示图片）', 'Default (image beside text)');
+  static String get imageStyleFull => _get('图片铺满宽度', 'Full-width image');
+  static String get imageStyleText => _get('仅显示文字', 'Text only');
+  static String get imageStyleSingle => _get('单独成页显示图片', 'Image on its own page');
+  static String get simulatedReading => _get('模拟追读', 'Simulated reading');
+  static String get enableSimulatedReading => _get('启用模拟追读', 'Enable simulated reading');
+  static String get simulatedReadingDesc => _get('按日逐步释放章节，模拟追更体验', 'Release chapters day by day to mimic following an ongoing book');
+  static String get dailyChapters => _get('每日更新章数', 'Chapters per day');
+  static String get chapterPurchase => _get('章节购买', 'Chapter purchase');
+  static String get editSource => _get('编辑源', 'Edit source');
+  static String get disableSource => _get('禁用源', 'Disable source');
+  static String get loginSource => _get('登录源', 'Log in to source');
+  static String get purchaseSuccess => _get('购买成功', 'Purchase complete');
+  static String get noPurchaseNeeded => _get('当前章节无需购买或书源未配置购买动作', 'This chapter needs no purchase, or the source has no purchase action');
+  static String get noDuplicateTitleFound => _get('未找到可移除的重复标题', 'No duplicate title to remove');
+  static String get duplicateTitleRemoved => _get('已去除重复标题', 'Duplicate title removed');
+  static String get originalTitleKept => _get('该章已保留原标题', 'This chapter keeps its original title');
+  static String get gotIt => _get('知道了', 'Got it');
+  static String get chapterLinkCopied => _get('章节链接已复制', 'Chapter link copied');
+  static String get chapterLink => _get('章节链接', 'Chapter link');
+  static String get openWith => _get('打开方式', 'Open with');
+  static String get openInAppBrowser => _get('内置浏览器打开', 'Open in in-app browser');
+  static String get openInSystemBrowser => _get('系统浏览器打开', 'Open in system browser');
+  static String get copyLink => _get('复制链接', 'Copy link');
+  static String get cacheOffline => _get('缓存（离线缓存）', 'Cache (offline)');
+  static String get removeRubyTags => _get('删除 Ruby 标签', 'Remove Ruby tags');
+  static String get removeHTags => _get('删除 H 标签', 'Remove H tags');
+  static String get coverCloudProgress => _get('覆盖云端进度', 'Overwrite cloud progress');
+  static String get reverseContent => _get('反转内容', 'Reverse content');
+  static String get removeDuplicateTitle => _get('删除重复标题', 'Remove duplicate title');
+  static String get sourceBadge => _get('书源', 'Source');
+  static String get scopeOnlineOnly => _get('仅在线书', 'Online books only');
+  static String get scopeLocalOnly => _get('仅本地书', 'Local books only');
+  static String get scopeLocalTxtOnly => _get('仅本地 TXT', 'Local TXT only');
+  static String get downloadOffline => _get('下载（离线缓存）', 'Download (offline cache)');
+  static String get refreshContent => _get('刷新正文', 'Refresh content');
+  static String get interfaceSettings => _get('界面设置', 'Interface settings');
+  static String get addBookmark => _get('添加书签', 'Add bookmark');
+  static String get highlightRulesMenu => _get('高亮规则', 'Highlight rules');
+  static String get dayNightToggle => _get('日/夜切换', 'Day / night');
+  static String get topBarButtons => _get('顶栏按钮', 'Top bar buttons');
+  static String get topBarOverLimitHint => _get('已超出上限，末尾动作不会显示在顶栏。', 'Over the limit: trailing actions are not shown in the top bar.');
+  static String get topBarButtonsRestored => _get('已恢复默认顶栏按钮', 'Default top bar buttons restored');
+  static String get supportsLongPress => _get('支持长按', 'Long press');
+  static String get alwaysShown => _get('固定显示', 'Always shown');
+  static String get limitReached => _get('已达上限', 'Limit reached');
+  static String get moveUp => _get('上移', 'Move up');
+  static String get moveDown => _get('下移', 'Move down');
+  static String get noComments => _get('暂无评论', 'No comments');
+  static String get anonymous => _get('匿名', 'Anonymous');
+  static String get loadingDots => _get('加载中…', 'Loading...');
+  static String get collapseReplies => _get('收起回复', 'Hide replies');
+  static String get viewReplies => _get('查看回复', 'View replies');
+  static String get bookmarkAddedSimple => _get('已添加书签', 'Bookmark added');
+  static String get searchContentNoBook => _get('无法搜正文：未打开书籍', 'Cannot search the content: no book opened');
+  static String get contentProcessing => _get('内容处理', 'Content processing');
+  static String get noBookOpened => _get('未打开书籍', 'No book opened');
+  static String get useReplacement => _get('使用替换净化', 'Use replacement');
+  static String get useReplacementDesc => _get('关闭后本章不应用任何替换规则', 'When off, no replacement rules are applied to this chapter');
+  static String get noReplaceRules => _get('暂无替换规则', 'No replacement rules');
+  static String get noMatchingRules => _get('没有符合条件的规则', 'No matching rules');
+  static String get regexLabel => _get('正则', 'Regex');
+  static String get textLabel => _get('文本', 'Text');
+  static String get noAiRecords => _get('暂无 AI 处理记录', 'No AI processing records');
+  static String get aiContentProcessingUnsupported => _get('AI 内容处理暂未支持', 'AI content processing is not supported yet');
+  static String get disabledLabel => _get('已停用', 'Disabled');
+  static String get activeLabel => _get('生效', 'Active');
+  static String get editSelectionMenu => _get('编辑选择菜单', 'Edit selection menu');
+  static String get multilineDisplay => _get('多行展示', 'Multiline');
+  static String get showIcons => _get('展示图标', 'Show icons');
+  static String get primaryMenu => _get('一级菜单', 'Primary menu');
+  static String get collapsedMenu => _get('折叠菜单', 'Collapsed menu');
+  static String get hiddenItems => _get('已隐藏项目', 'Hidden items');
+  static String get notAvailable => _get('暂无', 'None');
+  static String get moveTo => _get('移动到', 'Move to');
+  static String get moveToPrimary => _get('移至一级', 'Move to primary');
+  static String get moveToCollapsed => _get('移至折叠', 'Move to collapsed');
+  static String get moveToHidden => _get('移至隐藏', 'Move to hidden');
+  static String get selectedText => _get('已选文本', 'Selected text');
+  static String get highlightLabel => _get('高亮', 'Highlight');
+  static String get manageSelectionMenu => _get('管理选择菜单', 'Manage selection menu');
+  static String get highlightColor => _get('高亮颜色', 'Highlight color');
+  static String get styleColor => _get('样式颜色', 'Style color');
+  static String get noteOptional => _get('笔记（可选）', 'Note (optional)');
+  static String get saveHighlight => _get('保存高亮', 'Save highlight');
+  static String get highlightNoBook => _get('无法添加高亮：未打开书籍', 'Cannot add a highlight: no book opened');
+  static String get highlightAdded => _get('已添加高亮', 'Highlight added');
+  static String get highlightAndNoteAdded => _get('已添加高亮与笔记', 'Highlight and note added');
+  static String get releaseToRemoveBookmark => _get('松手以取消书签', 'Release to remove the bookmark');
+  static String get releaseToAddBookmark => _get('松手以添加书签', 'Release to add a bookmark');
+  static String get manageReplaceRules => _get('管理替换规则', 'Manage replacement rules');
+  static String get textProcessing => _get('文字处理', 'Text processing');
+  static String get useReplaceRules => _get('使用替换规则', 'Use replacement rules');
+  static String get viewCatalog => _get('查看目录', 'View catalog');
+  static String get reverseTocDisplay => _get('目录显示反转', 'Reverse catalog display');
+  static String get tocUpdatedShort => _get('目录已更新', 'Catalog updated');
+  static String get updatingToc => _get('正在更新目录…', 'Updating catalog...');
+  static String get localBookNoTocUpdate => _get('本地书籍无需更新目录', 'Local books need no catalog update');
+  static String get refreshingContent => _get('正在刷新正文…', 'Refreshing content...');
+  static String get contentRefreshed => _get('正文已刷新', 'Content refreshed');
+  static String get noContentToReverse => _get('暂无正文可反转', 'No content to reverse');
+  static String get contentReversed => _get('内容已反转', 'Content reversed');
+  static String get reverseContentSaveFailed => _get('反转内容保存失败', 'Failed to save the reversed content');
+  static String get progressUploaded => _get('进度上传成功', 'Progress uploaded');
+  static String get exitReading => _get('退出阅读', 'Exit reading');
+  static String get reSegmentOff => _get('已关闭重新分段', 'Re-segmenting turned off');
+  static String get reSegmentOn => _get('已开启重新分段', 'Re-segmenting turned on');
+  static String get simulatedReadingOn => _get('已开启模拟追读', 'Simulated reading turned on');
+  static String get simulatedReadingOff => _get('已关闭模拟追读', 'Simulated reading turned off');
+  static String get chapterPurchaseInProgress => _get('正在执行章节购买…', 'Purchasing the chapter...');
+  static String get replaceRuleDataUnavailable => _get('替换规则数据暂不可用', 'Replacement rule data is unavailable');
+  static String get selectionPanelHint => _get('提示：长按上方文本可精细调整选区，未选择时默认操作整段', 'Tip: long press the text above to fine-tune the selection; without a selection the whole paragraph is used');
+  static String get tocRuleNotMatched => _get('规则未命中，已回退默认规则', 'The rule did not match; fell back to the default rule');
+  static String get defaultTocRuleRestored => _get('已恢复默认目录规则', 'Default catalog rule restored');
+  static String get tocRuleApplied => _get('已应用目录规则', 'Catalog rule applied');
+  static String get toggleReplaceFailedRetry => _get('切换替换净化失败，请重试', 'Failed to toggle replacement. Please try again.');
+  static String get deleteReplaceRuleConfirm => _get('删除替换规则？', 'Delete this replacement rule?');
+  static String get paddingLeftLabel => _get('左边距', 'Left margin');
+  static String get paddingRightLabel => _get('右边距', 'Right margin');
+  static String get linkLeftRightMargins => _get('左右边距联动', 'Link left and right margins');
+  static String get linkTopBottomMargins => _get('上下边距联动', 'Link top and bottom margins');
+  static String get showHeaderDivider => _get('显示页眉分隔线', 'Show header divider');
+  static String get showFooterDivider => _get('显示页脚分隔线', 'Show footer divider');
+  static String get decreaseLabel => _get('减少', 'Decrease');
+  static String get increaseLabel => _get('增加', 'Increase');
+
+  static String recentlyReadBook(String name) => _locale == 'zh'
+      ? '最近阅读：$name'
+      : 'Recently read: $name';
+  static String folderGridColumnsDesc(String orientation) => _locale == 'zh'
+      ? '$orientation文件夹网格列数'
+      : '$orientation folder grid columns';
+  static String folderListColumnsDesc(String orientation) => _locale == 'zh'
+      ? '$orientation文件夹列表列数'
+      : '$orientation folder list columns';
+  static String gridColumnsDesc(String orientation) => _locale == 'zh'
+      ? '$orientation网格列数'
+      : '$orientation grid columns';
+  static String listColumnsDesc(String orientation) => _locale == 'zh'
+      ? '$orientation列表列数'
+      : '$orientation list columns';
+  static String listColumnsExceedDesc(String orientation, String max) => _locale == 'zh'
+      ? '$orientation列表列数；当前书架宽度最多 $max 列，超出将按 $max 列显示'
+      : '$orientation list columns; the bookshelf is wide enough for $max columns, extra columns are capped to $max';
+  static String synopsisLineCount(String lines) => _locale == 'zh'
+      ? '显示 $lines 行'
+      : 'Show $lines lines';
+  static String bookshelfUpdateLimitDesc(String limit) => _locale == 'zh'
+      ? '每次最多更新 $limit 本'
+      : 'Update at most $limit books each time';
+  static String matchScore(String score) => _locale == 'zh'
+      ? '匹配 $score'
+      : 'Match $score';
+  static String secondsLabel(String seconds) => _locale == 'zh'
+      ? '$seconds 秒'
+      : '$seconds s';
+  static String chapterContentReplaced(String source) => _locale == 'zh'
+      ? '已替换本章正文（$source）'
+      : 'Chapter content replaced ($source)';
+  static String singleChapterSourceFailed(String error) => _locale == 'zh'
+      ? '单章换源失败：$error'
+      : 'Failed to change the chapter source: $error';
+  static String reloadAfterSourceChangeFailed(String error) => _locale == 'zh'
+      ? '更换书源后重载失败：$error'
+      : 'Failed to reload after switching source: $error';
+  static String reloadContentFailed(String error) => _locale == 'zh'
+      ? '重新加载正文失败：$error'
+      : 'Failed to reload the content: $error';
+  static String disableReplaceRuleFailed(String error) => _locale == 'zh'
+      ? '关闭替换规则失败：$error'
+      : 'Failed to disable the replacement rule: $error';
+  static String disableChineseConvertFailed(String error) => _locale == 'zh'
+      ? '关闭繁简转换失败：$error'
+      : 'Failed to turn off the Chinese conversion: $error';
+  static String effectiveRuleCount(String count) => _locale == 'zh'
+      ? '本章生效 $count 条'
+      : '$count active in this chapter';
+  static String saveNoteFailed(String error) => _locale == 'zh'
+      ? '保存笔记失败：$error'
+      : 'Failed to save the note: $error';
+  static String deleteNoteFailed(String error) => _locale == 'zh'
+      ? '删除笔记失败：$error'
+      : 'Failed to delete the note: $error';
+  static String sleepTimerRemaining(String time) => _locale == 'zh'
+      ? '定时停止：剩余 $time'
+      : 'Sleep timer: $time left';
+  static String sleepTimerChapters(String chapters) => _locale == 'zh'
+      ? '定时停止：读完 $chapters 章后停止'
+      : 'Sleep timer: stop after $chapters chapters';
+  static String get sleepTimerFinishChapter => _get('定时停止：读完本章后停止', 'Sleep timer: stop after this chapter');
+  static String get noTtsEngineHint => _get('暂无朗读引擎，请到「朗读设置」添加 HTTP TTS 引擎', 'No speech engine yet. Add an HTTP TTS engine in Speech settings.');
+  static String get noBookCannotSetEngine => _get('未打开书籍，无法设为本书引擎', 'No book opened; cannot set the engine for this book');
+  static String ttsEngineLoadFailed(String error) => _locale == 'zh'
+      ? '朗读引擎列表加载失败: $error'
+      : 'Failed to load speech engines: $error';
+  static String ttsEngineSwitched(String name) => _locale == 'zh'
+      ? '已切换引擎：$name'
+      : 'Engine switched to $name';
+  static String engineSetForBook(String name) => _locale == 'zh'
+      ? '已设为本书引擎：$name'
+      : 'Engine set for this book: $name';
+  static String engineSetGlobal(String name) => _locale == 'zh'
+      ? '已设为全局引擎：$name'
+      : 'Engine set globally: $name';
+  static String paragraphProgress(String index, String total) => _locale == 'zh'
+      ? '·段$index/$total'
+      : '·para $index/$total';
+  static String editChapterNamed(String title) => _locale == 'zh'
+      ? '编辑：$title'
+      : 'Edit: $title';
+  static String chapterContentSaveFailedWith(String error) => _locale == 'zh'
+      ? '章节内容保存失败：$error'
+      : 'Failed to save the chapter content: $error';
+  static String settingsSaveFailedWith(String error) => _locale == 'zh'
+      ? '设置保存失败: $error'
+      : 'Failed to save settings: $error';
+  static String cloudProgressNewer(String chapter, String title) => _locale == 'zh'
+      ? '云端进度更新（第 $chapter 章「$title」）。\n是否跳转到云端进度？'
+      : 'Cloud progress is newer (chapter $chapter "$title").\nJump to the cloud progress?';
+  static String syncProgressFailed(String error) => _locale == 'zh'
+      ? '同步进度失败：$error'
+      : 'Failed to sync progress: $error';
+  static String charsetApplied(String charset) => _locale == 'zh'
+      ? '已设置编码：$charset'
+      : 'Encoding set to $charset';
+  static String setCharsetFailed(String error) => _locale == 'zh'
+      ? '设置编码失败：$error'
+      : 'Failed to set the encoding: $error';
+  static String endChapterIndex(String total) => _locale == 'zh'
+      ? '结束章节序号（共 $total 章）'
+      : 'End chapter (of $total)';
+  static String cacheQueued(String count) => _locale == 'zh'
+      ? '已加入缓存队列：$count 章（可在书籍菜单「缓存管理」查看进度）'
+      : 'Queued for caching: $count chapters (see Cache management in the book menu)';
+  static String cacheStartFailed(String error) => _locale == 'zh'
+      ? '缓存启动失败：$error'
+      : 'Failed to start caching: $error';
+  static String bookmarkOperationFailed(String error) => _locale == 'zh'
+      ? '书签操作失败：$error'
+      : 'Bookmark operation failed: $error';
+  static String chineseConversionFailed(String error) => _locale == 'zh'
+      ? '简繁转换设置失败: $error'
+      : 'Failed to set the Chinese conversion: $error';
+  static String applyTocRuleReloadFailed(String error) => _locale == 'zh'
+      ? '应用目录规则后重载失败：$error'
+      : 'Failed to reload after applying the catalog rule: $error';
+  static String setTocRuleFailed(String error) => _locale == 'zh'
+      ? '设置目录规则失败: $error'
+      : 'Failed to set the catalog rule: $error';
+  static String customTocRuleInUse(String rule) => _locale == 'zh'
+      ? '当前书使用规则库之外的规则：$rule'
+      : 'This book uses a rule outside the library: $rule';
+  static String loadRulesFailed(String error) => _locale == 'zh'
+      ? '规则加载失败：$error'
+      : 'Failed to load rules: $error';
+  static String uploadProgressFailed(String error) => _locale == 'zh'
+      ? '上传进度失败：$error'
+      : 'Failed to upload progress: $error';
+  static String updateTocFailed(String error) => _locale == 'zh'
+      ? '更新目录失败: $error'
+      : 'Failed to update the catalog: $error';
+  static String reverseContentFailed(String error) => _locale == 'zh'
+      ? '反转内容失败: $error'
+      : 'Failed to reverse the content: $error';
+  static String sourceDisabled(String name) => _locale == 'zh'
+      ? '已禁用书源：$name'
+      : 'Source disabled: $name';
+  static String disableSourceFailed(String error) => _locale == 'zh'
+      ? '禁用书源失败: $error'
+      : 'Failed to disable the source: $error';
+  static String chapterPurchaseFailed(String error) => _locale == 'zh'
+      ? '章节购买失败: $error'
+      : 'Chapter purchase failed: $error';
+  static String toggleOffNamed(String label) => _locale == 'zh'
+      ? '已关闭$label'
+      : '$label turned off';
+  static String toggleOnNamed(String label) => _locale == 'zh'
+      ? '已开启$label'
+      : '$label turned on';
+  static String settingFailedWith(String error) => _locale == 'zh'
+      ? '设置失败: $error'
+      : 'Failed to apply the setting: $error';
+  static String effectiveReplaceCountDesc(String count) => _locale == 'zh'
+      ? '当前已启用替换规则 $count 条（全局启用计数；原版为当前章节生效规则列表，章级数据待 FFI 契约补齐）'
+      : '$count replacement rules enabled (global count; chapter-level data awaits the FFI contract)';
+  static String cannotOpenLink(String url) => _locale == 'zh'
+      ? '无法打开链接：$url'
+      : 'Cannot open the link: $url';
+  static String refreshContentFailed(String error) => _locale == 'zh'
+      ? '刷新正文失败：$error'
+      : 'Failed to refresh the content: $error';
+  static String topBarButtonsDesc(String max) => _locale == 'zh'
+      ? '选择与排序阅读器顶栏的动作，最多显示 $max 个（含固定的「更多」）。已达上限时需先关闭其它动作才能开启新的；未显示的动作仍可在「更多」菜单中使用。'
+      : 'Choose and reorder the reader top bar actions; up to $max are shown (including the fixed More). At the limit, turn another action off before enabling a new one. Actions not shown remain available in the More menu.';
+  static String topBarEnabledCount(String enabled, String max) => _locale == 'zh'
+      ? '已开启 $enabled/$max'
+      : '$enabled of $max enabled';
+  static String charCount(String count) => _locale == 'zh'
+      ? '$count 字'
+      : '$count chars';
+  static String openBrowserFailed(String error) => _locale == 'zh'
+      ? '打开浏览器失败：$error'
+      : 'Failed to open the browser: $error';
+  static String updateReplaceRuleFailed(String error) => _locale == 'zh'
+      ? '更新替换规则失败：$error'
+      : 'Failed to update the replacement rule: $error';
+  static String deleteReplaceRuleFailed(String error) => _locale == 'zh'
+      ? '删除替换规则失败：$error'
+      : 'Failed to delete the replacement rule: $error';
+  static String addHighlightFailed(String error) => _locale == 'zh'
+      ? '添加高亮失败：$error'
+      : 'Failed to add the highlight: $error';
+
   // ============== L10N 批 1 线 B：widgets 根层 + privacy/manga/help/navigation ==============
 
   // ----- 通用按钮 / 标签 -----

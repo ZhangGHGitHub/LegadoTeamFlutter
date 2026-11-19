@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../providers/audio/audio_notifier.dart';
 import '../../providers/bookmark/bookmark_notifier.dart';
 import '../../providers/reader/reader_notifier.dart';
@@ -34,7 +35,7 @@ Future<void> selectionCopy(
 ) async {
   await Clipboard.setData(ClipboardData(text: text));
   onDone();
-  if (context.mounted) selectionToast(context, '已复制到剪贴板');
+  if (context.mounted) selectionToast(context, AppStrings.sourceCopied);
 }
 
 Future<void> selectionShare(
@@ -46,7 +47,9 @@ Future<void> selectionShare(
   try {
     await Share.share(text);
   } catch (e) {
-    if (context.mounted) selectionToast(context, '分享失败：${errorMessage(e)}');
+    if (context.mounted) {
+      selectionToast(context, AppStrings.shareFailed(errorMessage(e)));
+    }
   }
 }
 
@@ -66,10 +69,14 @@ Future<void> selectionOpenBrowser(
   final uri = Uri.https('www.bing.com', '/search', {'q': trimmed});
   try {
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      if (context.mounted) selectionToast(context, '无法打开浏览器');
+      if (context.mounted) {
+        selectionToast(context, AppStrings.cannotOpenBrowser);
+      }
     }
   } catch (e) {
-    if (context.mounted) selectionToast(context, '打开浏览器失败：${errorMessage(e)}');
+    if (context.mounted) {
+      selectionToast(context, AppStrings.openBrowserFailed(errorMessage(e)));
+    }
   }
 }
 
@@ -85,7 +92,7 @@ Future<void> selectionReadAloud(
   final state = ref.read(readerNotifierProvider);
   final book = state.currentBook;
   if (book == null) {
-    selectionToast(context, '无法启动朗读：未打开书籍');
+    selectionToast(context, AppStrings.readAloudNoBook);
     return;
   }
   onDone();
@@ -115,7 +122,7 @@ Future<void> selectionAddBookmark(
   final state = ref.read(readerNotifierProvider);
   final book = state.currentBook;
   if (book == null) {
-    selectionToast(context, '无法添加书签：未打开书籍');
+    selectionToast(context, AppStrings.bookmarkNoBook);
     return;
   }
   // [审查 P3] 与浮条其他动作一致，先收起菜单再落库，避免等待期间
@@ -142,12 +149,15 @@ Future<void> selectionAddBookmark(
           content: selectedText,
         );
     messenger?.showSnackBar(
-      const SnackBar(content: Text('已添加书签'), duration: Duration(seconds: 2)),
+      SnackBar(
+        content: Text(AppStrings.bookmarkAddedSimple),
+        duration: const Duration(seconds: 2),
+      ),
     );
   } catch (e) {
     messenger?.showSnackBar(
       SnackBar(
-        content: Text('添加书签失败：${errorMessage(e)}'),
+        content: Text(AppStrings.bookmarkAddFailed(errorMessage(e))),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -183,7 +193,7 @@ void selectionSearchContent(
 ) {
   final book = ref.read(readerNotifierProvider).currentBook;
   if (book == null) {
-    selectionToast(context, '无法搜正文：未打开书籍');
+    selectionToast(context, AppStrings.searchContentNoBook);
     return;
   }
   final navigator = Navigator.of(context, rootNavigator: true);

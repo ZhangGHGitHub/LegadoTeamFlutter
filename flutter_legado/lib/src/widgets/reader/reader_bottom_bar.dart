@@ -221,7 +221,9 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar>
                 FloatingActionButton(
                   mini: true,
                   heroTag: null,
-                  tooltip: autoPageActive ? '停止自动翻页' : '自动翻页',
+                  tooltip: autoPageActive
+                      ? AppStrings.autoPageStop
+                      : AppStrings.autoPageTurn,
                   backgroundColor: autoPageActive
                       ? Theme.of(context).colorScheme.primaryContainer
                       : null,
@@ -234,7 +236,7 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar>
                 FloatingActionButton(
                   mini: true,
                   heroTag: null,
-                  tooltip: '替换规则',
+                  tooltip: AppStrings.replaceRulesLabel,
                   onPressed: widget.onOpenReplaceRules,
                   child: const Icon(Icons.find_replace),
                 ),
@@ -246,8 +248,8 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar>
                   // （AppConfig.isNightTheme + ThemeConfig.applyDayNight），
                   // 不再仅改阅读页局部背景 — Qoder
                   tooltip: Theme.of(context).brightness == Brightness.dark
-                      ? '日间模式'
-                      : '夜间模式',
+                      ? AppStrings.dayMode
+                      : AppStrings.nightModeLabel,
                   onPressed: () {
                     final isNight =
                         Theme.of(context).brightness == Brightness.dark;
@@ -307,7 +309,9 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar>
                               ? Icons.brightness_auto
                               : Icons.brightness_auto_outlined,
                         ),
-                        tooltip: _autoBrightness ? '关闭自动亮度' : '自动亮度',
+                        tooltip: _autoBrightness
+                            ? AppStrings.disableAutoBrightness
+                            : AppStrings.autoBrightness,
                         onPressed: () async {
                           await SystemBrightness.setAutoBrightness(
                               !_autoBrightness);
@@ -493,7 +497,7 @@ class _SearchPill extends StatelessWidget {
               Icon(Icons.search, size: 16, color: cs.onSurfaceVariant),
               const SizedBox(width: 6),
               Text(
-                '全文搜索',
+                AppStrings.searchContent,
                 style: Theme.of(context).textTheme.labelLarge?.copyWith(
                       color: cs.onSurfaceVariant,
                     ),

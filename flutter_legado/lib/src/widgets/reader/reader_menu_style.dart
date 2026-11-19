@@ -26,6 +26,7 @@ import 'package:flutter/foundation.dart' show immutable, visibleForTesting;
 import 'package:flutter/material.dart' show Color, ColorScheme;
 
 import '../../constants/pref_keys.dart';
+import '../../l10n/app_strings.dart';
 import '../../theme/md3_colors.dart';
 import '../../theme/theme_engine_parameterized.dart';
 
@@ -109,8 +110,8 @@ abstract final class ReaderMenuTitleBarMode {
 }
 
 /// 调色板显示名（与 kPaletteStyles 同序；用于设置页下拉）
-const Map<String, String> kReaderMenuPaletteLabels = {
-  '': '跟随系统',
+Map<String, String> get kReaderMenuPaletteLabels => {
+  '': AppStrings.barFollowSystem,
   'tonalSpot': 'TonalSpot',
   'neutral': 'Neutral',
   'vibrant': 'Vibrant',

@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../../l10n/app_strings.dart';
 import '../../providers/reader/reader_top_bar_actions_notifier.dart';
 import 'reader_top_bar_actions.dart';
 
@@ -82,13 +83,11 @@ class _ReaderTopBarConfigSheetState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('顶栏按钮', style: theme.textTheme.titleMedium),
+                Text(AppStrings.topBarButtons,
+                    style: theme.textTheme.titleMedium),
                 const SizedBox(height: 4),
                 Text(
-                  '选择与排序阅读器顶栏的动作，最多显示 '
-                  '$kReaderTopBarMaxActions 个（含固定的「更多」）。'
-                  '已达上限时需先关闭其它动作才能开启新的；'
-                  '未显示的动作仍可在「更多」菜单中使用。',
+                  AppStrings.topBarButtonsDesc('$kReaderTopBarMaxActions'),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -96,7 +95,7 @@ class _ReaderTopBarConfigSheetState
                 if (overflow) ...[
                   const SizedBox(height: 4),
                   Text(
-                    '已超出上限，末尾动作不会显示在顶栏。',
+                    AppStrings.topBarOverLimitHint,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.error,
                     ),
@@ -137,14 +136,17 @@ class _ReaderTopBarConfigSheetState
                   onPressed: () async {
                     await notifier.restoreDefaults();
                     if (!mounted) return;
-                    _showNotice('已恢复默认顶栏按钮');
+                    _showNotice(AppStrings.topBarButtonsRestored);
                   },
                   icon: const Icon(Icons.restart_alt, size: 18),
-                  label: const Text('恢复默认'),
+                  label: Text(AppStrings.restoreDefault),
                 ),
                 const Spacer(),
                 Text(
-                  '已开启 ${enabledNonMore.length + 1}/$kReaderTopBarMaxActions',
+                  AppStrings.topBarEnabledCount(
+                    '${enabledNonMore.length + 1}',
+                    '$kReaderTopBarMaxActions',
+                  ),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -152,7 +154,7 @@ class _ReaderTopBarConfigSheetState
                 const SizedBox(width: 8),
                 FilledButton(
                   onPressed: () => Navigator.of(context).maybePop(),
-                  child: const Text('完成'),
+                  child: Text(AppStrings.doneLabel),
                 ),
               ],
             ),
@@ -180,9 +182,9 @@ class _ReaderTopBarConfigSheetState
     final canToggle = isMore ? false : (item.enabled || !atLimit);
     final notes = <String>[
       ?scope,
-      if (def.supportsLongPress) '支持长按',
-      if (isMore) '固定显示',
-      if (!item.enabled && atLimit) '已达上限',
+      if (def.supportsLongPress) AppStrings.supportsLongPress,
+      if (isMore) AppStrings.alwaysShown,
+      if (!item.enabled && atLimit) AppStrings.limitReached,
     ];
     // 「更多」是渲染期固定末位项，不参与排序；其余项只在本区间内移动
     final movable = !isMore;
@@ -206,14 +208,14 @@ class _ReaderTopBarConfigSheetState
         children: [
           IconButton(
             key: ValueKey('reader-topbar-up-${item.id}'),
-            tooltip: '上移',
+            tooltip: AppStrings.moveUp,
             visualDensity: VisualDensity.compact,
             onPressed: canUp ? () => notifier.move(item.id, -1) : null,
             icon: const Icon(Icons.keyboard_arrow_up, size: 20),
           ),
           IconButton(
             key: ValueKey('reader-topbar-down-${item.id}'),
-            tooltip: '下移',
+            tooltip: AppStrings.moveDown,
             visualDensity: VisualDensity.compact,
             onPressed: canDown ? () => notifier.move(item.id, 1) : null,
             icon: const Icon(Icons.keyboard_arrow_down, size: 20),

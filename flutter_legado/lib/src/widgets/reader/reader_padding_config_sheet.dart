@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../../l10n/app_strings.dart';
 import '../../screens/reader_config_panel.dart';
 import '../ios_widgets.dart';
 
@@ -277,11 +278,11 @@ class _ReaderPaddingConfigSheetState
             Row(
               children: [
                 Expanded(
-                  child: Text('页面边距',
+                  child: Text(AppStrings.pageMargins,
                       style: theme.textTheme.titleMedium),
                 ),
                 IconButton(
-                  tooltip: '恢复默认',
+                  tooltip: AppStrings.restoreDefault,
                   onPressed: _resetRegion,
                   icon: const Icon(Icons.restore),
                 ),
@@ -290,22 +291,38 @@ class _ReaderPaddingConfigSheetState
             const SizedBox(height: 8),
             Row(
               children: [
-                _regionTab(PaddingRegion.header, '页眉'),
+                _regionTab(PaddingRegion.header, AppStrings.headerLabel),
                 const SizedBox(width: 4),
-                _regionTab(PaddingRegion.body, '正文'),
+                _regionTab(PaddingRegion.body, AppStrings.checkStepContent),
                 const SizedBox(width: 4),
-                _regionTab(PaddingRegion.footer, '页脚'),
+                _regionTab(PaddingRegion.footer, AppStrings.footerLabel),
               ],
             ),
             const SizedBox(height: 12),
-            _padRow('上边距', _Side.top, Icons.arrow_upward),
-            _padRow('下边距', _Side.bottom, Icons.arrow_downward),
-            _padRow('左边距', _Side.left, Icons.arrow_back),
-            _padRow('右边距', _Side.right, Icons.arrow_forward),
+            _padRow(
+              AppStrings.titleTopSpacing,
+              _Side.top,
+              Icons.arrow_upward,
+            ),
+            _padRow(
+              AppStrings.titleBottomSpacing,
+              _Side.bottom,
+              Icons.arrow_downward,
+            ),
+            _padRow(
+              AppStrings.paddingLeftLabel,
+              _Side.left,
+              Icons.arrow_back,
+            ),
+            _padRow(
+              AppStrings.paddingRightLabel,
+              _Side.right,
+              Icons.arrow_forward,
+            ),
             SwitchListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              title: const Text('左右边距联动'),
+              title: Text(AppStrings.linkLeftRightMargins),
               value: _lockLr,
               onChanged: (v) => setState(() => _lockLr = v),
             ),
@@ -314,7 +331,7 @@ class _ReaderPaddingConfigSheetState
               SwitchListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
-                title: const Text('上下边距联动'),
+                title: Text(AppStrings.linkTopBottomMargins),
                 value: _lockTb,
                 onChanged: (v) {
                   _config.paddingTopBottomLinked = v;
@@ -335,7 +352,7 @@ class _ReaderPaddingConfigSheetState
               SwitchListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
-                title: const Text('显示页眉分隔线'),
+                title: Text(AppStrings.showHeaderDivider),
                 value: _config.showHeaderLine,
                 onChanged: (v) {
                   _config.showHeaderLine = v;
@@ -346,7 +363,7 @@ class _ReaderPaddingConfigSheetState
               SwitchListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
-                title: const Text('显示页脚分隔线'),
+                title: Text(AppStrings.showFooterDivider),
                 value: _config.showFooterLine,
                 onChanged: (v) {
                   _config.showFooterLine = v;
@@ -443,13 +460,13 @@ class _ReaderPaddingConfigSheetState
           ),
           IconButton(
             visualDensity: VisualDensity.compact,
-            tooltip: '减少',
+            tooltip: AppStrings.decreaseLabel,
             onPressed: () => _adjust(side, -1),
             icon: const Icon(Icons.remove_circle_outline),
           ),
           IconButton(
             visualDensity: VisualDensity.compact,
-            tooltip: '增加',
+            tooltip: AppStrings.increaseLabel,
             onPressed: () => _adjust(side, 1),
             icon: const Icon(Icons.add_circle_outline),
           ),

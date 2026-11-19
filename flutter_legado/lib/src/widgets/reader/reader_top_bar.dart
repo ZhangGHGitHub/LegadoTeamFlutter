@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../models/book.dart';
 import '../../models/book_source.dart';
 import '../../providers/providers.dart';
@@ -168,11 +169,13 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
       await syncNotifier.uploadBookProgress(liveBook);
       if (!context.mounted) return;
       messenger.showSnackBar(
-        const SnackBar(content: Text('进度上传成功')),
+        SnackBar(content: Text(AppStrings.progressUploaded)),
       );
     } catch (e) {
       if (!context.mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text('上传进度失败：${errorMessage(e)}')));
+      messenger.showSnackBar(
+        SnackBar(content: Text(AppStrings.uploadProgressFailed(errorMessage(e)))),
+      );
     }
   }
 
@@ -190,11 +193,11 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
             children: [
               ListTile(
                 leading: const Icon(Icons.article_outlined),
-                title: const Text('单章换源'),
+                title: Text(AppStrings.singleChapterChangeSource),
                 subtitle: Text(
                   chapter?.title.isNotEmpty == true
                       ? chapter!.title
-                      : '仅替换当前章正文',
+                      : AppStrings.replaceCurrentChapterOnly,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -212,8 +215,8 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
               ),
               ListTile(
                 leading: const Icon(Icons.swap_horiz),
-                title: const Text('换书源'),
-                subtitle: const Text('切换整本书的书源'),
+                title: Text(AppStrings.changeBookSource),
+                subtitle: Text(AppStrings.changeBookSourceDesc),
                 onTap: () {
                   Navigator.pop(sheetCtx);
                   // [P2-9 | 2026-09-24] 换源改为 await 导航：换源路由
@@ -262,7 +265,10 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
       (c) => c.copyWith(reSegment: !enabled),
     ));
     if (context.mounted) {
-      _snack(context, enabled ? '已关闭重新分段' : '已开启重新分段');
+      _snack(
+        context,
+        enabled ? AppStrings.reSegmentOff : AppStrings.reSegmentOn,
+      );
     }
   }
 
@@ -270,16 +276,16 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
   void _showImageStyleDialog(BuildContext context, WidgetRef ref) {
     final current =
         ref.read(readerNotifierProvider).currentBook?.readConfig?.imageStyle;
-    const options = <String?, String>{
-      null: '默认（文字旁显示图片）',
-      'full': '图片铺满宽度',
-      'text': '仅显示文字',
-      'single': '单独成页显示图片',
+    final options = <String?, String>{
+      null: AppStrings.imageStyleDefault,
+      'full': AppStrings.imageStyleFull,
+      'text': AppStrings.imageStyleText,
+      'single': AppStrings.imageStyleSingle,
     };
     showDialog<void>(
       context: context,
       builder: (dialogContext) => SimpleDialog(
-        title: const Text('图片样式'),
+        title: Text(AppStrings.imageStyleLabel),
         children: [
           RadioGroup<String?>(
             groupValue: current,
@@ -314,16 +320,18 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
     final book = ref.read(readerNotifierProvider).currentBook;
     if (book == null) return;
     if (book.origin == BookType.localTag) {
-      _snack(context, '本地书籍无需更新目录');
+      _snack(context, AppStrings.localBookNoTocUpdate);
       return;
     }
-    _snack(context, '正在更新目录…');
+    _snack(context, AppStrings.updatingToc);
     try {
       await ref.read(bookApiProvider).refreshToc(book.bookUrl, book.origin);
       await ref.read(readerNotifierProvider.notifier).openBook(book);
-      if (context.mounted) _snack(context, '目录已更新');
+      if (context.mounted) _snack(context, AppStrings.tocUpdatedShort);
     } catch (e) {
-      if (context.mounted) _snack(context, '更新目录失败: ${errorMessage(e)}');
+      if (context.mounted) {
+        _snack(context, AppStrings.updateTocFailed(errorMessage(e)));
+      }
     }
   }
 
@@ -342,33 +350,37 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('模拟追读'),
+          title: Text(AppStrings.simulatedReading),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('启用模拟追读'),
-                subtitle: const Text('按日逐步释放章节，模拟追更体验'),
+                title: Text(AppStrings.enableSimulatedReading),
+                subtitle: Text(AppStrings.simulatedReadingDesc),
                 value: simulating,
                 onChanged: (v) => setDialogState(() => simulating = v),
               ),
               TextField(
                 controller: startCtrl,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: '起始章节序号'),
+                decoration: InputDecoration(
+                  labelText: AppStrings.startChapterIndex,
+                ),
               ),
               TextField(
                 controller: dailyCtrl,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: '每日更新章数'),
+                decoration: InputDecoration(
+                  labelText: AppStrings.dailyChapters,
+                ),
               ),
             ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('取消'),
+              child: Text(AppStrings.cancel),
             ),
             FilledButton(
               onPressed: () {
@@ -388,9 +400,14 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
                         : c.startDate,
                   ),
                 ));
-                _snack(context, simulating ? '已开启模拟追读' : '已关闭模拟追读');
+                _snack(
+                  context,
+                  simulating
+                      ? AppStrings.simulatedReadingOn
+                      : AppStrings.simulatedReadingOff,
+                );
               },
-              child: const Text('确定'),
+              child: Text(AppStrings.confirm),
             ),
           ],
         ),
@@ -416,7 +433,7 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
           .read(bookApiProvider)
           .getChapterContentFull(book.bookUrl, chapterIndex);
       if (content.isEmpty) {
-        if (context.mounted) _snack(context, '暂无正文可反转');
+        if (context.mounted) _snack(context, AppStrings.noContentToReverse);
         return;
       }
       // 码点级倒序（runes 反转保证 emoji 等补充平面字符安全）
@@ -430,12 +447,14 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
       if (!context.mounted) return;
       if (ok) {
         await ref.read(readerNotifierProvider.notifier).reloadChapterContent();
-        if (context.mounted) _snack(context, '内容已反转');
+        if (context.mounted) _snack(context, AppStrings.contentReversed);
       } else {
-        _snack(context, '反转内容保存失败');
+        _snack(context, AppStrings.reverseContentSaveFailed);
       }
     } catch (e) {
-      if (context.mounted) _snack(context, '反转内容失败: ${errorMessage(e)}');
+      if (context.mounted) {
+        _snack(context, AppStrings.reverseContentFailed(errorMessage(e)));
+      }
     }
   }
 
@@ -499,13 +518,22 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
           screenWidth - 200, kToolbarHeight + 56, 8, 0),
       items: [
         if (hasLogin)
-          const PopupMenuItem(value: 'login', child: Text('登录源')),
+          PopupMenuItem(value: 'login', child: Text(AppStrings.loginSource)),
         // 章节购买仅在「已登录 + 当前章 VIP + 未购买」时可见
         // （对齐原版 canPay，本地书因书源不存在自然不满足）
         if (canPay)
-          const PopupMenuItem(value: 'chapterPay', child: Text('章节购买')),
-        const PopupMenuItem(value: 'editSource', child: Text('编辑源')),
-        const PopupMenuItem(value: 'disableSource', child: Text('禁用源')),
+          PopupMenuItem(
+            value: 'chapterPay',
+            child: Text(AppStrings.chapterPurchase),
+          ),
+        PopupMenuItem(
+          value: 'editSource',
+          child: Text(AppStrings.editSource),
+        ),
+        PopupMenuItem(
+          value: 'disableSource',
+          child: Text(AppStrings.disableSource),
+        ),
       ],
     );
     if (action == null || !context.mounted) return;
@@ -534,10 +562,12 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
         try {
           await api.disableBookSource(sourceUrl);
           if (context.mounted) {
-            _snack(context, '已禁用书源：$sourceName');
+            _snack(context, AppStrings.sourceDisabled(sourceName));
           }
         } catch (e) {
-          if (context.mounted) _snack(context, '禁用书源失败: ${errorMessage(e)}');
+          if (context.mounted) {
+            _snack(context, AppStrings.disableSourceFailed(errorMessage(e)));
+          }
         }
     }
   }
@@ -550,7 +580,7 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
     final api = ref.read(bookApiProvider);
     final chapterIndex =
         ref.read(readerNotifierProvider).currentChapterIndex;
-    _snack(context, '正在执行章节购买…');
+    _snack(context, AppStrings.chapterPurchaseInProgress);
     try {
       final result = await api.chapterPayAction(
         bookUrl: book.bookUrl,
@@ -565,7 +595,7 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
             AppRoutes.browser,
             arguments: <String, String>{
               'url': result.value,
-              'title': '章节购买',
+              'title': AppStrings.chapterPurchase,
             },
           );
         case 'success':
@@ -578,14 +608,16 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
           } catch (e) {
             debugPrint('购买成功后重载章节失败: $e');
           }
-          if (context.mounted) _snack(context, '购买成功');
+          if (context.mounted) _snack(context, AppStrings.purchaseSuccess);
         default:
           // kind=none：本地书短路/书源未配置 payAction/不支持
-          _snack(context, '当前章节无需购买或书源未配置购买动作');
+          _snack(context, AppStrings.noPurchaseNeeded);
       }
     } catch (e) {
       // 对标原版 onError：执行购买操作出错
-      if (context.mounted) _snack(context, '章节购买失败: ${errorMessage(e)}');
+      if (context.mounted) {
+        _snack(context, AppStrings.chapterPurchaseFailed(errorMessage(e)));
+      }
     }
   }
 
@@ -629,7 +661,12 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
       (c) => c.copyWith(delTag: enabled ? (c.delTag & ~tag) : (c.delTag | tag)),
     ));
     if (context.mounted) {
-      _snack(context, enabled ? '已关闭$label' : '已开启$label');
+      _snack(
+        context,
+        enabled
+            ? AppStrings.toggleOffNamed(label)
+            : AppStrings.toggleOnNamed(label),
+      );
     }
   }
 
@@ -657,7 +694,7 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
             .read(bookApiProvider)
             .canRemoveSameTitle(chapterTitle, raw);
         if (!canRemove && context.mounted) {
-          _snack(context, '未找到可移除的重复标题');
+          _snack(context, AppStrings.noDuplicateTitleFound);
         }
       } catch (_) {
         // 无缓存时跳过提示，仍执行切换
@@ -672,10 +709,15 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
       setState(() => _sameTitleRemoved = next);
       await ref.read(readerNotifierProvider.notifier).reloadChapterContent();
       if (context.mounted) {
-        _snack(context, next ? '已去除重复标题' : '该章已保留原标题');
+        _snack(
+          context,
+          next ? AppStrings.duplicateTitleRemoved : AppStrings.originalTitleKept,
+        );
       }
     } catch (e) {
-      if (context.mounted) _snack(context, '设置失败: ${errorMessage(e)}');
+      if (context.mounted) {
+        _snack(context, AppStrings.settingFailedWith(errorMessage(e)));
+      }
     }
   }
 
@@ -686,16 +728,16 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
     showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('有效替换规则'),
+        title: Text(AppStrings.effectiveReplaceRules),
         content: Text(
           count != null
-              ? '当前已启用替换规则 $count 条（全局启用计数；原版为当前章节生效规则列表，章级数据待 FFI 契约补齐）'
-              : '替换规则数据暂不可用',
+              ? AppStrings.effectiveReplaceCountDesc('$count')
+              : AppStrings.replaceRuleDataUnavailable,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('知道了'),
+            child: Text(AppStrings.gotIt),
           ),
         ],
       ),
@@ -714,7 +756,7 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
   /// 复制章节 URL 到剪贴板并提示
   Future<void> _copyChapterUrl(BuildContext context, String url) async {
     await Clipboard.setData(ClipboardData(text: url));
-    if (context.mounted) _snack(context, '章节链接已复制');
+    if (context.mounted) _snack(context, AppStrings.chapterLinkCopied);
   }
 
   // [UI-fix v2.0.4 | 2026-08-08] 章节 URL 行交互对齐原版 tv_chapter_url：
@@ -738,7 +780,10 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
     } else {
       Navigator.of(context).pushNamed(
         AppRoutes.browser,
-        arguments: <String, String>{'url': url, 'title': '章节链接'},
+        arguments: <String, String>{
+          'url': url,
+          'title': AppStrings.chapterLink,
+        },
       );
     }
   }
@@ -749,7 +794,9 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
     final uri = Uri.tryParse(url);
     final ok = uri != null &&
         await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok && context.mounted) _snack(context, '无法打开链接：$url');
+    if (!ok && context.mounted) {
+      _snack(context, AppStrings.cannotOpenLink(url));
+    }
   }
 
   /// 长按章节 URL：选择打开方式（选内置/系统同时持久化偏好）
@@ -757,19 +804,19 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
     final choice = await showDialog<String>(
       context: context,
       builder: (dialogContext) => SimpleDialog(
-        title: const Text('打开方式'),
+        title: Text(AppStrings.openWith),
         children: [
           SimpleDialogOption(
             onPressed: () => Navigator.pop(dialogContext, 'inner'),
-            child: const Text('内置浏览器打开'),
+            child: Text(AppStrings.openInAppBrowser),
           ),
           SimpleDialogOption(
             onPressed: () => Navigator.pop(dialogContext, 'system'),
-            child: const Text('系统浏览器打开'),
+            child: Text(AppStrings.openInSystemBrowser),
           ),
           SimpleDialogOption(
             onPressed: () => Navigator.pop(dialogContext, 'copy'),
-            child: const Text('复制链接'),
+            child: Text(AppStrings.copyLink),
           ),
         ],
       ),
@@ -790,7 +837,10 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
         } else {
           Navigator.of(context).pushNamed(
             AppRoutes.browser,
-            arguments: <String, String>{'url': url, 'title': '章节链接'},
+            arguments: <String, String>{
+          'url': url,
+          'title': AppStrings.chapterLink,
+        },
           );
         }
       case 'copy':
@@ -953,13 +1003,13 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
                       if (isOnline) ...[
                         IconButton(
                           icon: const Icon(Icons.swap_horiz, size: 22),
-                          tooltip: '换源',
+                          tooltip: AppStrings.changeSource,
                           visualDensity: VisualDensity.compact,
                           onPressed: () => _showChangeSourceMenu(context, book),
                         ),
                         IconButton(
                           icon: const Icon(Icons.refresh, size: 22),
-                          tooltip: '刷新',
+                          tooltip: AppStrings.refreshAction,
                           visualDensity: VisualDensity.compact,
                           onPressed: () async {
                             // [C5-hunt | 2026-09-24] 重入守卫：已有刷新在途
@@ -983,9 +1033,9 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
                             // 必收，见下）
                             final messenger = ScaffoldMessenger.of(context);
                             messenger.showSnackBar(
-                              const SnackBar(
-                                content: Text('正在刷新正文…'),
-                                duration: Duration(minutes: 10),
+                              SnackBar(
+                                content: Text(AppStrings.refreshingContent),
+                                duration: const Duration(minutes: 10),
                               ),
                             );
                             final err = await notifier.refreshChapterContent();
@@ -999,7 +1049,11 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
                             messenger.showSnackBar(
                               SnackBar(
                                 content: Text(
-                                  err == null ? '正文已刷新' : '刷新正文失败：${errorMessage(err)}',
+                                  err == null
+                                      ? AppStrings.contentRefreshed
+                                      : AppStrings.refreshContentFailed(
+                                          errorMessage(err),
+                                        ),
                                 ),
                               ),
                             );
@@ -1007,7 +1061,7 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
                         ),
                         IconButton(
                           icon: const Icon(Icons.download_outlined, size: 22),
-                          tooltip: '缓存（离线缓存）',
+                          tooltip: AppStrings.cacheOffline,
                           visualDensity: VisualDensity.compact,
                           onPressed: () =>
                               showReaderOfflineCacheDialog(context, ref),
@@ -1015,7 +1069,7 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
                       ] else if (book != null)
                         IconButton(
                           icon: const Icon(Icons.translate, size: 22),
-                          tooltip: '设置编码',
+                          tooltip: AppStrings.setCharset,
                           visualDensity: VisualDensity.compact,
                           onPressed: () => showReaderCharsetDialog(context, ref),
                         ),
@@ -1025,7 +1079,7 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
                       // 重复的换源/刷新/缓存/设置编码与原版不存在的
                       // 高级设置项（底栏设置按钮承接） — Qoder）
                       PopupMenuButton<String>(
-                        tooltip: '更多',
+                        tooltip: AppStrings.moreActions,
                         // 菜单自顶栏正下方展开（项目菜单定位规范）
                         position: PopupMenuPosition.under,
                         onSelected: (value) async {
@@ -1069,10 +1123,18 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
                               _toggleReSegment(context, ref);
                               break;
                             case 'delRubyTag':
-                              _toggleDelTag(context, _rubyTag, '删除 Ruby 标签');
+                              _toggleDelTag(
+                                context,
+                                _rubyTag,
+                                AppStrings.removeRubyTags,
+                              );
                               break;
                             case 'delHTag':
-                              _toggleDelTag(context, _hTag, '删除 H 标签');
+                              _toggleDelTag(
+                                context,
+                                _hTag,
+                                AppStrings.removeHTags,
+                              );
                               break;
                             case 'imageStyle':
                               _showImageStyleDialog(context, ref);
@@ -1127,47 +1189,61 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
                             // enable_replace → same_title_removed →
                             // re_segment → epub 组(仅 EPUB) → image_style →
                             // update_toc → effective_replaces → log → help
-                            const PopupMenuItem(
-                                value: 'addBookmark', child: Text('添加书签')),
-                            const PopupMenuItem(
-                                value: 'highlightRule', child: Text('高亮规则')),
-                            const PopupMenuItem(
-                                value: 'editContent', child: Text('编辑内容')),
-                            const PopupMenuItem(
-                                value: 'pageAnim', child: Text('翻页动画')),
+                            PopupMenuItem(
+                              value: 'addBookmark',
+                              child: Text(AppStrings.addBookmark),
+                            ),
+                            PopupMenuItem(
+                              value: 'highlightRule',
+                              child: Text(AppStrings.highlightRulesMenu),
+                            ),
+                            PopupMenuItem(
+                              value: 'editContent',
+                              child: Text(AppStrings.editContent),
+                            ),
+                            PopupMenuItem(
+                              value: 'pageAnim',
+                              child: Text(AppStrings.pageTurnAnimation),
+                            ),
                             // P1-10：WebDAV 已配置时显示（对齐 upMenu AppWebDav.isOk）
                             if (webDavOk) ...[
-                              const PopupMenuItem(
-                                  value: 'getProgress',
-                                  child: Text('同步阅读进度')),
-                              const PopupMenuItem(
-                                  value: 'coverProgress',
-                                  child: Text('覆盖云端进度')),
+                              PopupMenuItem(
+                                value: 'getProgress',
+                                child: Text(AppStrings.syncReadingProgress),
+                              ),
+                              PopupMenuItem(
+                                value: 'coverProgress',
+                                child: Text(AppStrings.coverCloudProgress),
+                              ),
                             ],
                             // 反转内容仅在线书可见（对齐 upMenu
                             // isVisible=onLine）
                             if (isOnline)
-                              const PopupMenuItem(
-                                  value: 'reverseContent',
-                                  child: Text('反转内容')),
-                            const PopupMenuItem(
-                                value: 'simulatedReading',
-                                child: Text('模拟追读')),
+                              PopupMenuItem(
+                                value: 'reverseContent',
+                                child: Text(AppStrings.reverseContent),
+                              ),
+                            PopupMenuItem(
+                              value: 'simulatedReading',
+                              child: Text(AppStrings.simulatedReading),
+                            ),
                             PopupMenuItem(
                               value: 'enableReplace',
-                              child: checked('替换规则', replaceOn),
+                              child: checked(AppStrings.replaceRulesLabel, replaceOn),
                             ),
                             // [Task #52 | 2026-08-10] 删除重复标题接通章级 FFI
                             // （契约 §2.9.10 toggleSameTitleRemoved；对齐原版
                             // menu_same_title_removed → reverseRemoveSameTitle） — Qoder
                             PopupMenuItem(
                               value: 'sameTitleRemoved',
-                              child:
-                                  checked('删除重复标题', _sameTitleRemoved),
+                              child: checked(
+                                AppStrings.removeDuplicateTitle,
+                                _sameTitleRemoved,
+                              ),
                             ),
                             PopupMenuItem(
                               value: 'reSegment',
-                              child: checked('重新分段', segmentOn),
+                              child: checked(AppStrings.reSegment, segmentOn),
                             ),
                             // [UI-fix v2.0.4 | 2026-08-08] EPUB 标签清理组
                             // （对齐 menu_group_epub 仅 EPUB 可见，经
@@ -1176,30 +1252,45 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
                               PopupMenuItem(
                                 value: 'delRubyTag',
                                 child: checked(
-                                    '删除 Ruby 标签', _hasDelTag(book, _rubyTag)),
+                                  AppStrings.removeRubyTags,
+                                  _hasDelTag(book, _rubyTag),
+                                ),
                               ),
                               PopupMenuItem(
                                 value: 'delHTag',
                                 child: checked(
-                                    '删除 H 标签', _hasDelTag(book, _hTag)),
+                                  AppStrings.removeHTags,
+                                  _hasDelTag(book, _hTag),
+                                ),
                               ),
                             ],
-                            const PopupMenuItem(
-                                value: 'imageStyle', child: Text('图片样式')),
-                            const PopupMenuItem(
-                                value: 'updateToc', child: Text('更新目录')),
+                            PopupMenuItem(
+                              value: 'imageStyle',
+                              child: Text(AppStrings.imageStyleLabel),
+                            ),
+                            PopupMenuItem(
+                              value: 'updateToc',
+                              child: Text(AppStrings.updateToc),
+                            ),
                             // [UI-fix v2.0.4 | 2026-08-08] 有效替换规则只读
                             // 展示（对齐 menu_effective_replaces） — Qoder
                             PopupMenuItem(
                               value: 'effectiveReplaces',
-                              child: Text(_effectiveReplaceCount != null
-                                  ? '有效替换规则（$_effectiveReplaceCount 条启用）'
-                                  : '有效替换规则'),
+                              child: Text(
+                                _effectiveReplaceCount != null
+                                    ? '${AppStrings.effectiveReplaceRules}'
+                                          '（$_effectiveReplaceCount）'
+                                    : AppStrings.effectiveReplaceRules,
+                              ),
                             ),
-                            const PopupMenuItem(
-                                value: 'log', child: Text('日志')),
-                            const PopupMenuItem(
-                                value: 'help', child: Text('帮助')),
+                            PopupMenuItem(
+                              value: 'log',
+                              child: Text(AppStrings.logLabel),
+                            ),
+                            PopupMenuItem(
+                              value: 'help',
+                              child: Text(AppStrings.helpLabel),
+                            ),
                           ];
                         },
                       ),
@@ -1278,7 +1369,7 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
                               child: Text(
                                 book.originName.isNotEmpty
                                     ? book.originName
-                                    : '书源',
+                                    : AppStrings.sourceBadge,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 // 强调色底徽章用 onPrimary 白色文字

@@ -24,6 +24,7 @@ import 'package:flutter/material.dart' show IconData;
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../../constants/pref_keys.dart';
+import '../../l10n/app_strings.dart';
 
 /// 顶栏最多展示的按钮数（对齐参考版 `MAX_TITLE_BAR_ACTIONS = 6`）
 ///
@@ -56,11 +57,11 @@ enum ReaderBookScope {
       case ReaderBookScope.all:
         return null;
       case ReaderBookScope.online:
-        return '仅在线书';
+        return AppStrings.scopeOnlineOnly;
       case ReaderBookScope.local:
-        return '仅本地书';
+        return AppStrings.scopeLocalOnly;
       case ReaderBookScope.localTxt:
-        return '仅本地 TXT';
+        return AppStrings.scopeLocalTxtOnly;
     }
   }
 }
@@ -134,24 +135,24 @@ class ReaderTopBarActionDef {
 /// 仅收录我方已接通的行为入口；参考版池中的 source_login/source_pay/
 /// edit_source/disable_source/audio_download 等依赖书源异步查询或未接通的
 /// 动作暂不入池（见批37交付说明「未做项」）。
-const List<ReaderTopBarActionDef> readerTopBarActionPool = [
+List<ReaderTopBarActionDef> get readerTopBarActionPool => [
   ReaderTopBarActionDef(
     id: 'download',
     icon: Symbols.download_rounded,
-    label: '下载（离线缓存）',
+    label: AppStrings.downloadOffline,
     scope: ReaderBookScope.online,
     longPress: ReaderTopBarLongPress.cacheManage,
   ),
   ReaderTopBarActionDef(
     id: 'refresh',
     icon: Symbols.refresh_rounded,
-    label: '刷新正文',
+    label: AppStrings.refreshContent,
     scope: ReaderBookScope.online,
   ),
   ReaderTopBarActionDef(
     id: 'change_source',
     icon: Symbols.swap_horiz_rounded,
-    label: '换源',
+    label: AppStrings.changeSource,
     scope: ReaderBookScope.online,
     longPress: ReaderTopBarLongPress.changeSource,
   ),
@@ -159,74 +160,77 @@ const List<ReaderTopBarActionDef> readerTopBarActionPool = [
     id: 'toc_rule',
     icon: Symbols.toc_rounded,
     // 对齐原版 menu_toc_regex / 参考版 toc_rule 文案
-    label: 'TXT 目录规则',
+    label: AppStrings.txtTocRulesLabel,
     scope: ReaderBookScope.localTxt,
   ),
   ReaderTopBarActionDef(
     id: 'charset',
     icon: Symbols.translate_rounded,
-    label: '设置编码',
+    label: AppStrings.setCharset,
     scope: ReaderBookScope.local,
   ),
   ReaderTopBarActionDef(
     id: 'catalog',
     icon: Symbols.format_list_bulleted_rounded,
-    label: '目录',
+    label: AppStrings.catalog,
   ),
   ReaderTopBarActionDef(
     id: 'search',
     icon: Symbols.search_rounded,
-    label: '全文搜索',
+    label: AppStrings.searchContent,
   ),
   ReaderTopBarActionDef(
     id: 'auto_page',
     icon: Symbols.play_arrow_rounded,
-    label: '自动翻页',
+    label: AppStrings.autoPageTurn,
   ),
   ReaderTopBarActionDef(
     id: 'read_aloud',
     icon: Symbols.record_voice_over_rounded,
-    label: '朗读',
+    label: AppStrings.readAloud,
   ),
   ReaderTopBarActionDef(
     id: 'setting',
     icon: Symbols.settings_rounded,
-    label: '界面设置',
+    label: AppStrings.interfaceSettings,
   ),
   ReaderTopBarActionDef(
     id: 'addBookmark',
     icon: Symbols.bookmark_add_rounded,
-    label: '添加书签',
+    label: AppStrings.addBookmark,
   ),
   ReaderTopBarActionDef(
     id: 'replace',
     icon: Symbols.find_replace_rounded,
-    label: '替换规则',
+    label: AppStrings.replaceRulesLabel,
   ),
   ReaderTopBarActionDef(
     id: 'theme',
     icon: Symbols.dark_mode_rounded,
-    label: '日/夜切换',
+    label: AppStrings.dayNightToggle,
   ),
   ReaderTopBarActionDef(
     id: 'prev_chapter',
     icon: Symbols.skip_previous_rounded,
-    label: '上一章',
+    label: AppStrings.previousChapter,
   ),
   ReaderTopBarActionDef(
     id: 'next_chapter',
     icon: Symbols.skip_next_rounded,
-    label: '下一章',
+    label: AppStrings.nextChapter,
   ),
   ReaderTopBarActionDef(
     id: kReaderMoreActionsId,
     icon: Symbols.more_vert_rounded,
-    label: '更多',
+    label: AppStrings.moreActions,
   ),
 ];
 
 /// 动作 id → 描述符（池内 id 唯一）
-final Map<String, ReaderTopBarActionDef> readerTopBarActionById = {
+///
+/// 用 getter 而非顶层 `final` 缓存：文案来自 [AppStrings]（随语言切换变化），
+/// 首次访问即缓存会让切换语言后顶栏文案停留在旧语种。
+Map<String, ReaderTopBarActionDef> get readerTopBarActionById => {
   for (final def in readerTopBarActionPool) def.id: def,
 };
 

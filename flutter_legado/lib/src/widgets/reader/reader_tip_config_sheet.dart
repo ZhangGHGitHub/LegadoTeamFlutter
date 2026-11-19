@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../../l10n/app_strings.dart';
 import '../../screens/reader_config_panel.dart';
 import '../ios_widgets.dart';
 
@@ -58,25 +59,25 @@ class ReaderTipConfigSheet extends ConsumerStatefulWidget {
 class _ReaderTipConfigSheetState extends ConsumerState<ReaderTipConfigSheet> {
   late final ReaderAdvancedConfig _config = widget.config.copy();
 
-  static const _tipOptions = [
-    ReadTipOption(0, '无'),
-    ReadTipOption(7, '书名'),
-    ReadTipOption(1, '章节名'),
-    ReadTipOption(2, '时间'),
-    ReadTipOption(3, '电量图标'),
-    ReadTipOption(10, '电量百分比'),
-    ReadTipOption(4, '页码'),
-    ReadTipOption(5, '阅读进度'),
-    ReadTipOption(11, '章节进度'),
-    ReadTipOption(6, '页码+进度'),
-    ReadTipOption(8, '时间+电量'),
-    ReadTipOption(9, '时间+电量%'),
+  List<ReadTipOption> get _tipOptions => [
+    ReadTipOption(0, AppStrings.tipNone),
+    ReadTipOption(7, AppStrings.bookNameTip),
+    ReadTipOption(1, AppStrings.chapterNameTip),
+    ReadTipOption(2, AppStrings.timeTip),
+    ReadTipOption(3, AppStrings.batteryIconTip),
+    ReadTipOption(10, AppStrings.batteryPercentTip),
+    ReadTipOption(4, AppStrings.pageNumberTip),
+    ReadTipOption(5, AppStrings.readProgressTip),
+    ReadTipOption(11, AppStrings.chapterProgressTip),
+    ReadTipOption(6, AppStrings.pageAndProgressTip),
+    ReadTipOption(8, AppStrings.timeAndBatteryTip),
+    ReadTipOption(9, AppStrings.timeAndBatteryPercentTip),
   ];
 
-  static const _modeOptions = {
-    0: '状态栏显示时隐藏',
-    1: '显示',
-    2: '隐藏',
+  Map<int, String> get _modeOptions => {
+    0: AppStrings.hideWhenStatusBarShown,
+    1: AppStrings.showLabel,
+    2: AppStrings.hideLabel,
   };
 
   void _commit() {
@@ -90,7 +91,7 @@ class _ReaderTipConfigSheetState extends ConsumerState<ReaderTipConfigSheet> {
     for (final o in _tipOptions) {
       if (o.value == value) return o.label;
     }
-    return '无';
+    return AppStrings.tipNone;
   }
 
   Future<void> _pickTip(
@@ -129,14 +130,17 @@ class _ReaderTipConfigSheetState extends ConsumerState<ReaderTipConfigSheet> {
           children: [
             const Center(child: IosGrabber()),
             const SizedBox(height: 12),
-            Text('阅读提示信息', style: theme.textTheme.titleMedium),
+            Text(AppStrings.readingTipInfo,
+                style: theme.textTheme.titleMedium),
             const SizedBox(height: 12),
-            Text('正文标题', style: theme.textTheme.titleSmall),
+            Text(AppStrings.bodyTitleLabel, style: theme.textTheme.titleSmall),
             SegmentedButton<int>(
-              segments: const [
-                ButtonSegment(value: 0, label: Text('居左')),
-                ButtonSegment(value: 1, label: Text('居中')),
-                ButtonSegment(value: 2, label: Text('隐藏')),
+              segments: [
+                ButtonSegment(
+                    value: 0, label: Text(AppStrings.alignLeft)),
+                ButtonSegment(
+                    value: 1, label: Text(AppStrings.alignCenter)),
+                ButtonSegment(value: 2, label: Text(AppStrings.hideLabel)),
               ],
               selected: {_config.titleMode.clamp(0, 2)},
               onSelectionChanged: (sel) {
@@ -144,57 +148,63 @@ class _ReaderTipConfigSheetState extends ConsumerState<ReaderTipConfigSheet> {
                 _commit();
               },
             ),
-            _stepRow('标题字号', _config.titleSize, 0, 20, (v) {
+            _stepRow(AppStrings.titleSizeLabel, _config.titleSize, 0, 20, (v) {
               _config.titleSize = v;
               _commit();
             }),
-            _stepRow('标题上边距', _config.titleTopSpacing, 0, 100, (v) {
+            _stepRow(
+                AppStrings.titleTopSpacing, _config.titleTopSpacing, 0, 100, (v) {
               _config.titleTopSpacing = v;
               _commit();
             }),
-            _stepRow('标题下边距', _config.titleBottomSpacing, 0, 100, (v) {
+            _stepRow(
+                AppStrings.titleBottomSpacing,
+                _config.titleBottomSpacing,
+                0,
+                100,
+                (v) {
               _config.titleBottomSpacing = v;
               _commit();
             }),
             const Divider(height: 24),
-            Text('页眉', style: theme.textTheme.titleSmall),
-            _modeRow('页眉显示', _config.headerMode, (v) {
+            Text(AppStrings.headerLabel, style: theme.textTheme.titleSmall),
+            _modeRow(AppStrings.headerDisplay, _config.headerMode, (v) {
               _config.headerMode = v;
               _commit();
             }),
-            _tipRow('页眉左', _config.tipHeaderLeft, (v) {
+            _tipRow(AppStrings.headerLeft, _config.tipHeaderLeft, (v) {
               _config.tipHeaderLeft = v;
               _commit();
             }),
-            _tipRow('页眉中', _config.tipHeaderMiddle, (v) {
+            _tipRow(AppStrings.headerMiddle, _config.tipHeaderMiddle, (v) {
               _config.tipHeaderMiddle = v;
               _commit();
             }),
-            _tipRow('页眉右', _config.tipHeaderRight, (v) {
+            _tipRow(AppStrings.headerRight, _config.tipHeaderRight, (v) {
               _config.tipHeaderRight = v;
               _commit();
             }),
             const Divider(height: 24),
-            Text('页脚', style: theme.textTheme.titleSmall),
-            _modeRow('页脚显示', _config.footerMode, (v) {
+            Text(AppStrings.footerLabel, style: theme.textTheme.titleSmall),
+            _modeRow(AppStrings.footerDisplay, _config.footerMode, (v) {
               _config.footerMode = v;
               _commit();
             }),
-            _tipRow('页脚左', _config.tipFooterLeft, (v) {
+            _tipRow(AppStrings.footerLeft, _config.tipFooterLeft, (v) {
               _config.tipFooterLeft = v;
               _commit();
             }),
-            _tipRow('页脚中', _config.tipFooterMiddle, (v) {
+            _tipRow(AppStrings.footerMiddle, _config.tipFooterMiddle, (v) {
               _config.tipFooterMiddle = v;
               _commit();
             }),
-            _tipRow('页脚右', _config.tipFooterRight, (v) {
+            _tipRow(AppStrings.footerRight, _config.tipFooterRight, (v) {
               _config.tipFooterRight = v;
               _commit();
             }),
             const SizedBox(height: 8),
             Text(
-              '兼容旧版：下方开关同步控制顶部状态条（隐藏工具栏时）',
+              AppStrings.legacyStatusBarHint,
               style: theme.textTheme.labelSmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -202,7 +212,7 @@ class _ReaderTipConfigSheetState extends ConsumerState<ReaderTipConfigSheet> {
             SwitchListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              title: const Text('显示电量'),
+              title: Text(AppStrings.showBattery),
               value: _config.showBattery,
               onChanged: (v) {
                 _config.showBattery = v;
@@ -212,7 +222,7 @@ class _ReaderTipConfigSheetState extends ConsumerState<ReaderTipConfigSheet> {
             SwitchListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              title: const Text('显示时间'),
+              title: Text(AppStrings.showTime),
               value: _config.showTime,
               onChanged: (v) {
                 _config.showTime = v;
@@ -222,7 +232,7 @@ class _ReaderTipConfigSheetState extends ConsumerState<ReaderTipConfigSheet> {
             SwitchListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              title: const Text('显示进度'),
+              title: Text(AppStrings.showProgress),
               value: _config.showProgress,
               onChanged: (v) {
                 _config.showProgress = v;
@@ -232,7 +242,7 @@ class _ReaderTipConfigSheetState extends ConsumerState<ReaderTipConfigSheet> {
             SwitchListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              title: const Text('显示章节名'),
+              title: Text(AppStrings.showChapterName),
               value: _config.showChapterName,
               onChanged: (v) {
                 _config.showChapterName = v;
@@ -250,7 +260,7 @@ class _ReaderTipConfigSheetState extends ConsumerState<ReaderTipConfigSheet> {
       dense: true,
       contentPadding: EdgeInsets.zero,
       title: Text(label),
-      trailing: Text(_modeOptions[current.clamp(0, 2)] ?? '显示'),
+      trailing: Text(_modeOptions[current.clamp(0, 2)] ?? AppStrings.showLabel),
       onTap: () async {
         final picked = await showDialog<int>(
           context: context,

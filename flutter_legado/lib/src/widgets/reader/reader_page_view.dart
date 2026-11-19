@@ -562,7 +562,11 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
         bookText: text,
       );
     } catch (e) {
-      messenger?.showSnackBar(SnackBar(content: Text('书签操作失败：${errorMessage(e)}')));
+      messenger?.showSnackBar(
+        SnackBar(
+          content: Text(AppStrings.bookmarkOperationFailed(errorMessage(e))),
+        ),
+      );
     } finally {
       _bookmarkToggleInFlight = false;
     }
@@ -1158,7 +1162,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                 arguments: book,
               )
             : null,
-        secondaryActionLabel: '换源',
+        secondaryActionLabel: AppStrings.changeSource,
         secondaryActionIcon: Icons.swap_horiz,
       );
     }
@@ -1176,7 +1180,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
         child: Padding(
           padding: const EdgeInsets.all(32),
           child: Text(
-            '本章无正文',
+            AppStrings.noChapterContent,
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: state.fontSize,

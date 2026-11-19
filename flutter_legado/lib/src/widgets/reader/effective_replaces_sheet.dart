@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
@@ -128,7 +129,9 @@ class _EffectiveReplacesSheetState
             (_reSegmentEnabled ? 1 : 0)
       : 0;
 
-  String get _convertLabel => _convertType == 2 ? '繁简转换（简转繁）' : '繁简转换（繁转简）';
+  String get _convertLabel => _convertType == 2
+      ? AppStrings.chineseConvertS2T
+      : AppStrings.chineseConvertT2S;
 
   void _showInline(String message) {
     if (!mounted) return;
@@ -140,7 +143,7 @@ class _EffectiveReplacesSheetState
     try {
       await _readerNotifier.reloadChapterContent();
     } catch (e) {
-      _showInline('重新加载正文失败：${errorMessage(e)}');
+      _showInline(AppStrings.reloadContentFailed(errorMessage(e)));
     }
   }
 
@@ -157,7 +160,7 @@ class _EffectiveReplacesSheetState
       }
       await _reloadChapter();
     } catch (e) {
-      _showInline('关闭替换规则失败：${errorMessage(e)}');
+      _showInline(AppStrings.disableReplaceRuleFailed(errorMessage(e)));
     }
   }
 
@@ -167,7 +170,7 @@ class _EffectiveReplacesSheetState
       if (mounted) setState(() => _convertType = 0);
       await _reloadChapter();
     } catch (e) {
-      _showInline('关闭繁简转换失败：${errorMessage(e)}');
+      _showInline(AppStrings.disableChineseConvertFailed(errorMessage(e)));
     }
   }
 
@@ -185,7 +188,7 @@ class _EffectiveReplacesSheetState
         _inlineMessage = null;
       });
     } else {
-      _showInline('关闭重新分段失败，请重试');
+      _showInline(AppStrings.disableReSegmentFailed);
     }
   }
 
@@ -218,7 +221,7 @@ class _EffectiveReplacesSheetState
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '有效替换规则',
+                      AppStrings.effectiveReplaceRules,
                       style: theme.textTheme.titleMedium,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -227,7 +230,7 @@ class _EffectiveReplacesSheetState
                   if (!_loading && _error == null)
                     Flexible(
                       child: Text(
-                        '本章生效 $_entryCount 条',
+                        AppStrings.effectiveRuleCount('$_entryCount'),
                         key: const ValueKey('effective-replaces-count'),
                         style: theme.textTheme.labelMedium?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
@@ -284,7 +287,10 @@ class _EffectiveReplacesSheetState
           children: [
             Text(_error!, textAlign: TextAlign.center),
             const SizedBox(height: 12),
-            ElevatedButton(onPressed: _load, child: const Text('重试')),
+            ElevatedButton(
+              onPressed: _load,
+              child: Text(AppStrings.retry),
+            ),
           ],
         ),
       );
@@ -292,7 +298,7 @@ class _EffectiveReplacesSheetState
     if (!_masterEnabled) {
       return Center(
         child: Text(
-          '本书替换净化已关闭',
+          AppStrings.replaceDisabledForBook,
           key: const ValueKey('effective-replaces-master-off'),
           style: theme.textTheme.bodyMedium?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
@@ -304,7 +310,7 @@ class _EffectiveReplacesSheetState
     if (rules.isEmpty && _convertType == 0 && !_reSegmentEnabled) {
       return Center(
         child: Text(
-          '本章暂无生效替换规则',
+          AppStrings.noEffectiveReplaceRules,
           style: theme.textTheme.bodyMedium?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
@@ -316,7 +322,8 @@ class _EffectiveReplacesSheetState
       children: [
         for (final rule in rules) _buildRuleRow(theme, rule),
         if (_convertType > 0) _buildSyntheticRow(theme, _convertLabel, true),
-        if (_reSegmentEnabled) _buildSyntheticRow(theme, '重新分段', false),
+        if (_reSegmentEnabled)
+          _buildSyntheticRow(theme, AppStrings.reSegment, false),
       ],
     );
   }
@@ -338,7 +345,7 @@ class _EffectiveReplacesSheetState
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      rule.name.isEmpty ? '（未命名规则）' : rule.name,
+                      rule.name.isEmpty ? AppStrings.unnamedRule : rule.name,
                       style: theme.textTheme.titleSmall,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -355,7 +362,7 @@ class _EffectiveReplacesSheetState
                     ),
                     if (group.isNotEmpty)
                       Text(
-                        '分组：$group',
+                        AppStrings.groupNamesLabel(group),
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: theme.colorScheme.secondary,
                         ),
@@ -367,7 +374,7 @@ class _EffectiveReplacesSheetState
               ),
               IconButton(
                 key: ValueKey('effective-replaces-remove-${rule.id}'),
-                tooltip: '关闭',
+                tooltip: AppStrings.closeLabel,
                 icon: const Icon(Icons.close, size: 20),
                 onPressed: () => _disableRule(rule),
               ),
@@ -389,14 +396,14 @@ class _EffectiveReplacesSheetState
       child: ListTile(
         dense: true,
         title: Text(label),
-        onTap: () => _showInline('请在阅读设置中调整'),
+        onTap: () => _showInline(AppStrings.adjustInReadingSettings),
         trailing: IconButton(
           key: ValueKey(
             converter
                 ? 'effective-replaces-remove-converter'
                 : 'effective-replaces-remove-resegment',
           ),
-          tooltip: '关闭',
+          tooltip: AppStrings.closeLabel,
           icon: const Icon(Icons.close, size: 20),
           onPressed: converter ? _disableConverter : _disableReSegment,
         ),

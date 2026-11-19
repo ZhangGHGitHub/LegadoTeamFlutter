@@ -2,6 +2,8 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+
+import '../../../l10n/app_strings.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../../../providers/reader/reader_state.dart';
@@ -807,7 +809,9 @@ class ReaderTurnViewState extends State<ReaderTurnView>
                           ),
                         ),
                         child: Text(
-                          widget.hasBookmarkOnPage ? '松手以取消书签' : '松手以添加书签',
+                          widget.hasBookmarkOnPage
+                              ? AppStrings.releaseToRemoveBookmark
+                              : AppStrings.releaseToAddBookmark,
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 14,

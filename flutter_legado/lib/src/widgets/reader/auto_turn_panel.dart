@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../../l10n/app_strings.dart';
+
 /// 自动翻页运行时浮条（差异清单 C10，形态对齐参考版「即开即调」）
 ///
 /// 自动翻页进行中、且菜单未展开时浮于正文底部：显示当前间隔 + 速度步进
@@ -69,32 +71,44 @@ class AutoTurnPanel extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(left: 6, right: 2),
               child: Text(
-                '自动翻页',
+                AppStrings.autoPageTurn,
                 style: ts.labelMedium?.copyWith(color: cs.onSurfaceVariant),
               ),
             ),
             // 速度步进：− / 当前间隔 / ＋（对齐参考版 [−10s+] 形态，步进 5 秒）
-            roundIcon(Symbols.remove_rounded, '减慢翻页', () {
+            roundIcon(Symbols.remove_rounded, AppStrings.autoPageSlower, () {
               onIntervalChanged(
                   (intervalSeconds - stepSeconds).clamp(minSeconds, maxSeconds));
             }),
             SizedBox(
               width: 44,
               child: Text(
-                '${intervalSeconds.round()} 秒',
+                AppStrings.secondsLabel('${intervalSeconds.round()}'),
                 textAlign: TextAlign.center,
                 style: ts.labelLarge?.copyWith(color: cs.onSurface),
               ),
             ),
-            roundIcon(Symbols.add_rounded, '加快翻页', () {
+            roundIcon(Symbols.add_rounded, AppStrings.autoPageFaster, () {
               onIntervalChanged(
                   (intervalSeconds + stepSeconds).clamp(minSeconds, maxSeconds));
             }),
             const SizedBox(width: 2),
             Container(width: 1, height: 20, color: cs.outlineVariant),
-            roundIcon(Symbols.format_list_bulleted_rounded, '目录', onOpenCatalog),
-            roundIcon(Symbols.stop_circle_rounded, '停止自动翻页', onStop),
-            roundIcon(Symbols.style_rounded, '阅读设置', onOpenSettings),
+            roundIcon(
+              Symbols.format_list_bulleted_rounded,
+              AppStrings.catalog,
+              onOpenCatalog,
+            ),
+            roundIcon(
+              Symbols.stop_circle_rounded,
+              AppStrings.autoPageStop,
+              onStop,
+            ),
+            roundIcon(
+              Symbols.style_rounded,
+              AppStrings.readingSettings,
+              onOpenSettings,
+            ),
           ],
         ),
       ),

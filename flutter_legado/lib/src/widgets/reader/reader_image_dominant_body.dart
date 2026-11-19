@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../../screens/reader_comic_screen.dart' show ComicImageDecodeCache;
@@ -123,7 +124,7 @@ class _ReaderImageDominantBodyState
   @override
   Widget build(BuildContext context) {
     if (_urls.isEmpty) {
-      return const Center(child: Text('暂无图片'));
+      return Center(child: Text(AppStrings.noImages));
     }
     final style = (widget.imageStyle ?? '').trim().toUpperCase();
     if (style == 'SINGLE') {
@@ -206,7 +207,10 @@ class _ReaderImageDominantBodyState
         errorWidget: (context, url, error) => SizedBox(
           height: 160,
           child: Center(
-            child: Text('图片加载失败', style: TextStyle(color: Colors.grey[600])),
+            child: Text(
+              AppStrings.imageLoadFailed,
+              style: TextStyle(color: Colors.grey[600]),
+            ),
           ),
         ),
       );
@@ -307,7 +311,7 @@ class _ReaderImageDominantBodyState
               onPressed: widget.hasPrevChapter && widget.onPrevChapter != null
                   ? () => widget.onPrevChapter!()
                   : null,
-              child: const Text('上一章'),
+              child: Text(AppStrings.previousChapter),
             ),
           ),
           const SizedBox(width: 12),
@@ -316,7 +320,7 @@ class _ReaderImageDominantBodyState
               onPressed: widget.hasNextChapter && widget.onNextChapter != null
                   ? () => widget.onNextChapter!()
                   : null,
-              child: const Text('下一章'),
+              child: Text(AppStrings.nextChapter),
             ),
           ),
         ],
@@ -395,7 +399,10 @@ class _FfiComicImageState extends ConsumerState<_FfiComicImage> {
           return SizedBox(
             height: 160,
             child: Center(
-              child: Text('图片加载失败', style: TextStyle(color: Colors.grey[600])),
+              child: Text(
+                AppStrings.imageLoadFailed,
+                style: TextStyle(color: Colors.grey[600]),
+              ),
             ),
           );
         }

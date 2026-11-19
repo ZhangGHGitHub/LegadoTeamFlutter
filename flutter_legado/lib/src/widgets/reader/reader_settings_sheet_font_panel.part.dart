@@ -66,11 +66,11 @@ class _ReaderFontPanelState extends ConsumerState<ReaderFontPanel> {
 
   /// 当前正文字体显示名（与 FontScreen 持久化键 reader_font_family 同步，
   /// 读取方式对标 reader_config_panel._loadFontLabel）
-  String _fontLabel = '默认字体';
+  String _fontLabel = AppStrings.defaultFont;
 
   /// 当前标题字体显示名（与 FontScreen titleFont 键同步；
   /// 空=「跟随正文」，[C3 标题字体]）
-  String _titleFontLabel = '跟随正文';
+  String _titleFontLabel = AppStrings.followBodyFont;
 
   /// 简繁转换类型（0=不转换 1=繁转简 2=简转繁，
   /// 对标原版 AppConfig.chineseConverterType / FFI setChineseConvertType）
@@ -112,8 +112,9 @@ class _ReaderFontPanelState extends ConsumerState<ReaderFontPanel> {
       final prefs = await SharedPreferences.getInstance();
       final family = prefs.getString('titleFont') ?? '';
       if (!mounted) return;
-      setState(() => _titleFontLabel =
-          family.isEmpty ? '跟随正文' : family.replaceFirst('Custom_', ''));
+      setState(() => _titleFontLabel = family.isEmpty
+          ? AppStrings.followBodyFont
+          : family.replaceFirst('Custom_', ''));
     } catch (_) {
       // 读取失败保持跟随正文标签
     }
@@ -246,11 +247,11 @@ class _ReaderFontPanelState extends ConsumerState<ReaderFontPanel> {
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionTitle('字体', Icons.font_download_outlined),
+          _sectionTitle(AppStrings.fontSection, Icons.font_download_outlined),
           // ===== 正文字体 / 选择字体（既有字体管理页链路，不重写） =====
           _row(
-            title: '选择字体',
-            subtitle: '正文字体',
+            title: AppStrings.selectFont,
+            subtitle: AppStrings.bodyFont,
             value: _fontLabel,
             leading: Icons.text_fields_outlined,
             onTap: () async {
@@ -268,7 +269,8 @@ class _ReaderFontPanelState extends ConsumerState<ReaderFontPanel> {
             padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
             child: Row(
               children: [
-                Text('正文字距', style: Theme.of(context).textTheme.bodyMedium),
+                Text(AppStrings.letterSpacingLabel,
+                    style: Theme.of(context).textTheme.bodyMedium),
                 Expanded(
                   child: Slider(
                     value: _config.letterSpacing.clamp(-0.5, 1.0),
@@ -297,16 +299,16 @@ class _ReaderFontPanelState extends ConsumerState<ReaderFontPanel> {
           // ===== 首行缩进（对标原版 tv_text_indent，5 档 无/一/二/三/四字符；
           // 我方既有字段 paragraphIndent 档位 0-3，按我方取值范围取前 4 档） =====
           _row(
-            title: '首行缩进',
+            title: AppStrings.firstLineIndent,
             value: _indentLabel(_config.paragraphIndent),
             onTap: () => _showChoiceDialog(
-              title: '首行缩进',
+              title: AppStrings.firstLineIndent,
               current: _config.paragraphIndent,
-              options: const {
-                0: '无缩进',
-                1: '一字符',
-                2: '二字符',
-                3: '三字符',
+              options: {
+                0: AppStrings.indentNone,
+                1: AppStrings.indent1,
+                2: AppStrings.indent2,
+                3: AppStrings.indent3,
               },
               onPick: (v) {
                 _config.paragraphIndent = v;
@@ -321,8 +323,8 @@ class _ReaderFontPanelState extends ConsumerState<ReaderFontPanel> {
           // FontScreen(target: 'title')；返回后重读标签并通知主 Sheet 推送
           // 共享配置（ReaderPageView 重读字体并触发重分页）
           _row(
-            title: '标题字体',
-            subtitle: '章节标题独立字体',
+            title: AppStrings.titleFontLabel,
+            subtitle: AppStrings.titleFontDesc,
             value: _titleFontLabel,
             leading: Icons.title_outlined,
             onTap: () async {
@@ -344,8 +346,8 @@ class _ReaderFontPanelState extends ConsumerState<ReaderFontPanel> {
           SwitchListTile(
             dense: true,
             contentPadding: EdgeInsets.zero,
-            title: const Text('斜体'),
-            subtitle: const Text('正文以斜体显示（测量与渲染同参）'),
+            title: Text(AppStrings.italicLabel),
+            subtitle: Text(AppStrings.italicDesc),
             value: _config.italic,
             onChanged: (v) {
               _config.italic = v;
@@ -357,14 +359,18 @@ class _ReaderFontPanelState extends ConsumerState<ReaderFontPanel> {
           // 既有字段 ReaderAdvancedConfig.textBold） =====
           Row(
             children: [
-              Text('字重', style: Theme.of(context).textTheme.bodyMedium),
+              Text(AppStrings.fontWeightLabel,
+                  style: Theme.of(context).textTheme.bodyMedium),
               const SizedBox(width: 16),
               Expanded(
                 child: SegmentedButton<int>(
-                  segments: const [
-                    ButtonSegment(value: 0, label: Text('中')),
-                    ButtonSegment(value: 1, label: Text('粗')),
-                    ButtonSegment(value: 2, label: Text('细')),
+                  segments: [
+                    ButtonSegment(
+                        value: 0, label: Text(AppStrings.fontWeightMedium)),
+                    ButtonSegment(
+                        value: 1, label: Text(AppStrings.fontWeightBold)),
+                    ButtonSegment(
+                        value: 2, label: Text(AppStrings.fontWeightLight)),
                   ],
                   selected: {_config.textBold.clamp(0, 2)},
                   onSelectionChanged: (sel) {
@@ -383,14 +389,18 @@ class _ReaderFontPanelState extends ConsumerState<ReaderFontPanel> {
             padding: const EdgeInsets.only(top: 8),
             child: Row(
               children: [
-                Text('简繁转换', style: Theme.of(context).textTheme.bodyMedium),
+                Text(AppStrings.chineseConversion,
+                    style: Theme.of(context).textTheme.bodyMedium),
                 const SizedBox(width: 12),
                 Expanded(
                   child: SegmentedButton<int>(
-                    segments: const [
-                      ButtonSegment(value: 0, label: Text('关闭')),
-                      ButtonSegment(value: 1, label: Text('繁→简')),
-                      ButtonSegment(value: 2, label: Text('简→繁')),
+                    segments: [
+                      ButtonSegment(
+                          value: 0, label: Text(AppStrings.closeLabel)),
+                      ButtonSegment(
+                          value: 1, label: Text(AppStrings.t2sShort)),
+                      ButtonSegment(
+                          value: 2, label: Text(AppStrings.s2tShort)),
                     ],
                     selected: {_convertType},
                     onSelectionChanged: (sel) => _onConvertTypeChanged(sel.first),
@@ -406,8 +416,13 @@ class _ReaderFontPanelState extends ConsumerState<ReaderFontPanel> {
 
   /// 缩进档位显示文案（对标 reader_config_panel._indentLabel）
   String _indentLabel(int v) {
-    const labels = ['无缩进', '一字符', '二字符', '三字符'];
-    if (v < 0 || v >= labels.length) return '二字符';
+    final labels = [
+      AppStrings.indentNone,
+      AppStrings.indent1,
+      AppStrings.indent2,
+      AppStrings.indent3,
+    ];
+    if (v < 0 || v >= labels.length) return AppStrings.indent2;
     return labels[v];
   }
 
@@ -451,7 +466,9 @@ class _ReaderFontPanelState extends ConsumerState<ReaderFontPanel> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('简繁转换设置失败: ${errorMessage(e)}')),
+          SnackBar(
+            content: Text(AppStrings.chineseConversionFailed(errorMessage(e))),
+          ),
         );
       }
     }

@@ -17,6 +17,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../models/book.dart';
 import '../../models/bookshelf_settings.dart';
 import '../../models/misc.dart';
@@ -194,7 +195,8 @@ class FolderGroupGridCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final countText = settings.showBookCount && !locked ? '$bookCount 本' : null;
+    final countText =
+        settings.showBookCount && !locked ? AppStrings.bookCount(bookCount) : null;
     return InkWell(
       key: ValueKey('bookshelf_folder_group_${group.groupId}'),
       onTap: onTap,
@@ -298,7 +300,8 @@ class FolderGroupListCard extends StatelessWidget {
     final cardColorValue = settings.cardColorFor(
       isDark: theme.brightness == Brightness.dark,
     );
-    final countText = settings.showBookCount && !locked ? '$bookCount 本' : null;
+    final countText =
+        settings.showBookCount && !locked ? AppStrings.bookCount(bookCount) : null;
     final firstBook = previews.isEmpty ? null : previews.first;
 
     final card = Material(
@@ -420,7 +423,7 @@ class FolderGroupListCard extends StatelessWidget {
                           if (!compact && firstBook != null) ...[
                             const SizedBox(height: 4),
                             Text(
-                              '最近阅读：${firstBook.name}',
+                              AppStrings.recentlyReadBook(firstBook.name),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
@@ -492,7 +495,8 @@ class FolderGroupHorizontalCard extends StatelessWidget {
       isDark: theme.brightness == Brightness.dark,
     );
     final coverCount = settings.bookshelfGroupCoverCount.clamp(1, 10);
-    final countText = settings.showBookCount && !locked ? '$bookCount 本' : null;
+    final countText =
+        settings.showBookCount && !locked ? AppStrings.bookCount(bookCount) : null;
 
     return Material(
       key: ValueKey('bookshelf_folder_group_${group.groupId}'),

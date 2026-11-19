@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
@@ -31,7 +32,7 @@ void showReaderOfflineCacheDialog(BuildContext context, WidgetRef ref) {
   if (book == null || chapters.isEmpty) return;
   if (book.origin == BookType.localTag) {
     ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('本地书籍无需缓存')));
+        .showSnackBar(SnackBar(content: Text(AppStrings.localBookNoCache)));
     return;
   }
   final totalChapters = chapters.length;
@@ -44,20 +45,22 @@ void showReaderOfflineCacheDialog(BuildContext context, WidgetRef ref) {
   showDialog<void>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: const Text('离线缓存'),
+      title: Text(AppStrings.offlineCache),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           TextField(
             controller: startCtrl,
             keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: '起始章节序号'),
+            decoration: InputDecoration(
+              labelText: AppStrings.startChapterIndex,
+            ),
           ),
           TextField(
             controller: endCtrl,
             keyboardType: TextInputType.number,
             decoration: InputDecoration(
-              labelText: '结束章节序号（共 $totalChapters 章）',
+              labelText: AppStrings.endChapterIndex('$totalChapters'),
             ),
           ),
         ],
@@ -65,7 +68,7 @@ void showReaderOfflineCacheDialog(BuildContext context, WidgetRef ref) {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(dialogContext),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         FilledButton(
           onPressed: () async {
@@ -74,7 +77,7 @@ void showReaderOfflineCacheDialog(BuildContext context, WidgetRef ref) {
             final end = int.tryParse(endCtrl.text) ?? totalChapters;
             if (start < 1 || end > totalChapters || start > end) {
               messenger.showSnackBar(
-                const SnackBar(content: Text('章节范围无效')),
+                SnackBar(content: Text(AppStrings.invalidChapterRange)),
               );
               return;
             }
@@ -87,21 +90,21 @@ void showReaderOfflineCacheDialog(BuildContext context, WidgetRef ref) {
               if (context.mounted) {
                 messenger.showSnackBar(
                   SnackBar(
-                    content: Text(
-                      '已加入缓存队列：$count 章（可在书籍菜单「缓存管理」查看进度）',
-                    ),
+                    content: Text(AppStrings.cacheQueued('$count')),
                   ),
                 );
               }
             } catch (e) {
               if (context.mounted) {
                 messenger.showSnackBar(
-                  SnackBar(content: Text('缓存启动失败：${errorMessage(e)}')),
+                  SnackBar(
+                    content: Text(AppStrings.cacheStartFailed(errorMessage(e))),
+                  ),
                 );
               }
             }
           },
-          child: const Text('开始缓存'),
+          child: Text(AppStrings.startCaching),
         ),
       ],
     ),

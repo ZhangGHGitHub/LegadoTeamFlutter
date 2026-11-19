@@ -9,6 +9,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../providers/providers.dart'
     show bookApiProvider, replaceEnableDefaultProvider;
@@ -119,7 +120,11 @@ Future<void> showReaderEditContentDialog(
   await showDialog<void>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: Text(chapter != null ? '编辑：${chapter.title}' : '编辑内容'),
+      title: Text(
+        chapter != null
+            ? AppStrings.editChapterNamed(chapter.title)
+            : AppStrings.editContent,
+      ),
       content: SizedBox(
         width: double.maxFinite,
         child: TextField(
@@ -132,14 +137,14 @@ Future<void> showReaderEditContentDialog(
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(dialogContext),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         FilledButton(
           onPressed: () {
             Navigator.pop(dialogContext);
             unawaited(_saveEditedContent(context, ref, ctrl.text));
           },
-          child: const Text('保存'),
+          child: Text(AppStrings.save),
         ),
       ],
     ),
@@ -166,12 +171,19 @@ Future<void> _saveEditedContent(
     if (!context.mounted) return;
     if (ok) {
       await ref.read(readerNotifierProvider.notifier).reloadChapterContent();
-      if (context.mounted) readerActionSnack(context, '章节内容已保存');
+      if (context.mounted) {
+        readerActionSnack(context, AppStrings.chapterContentSaved);
+      }
     } else {
-      readerActionSnack(context, '章节内容保存失败');
+      readerActionSnack(context, AppStrings.chapterContentSaveFailed);
     }
   } catch (e) {
-    if (context.mounted) readerActionSnack(context, '章节内容保存失败：${errorMessage(e)}');
+    if (context.mounted) {
+      readerActionSnack(
+        context,
+        AppStrings.chapterContentSaveFailedWith(errorMessage(e)),
+      );
+    }
   }
 }
 
@@ -196,7 +208,10 @@ Future<bool> updateReaderBookConfig(
     return true;
   } catch (e) {
     if (showError && context.mounted) {
-      readerActionSnack(context, '设置保存失败: ${errorMessage(e)}');
+      readerActionSnack(
+        context,
+        AppStrings.settingsSaveFailedWith(errorMessage(e)),
+      );
     }
     return false;
   }
@@ -296,7 +311,10 @@ Future<bool> toggleReaderReplaceRule(
     showError: showMessages,
   );
   if (ok && showMessages && context.mounted) {
-    readerActionSnack(context, enabled ? '已关闭替换规则' : '已开启替换规则');
+    readerActionSnack(
+      context,
+      enabled ? AppStrings.replaceRuleOff : AppStrings.replaceRuleOn,
+    );
   }
   return ok;
 }
@@ -323,20 +341,21 @@ Future<void> syncReaderProgress(BuildContext context, WidgetRef ref) async {
         final go = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
-            title: const Text('同步阅读进度'),
+            title: Text(AppStrings.syncReadingProgress),
             content: Text(
-              '云端进度更新（第 ${progress.durChapterIndex + 1} 章'
-              '${progress.durChapterTitle != null && progress.durChapterTitle!.isNotEmpty ? '「${progress.durChapterTitle}」' : ''}）。'
-              '\n是否跳转到云端进度？',
+              AppStrings.cloudProgressNewer(
+                '${progress.durChapterIndex + 1}',
+                progress.durChapterTitle ?? '',
+              ),
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('取消'),
+                child: Text(AppStrings.cancel),
               ),
               FilledButton(
                 onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('跳转'),
+                child: Text(AppStrings.jumpLabel),
               ),
             ],
           ),
@@ -354,18 +373,24 @@ Future<void> syncReaderProgress(BuildContext context, WidgetRef ref) async {
     if (!context.mounted) return;
     switch (result) {
       case 'uploaded':
-        messenger.showSnackBar(const SnackBar(content: Text('本地进度较新，已上传到云端')));
+        messenger.showSnackBar(
+          SnackBar(content: Text(AppStrings.localProgressUploaded)),
+        );
       case 'same':
-        messenger.showSnackBar(const SnackBar(content: Text('进度已与云端一致')));
+        messenger.showSnackBar(
+          SnackBar(content: Text(AppStrings.progressInSync)),
+        );
       case 'skipped':
         messenger.showSnackBar(
-          const SnackBar(content: Text('请先在 WebDAV 设置中开启「同步书籍进度」')),
+          SnackBar(content: Text(AppStrings.enableProgressSyncHint)),
         );
       case 'cloud':
         break; // 已弹确认框
     }
   } catch (e) {
     if (!context.mounted) return;
-    messenger.showSnackBar(SnackBar(content: Text('同步进度失败：${errorMessage(e)}')));
+    messenger.showSnackBar(
+      SnackBar(content: Text(AppStrings.syncProgressFailed(errorMessage(e)))),
+    );
   }
 }
