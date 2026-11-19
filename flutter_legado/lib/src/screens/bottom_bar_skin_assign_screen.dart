@@ -5,6 +5,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 
+import '../l10n/app_strings.dart';
 import '../services/bottom_bar_skin_format.dart';
 import '../services/bottom_bar_skin_service.dart';
 import '../widgets/ios_widgets.dart';
@@ -87,7 +88,7 @@ class _BottomBarSkinAssignScreenState extends State<BottomBarSkinAssignScreen> {
       if (imgs.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('暂存中无可用图片')),
+            SnackBar(content: Text(AppStrings.skinStagingNoImages)),
           );
           Navigator.pop(context);
         }
@@ -127,7 +128,7 @@ class _BottomBarSkinAssignScreenState extends State<BottomBarSkinAssignScreen> {
     }
     if (assigns.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请至少为一项选择「选中」图标')),
+        SnackBar(content: Text(AppStrings.skinSelectAtLeastOneSelected)),
       );
       return;
     }
@@ -146,7 +147,7 @@ class _BottomBarSkinAssignScreenState extends State<BottomBarSkinAssignScreen> {
       if (!mounted) return;
       setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('保存失败：${errorMessage(e)}')),
+        SnackBar(content: Text(AppStrings.saveFailedWith(errorMessage(e)))),
       );
     }
   }
@@ -169,7 +170,7 @@ class _BottomBarSkinAssignScreenState extends State<BottomBarSkinAssignScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  '选择图片',
+                  AppStrings.pickImage,
                   style: Theme.of(ctx).textTheme.titleMedium,
                 ),
                 if (allowClear)
@@ -180,7 +181,7 @@ class _BottomBarSkinAssignScreenState extends State<BottomBarSkinAssignScreen> {
                         Navigator.pop(ctx);
                         onPick(null);
                       },
-                      child: const Text('清除'),
+                      child: Text(AppStrings.clear),
                     ),
                   ),
                 const SizedBox(height: 8),
@@ -274,7 +275,7 @@ class _BottomBarSkinAssignScreenState extends State<BottomBarSkinAssignScreen> {
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       topBar: LegadoAppBar(
-        title: Text(editing ? '编辑' : '分配图标'),
+        title: Text(editing ? AppStrings.edit : AppStrings.skinAssignIconTitle),
         actions: [
           TextButton(
             onPressed: _saving || _loading ? null : _save,
@@ -284,7 +285,7 @@ class _BottomBarSkinAssignScreenState extends State<BottomBarSkinAssignScreen> {
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text('保存'),
+                : Text(AppStrings.save),
           ),
         ],
       ),
@@ -303,25 +304,25 @@ class _BottomBarSkinAssignScreenState extends State<BottomBarSkinAssignScreen> {
                         ),
                       ),
                     ),
-                  const IosSectionHeader('名称'),
+                  IosSectionHeader(AppStrings.nameLabel),
                   IosGroup(flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
                     children: [
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: TextField(
                           controller: _nameCtrl,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             // [B3] 分组卡行内名称输入：三态显式无边框，防主题底线式渗入
                             border: InputBorder.none,
                             enabledBorder: InputBorder.none,
                             focusedBorder: InputBorder.none,
-                            hintText: '图集名称',
+                            hintText: AppStrings.skinAlbumNameHint,
                           ),
                         ),
                       ),
                     ],
                   ),
-                  const IosSectionHeader('槽位'),
+                  IosSectionHeader(AppStrings.skinSlotsSection),
                   IosGroup(flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
                     children: [
                       for (var i = 0; i < _rows.length; i++) ...[
@@ -340,7 +341,7 @@ class _BottomBarSkinAssignScreenState extends State<BottomBarSkinAssignScreen> {
                                 ),
                               ),
                               _slotButton(
-                                caption: '选中',
+                                caption: AppStrings.skinSlotSelected,
                                 file: _rows[i].selected,
                                 enabled: true,
                                 onTap: () => _openPalette(
@@ -355,7 +356,7 @@ class _BottomBarSkinAssignScreenState extends State<BottomBarSkinAssignScreen> {
                               ),
                               const SizedBox(width: 16),
                               _slotButton(
-                                caption: '未选',
+                                caption: AppStrings.skinSlotNormal,
                                 file: _rows[i].normal,
                                 enabled: _rows[i].selected != null,
                                 onTap: () => _openPalette(
@@ -371,10 +372,7 @@ class _BottomBarSkinAssignScreenState extends State<BottomBarSkinAssignScreen> {
                       ],
                     ],
                   ),
-                  const IosSectionFooter(
-                    '点选缩略图从压缩包图片中分配。每个底栏项至少需要「选中」图；'
-                    '「未选」可空（运行时用选中图半透明近似）。',
-                  ),
+                  IosSectionFooter(AppStrings.skinAssignFooter),
                 ],
               ),
             ),

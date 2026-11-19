@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/privacy/privacy_content_notifier.dart';
@@ -98,7 +99,7 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setDialogState) => AlertDialog(
-          title: const Text('今日阅读目标'),
+          title: Text(AppStrings.homeTodayGoal),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -113,7 +114,7 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
                     },
                     icon: const Icon(Icons.remove_circle_outline_rounded),
                   ),
-                  Text('$draft 分钟',
+                  Text(AppStrings.homeMinutesValue(draft),
                       style: Theme.of(dialogContext).textTheme.titleMedium),
                   IconButton(
                     onPressed: () {
@@ -138,11 +139,11 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('取消'),
+              child: Text(AppStrings.cancel),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('确定'),
+              child: Text(AppStrings.confirm),
             ),
           ],
         ),
@@ -226,7 +227,7 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               IconButton(
-                tooltip: '其他设置',
+                tooltip: AppStrings.otherSettingsTitle,
                 icon: const Icon(Icons.settings_rounded),
                 onPressed: () =>
                     Navigator.pushNamed(context, AppRoutes.otherSettings),
@@ -235,7 +236,7 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            '首页',
+            AppStrings.homeTabTitle,
             // 参考版量测：标题字高 77px ≈ 28sp（现 headlineMedium 24sp → 放大至 28）
             style: Theme.of(context)
                 .textTheme
@@ -261,13 +262,15 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('累计阅读',
+                            Text(AppStrings.homeTotalReadBooks,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: Theme.of(context).textTheme.bodySmall),
                             Text(
                               // [P1-8] 隐私快照未就绪 → 占位（不先渲染真实本数）
-                              statsPending ? '— 本' : '$readBooks 本',
+                              statsPending
+                                  ? AppStrings.homeBooksPlaceholder
+                                  : AppStrings.homeBooksCount(readBooks),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: Theme.of(context).textTheme.titleMedium,
@@ -291,13 +294,15 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('阅读时长',
+                            Text(AppStrings.homeTotalReadingTime,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: Theme.of(context).textTheme.bodySmall),
                             Text(
                               // [P1-8] 未就绪占位；masked 时已按剔除后口径算
-                              statsPending ? '— 小时' : '$totalHours 小时',
+                              statsPending
+                                  ? AppStrings.homeHoursPlaceholder
+                                  : AppStrings.homeHoursValue(totalHours),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: Theme.of(context).textTheme.titleMedium,
@@ -322,8 +327,14 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
                     // [1-2 ③] 参考版目标图标=同心圆靶形（radar），替换时钟形
                     Icon(Symbols.radar_rounded, color: cs.primary),
                     const SizedBox(width: 10),
-                    Text('今日阅读目标',
-                        style: Theme.of(context).textTheme.titleMedium),
+                    // [L10N 批 2 组 C] 英文标题 "Today's Reading Goal" 长于中文，
+                    // 360dp 下裸 Text 会右溢；改 Expanded + 单行省略。
+                    Expanded(
+                      child: Text(AppStrings.homeTodayGoal,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleMedium),
+                    ),
                     const Spacer(),
                     // [1-2 ③] 参考版编辑钮=白底圆形浮钮（表面色+投影），替换裸图标
                     _GoalEditFab(onTap: _editGoal),
@@ -356,7 +367,7 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
                                 .headlineSmall
                                 ?.copyWith(fontWeight: FontWeight.w700),
                           ),
-                          Text('分钟',
+                          Text(AppStrings.homeMinutesUnit,
                               style: Theme.of(context).textTheme.bodySmall),
                         ],
                       ),
@@ -543,7 +554,7 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
     children: [
       Icon(Symbols.menu_book_rounded, size: 18, color: cs.primary),
       const SizedBox(width: 6),
-      Text('最近阅读',
+      Text(AppStrings.recentReading,
           style: Theme.of(context)
               .textTheme
               .titleSmall
@@ -615,13 +626,13 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
                         Icon(Symbols.lock_rounded,
                             size: 16, color: cs.primary),
                         const SizedBox(width: 6),
-                        Text('私密书籍',
+                        Text(AppStrings.privateBookTitle,
                             style: Theme.of(context).textTheme.titleMedium),
                       ],
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '内容已隐藏，解锁后查看',
+                      AppStrings.homePrivateHiddenHint,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context)
@@ -715,11 +726,11 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
       final locked = _isRecentLocked(record, privacy, privacyContent) ||
           (book != null && privacyContent.isBookLocked(book, privacy));
       if (locked) {
-        _showRecentMessage('该书为私密内容，请先在书架解锁后再打开');
+        _showRecentMessage(AppStrings.homePrivateUnlockFirst);
         return;
       }
       if (book == null) {
-        _showRecentMessage('书籍已不在书架中');
+        _showRecentMessage(AppStrings.homeBookNotOnShelf);
         return;
       }
       // 与阅读记录页同链路：分流编排统一在 BookOpenUtils.openBook
@@ -728,7 +739,7 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
     } catch (e) {
       debugPrint('[首页] 最近阅读打开失败：$e');
       if (!mounted) return;
-      _showRecentMessage('打开失败，请稍后重试');
+      _showRecentMessage(AppStrings.homeOpenFailedRetry);
     }
   }
 
@@ -830,7 +841,7 @@ class _GoalEditFab extends StatelessWidget {
         width: 40,
         height: 40,
         child: IconButton(
-          tooltip: '编辑目标',
+          tooltip: AppStrings.homeEditGoal,
           icon: const Icon(Icons.edit_rounded, size: 20),
           color: cs.onSurface,
           onPressed: onTap,

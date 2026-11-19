@@ -70,12 +70,12 @@ class _RssScreenState extends ConsumerState<RssScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('删除 RSS 源'),
-        content: Text('确定要删除「${source.sourceName}」吗？'),
+        title: Text(AppStrings.rssDeleteRssSource),
+        content: Text(AppStrings.rssConfirmDeleteNamed(source.sourceName)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () {
@@ -85,7 +85,7 @@ class _RssScreenState extends ConsumerState<RssScreen> {
             style: FilledButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.error,
             ),
-            child: const Text('删除'),
+            child: Text(AppStrings.delete),
           ),
         ],
       ),
@@ -102,7 +102,7 @@ class _RssScreenState extends ConsumerState<RssScreen> {
         title: AppStrings.rss,
         // [UI_SYNC_REFACTOR S1b 修正] subtitle=当前分组；搜索行默认收起
         subtitle: (state.selectedGroup?.isEmpty ?? true)
-            ? '全部'
+            ? AppStrings.allLabel
             : state.selectedGroup,
         initialExpanded: false,
         // [UI_SYNC_REFACTOR S1b] Dynamic 搜索行顶栏（对齐参考
@@ -127,7 +127,7 @@ class _RssScreenState extends ConsumerState<RssScreen> {
               fill: 1,
               color: Theme.of(context).colorScheme.onSurface,
             ),
-            tooltip: '阅读记录',
+            tooltip: AppStrings.readRecordLabel,
             onPressed: () => showDialog<void>(
               context: context,
               builder: (_) => const _ReadRecordDialog(),
@@ -139,12 +139,12 @@ class _RssScreenState extends ConsumerState<RssScreen> {
               fill: 1,
               color: Theme.of(context).colorScheme.onSurface,
             ),
-            tooltip: '收藏',
+            tooltip: AppStrings.rssFavoritesLabel,
             onPressed: () => Navigator.pushNamed(context, AppRoutes.rssFavorites),
           ),
           // 分组筛选：对齐原版 RssFragment 的分组菜单（ic_groups 图标，linkedSetOf 保序聚合）
           PopupMenuButton<String?>(
-            tooltip: '分组',
+            tooltip: AppStrings.rssGroupMenu,
             icon: Icon(
               Symbols.groups_rounded,
               fill: 1,
@@ -152,9 +152,9 @@ class _RssScreenState extends ConsumerState<RssScreen> {
             ),
             onSelected: (group) => notifier.setGroup(group),
             itemBuilder: (context) => [
-              const PopupMenuItem<String?>(
+              PopupMenuItem<String?>(
                 value: null,
-                child: Text('全部'),
+                child: Text(AppStrings.allLabel),
               ),
               for (final group in state.groups)
                 PopupMenuItem<String?>(
@@ -171,7 +171,7 @@ class _RssScreenState extends ConsumerState<RssScreen> {
               fill: 1,
               color: Theme.of(context).colorScheme.onSurface,
             ),
-            tooltip: '订阅源管理',
+            tooltip: AppStrings.rssFeedManagement,
             onPressed: () async {
               await Navigator.pushNamed(context, AppRoutes.rssSourceManage);
               if (mounted) notifier.loadSources();
@@ -183,7 +183,7 @@ class _RssScreenState extends ConsumerState<RssScreen> {
       body: Builder(
         builder: (context) {
           if (state.isLoadingSources && state.sources.isEmpty) {
-            return const LoadingIndicator(message: '加载 RSS 源...');
+            return LoadingIndicator(message: AppStrings.rssLoadingRssSources);
           }
 
           if (state.error != null && state.sources.isEmpty) {
@@ -197,8 +197,10 @@ class _RssScreenState extends ConsumerState<RssScreen> {
           // tvEmptyMsg 叠在 RecyclerView 中央（fragment_rss.xml）
           final displaySources = _applySearch(state.filteredSources);
           final emptyMsg = state.isEmpty
-              ? '当前没有订阅源！'
-              : (displaySources.isEmpty ? '当前分组暂无订阅源' : null);
+              ? AppStrings.rssNoSourcesNow
+              : (displaySources.isEmpty
+                  ? AppStrings.rssNoSourcesInGroup
+                  : null);
 
           // [LAYOUT_PLAN P4] 下拉 M3 化：裸 RefreshIndicator → CustomRefreshIndicator
           // [UI_SYNC_REFACTOR T1] 一比一对齐参考 RssScreen：头部双卡
@@ -217,7 +219,7 @@ class _RssScreenState extends ConsumerState<RssScreen> {
                         _buildEntryCard(
                           context,
                           Icons.subscriptions,
-                          '规则订阅',
+                          AppStrings.rssRuleSubscription,
                           () => Navigator.pushNamed(
                               context, AppRoutes.ruleSub),
                         ),
@@ -225,7 +227,7 @@ class _RssScreenState extends ConsumerState<RssScreen> {
                         _buildEntryCard(
                           context,
                           Icons.star,
-                          '收藏',
+                          AppStrings.rssFavoritesLabel,
                           () => Navigator.pushNamed(
                               context, AppRoutes.rssFavorites),
                         ),
@@ -330,7 +332,7 @@ class _RssScreenState extends ConsumerState<RssScreen> {
         // 现给出失败反馈 — Qoder
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('无法打开链接：$url')),
+            SnackBar(content: Text(AppStrings.rssCannotOpenLink(url))),
           );
         }
       }
@@ -413,11 +415,17 @@ class _RssScreenState extends ConsumerState<RssScreen> {
               children: [
                 Icon(icon, size: 24, color: cs.onSurface),
                 const SizedBox(width: 12),
-                Text(
-                  label,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                // [L10N 批 2 组 C] 英文标签（如 "Rule subscription"）显著长于
+                // 中文，360dp 下裸 Text 会右溢；改 Flexible + 单行省略。
+                Flexible(
+                  child: Text(
+                    label,
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),
@@ -519,9 +527,9 @@ class _ReadRecordDialogState extends ConsumerState<_ReadRecordDialog> {
   Future<void> _confirmClear() async {
     final confirmed = await showConfirmDialog(
       context,
-      title: '提示',
-      content: '确定清空全部阅读记录？',
-      confirmText: '删除',
+      title: AppStrings.noticeTitle,
+      content: AppStrings.rssConfirmClearAllRecords,
+      confirmText: AppStrings.delete,
       isDestructive: true,
     );
     if (confirmed && mounted) {
@@ -610,7 +618,7 @@ class _ReadRecordDialogState extends ConsumerState<_ReadRecordDialog> {
                 children: [
                   Expanded(
                     child: Text(
-                      '阅读记录',
+                      AppStrings.readRecordLabel,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w600,
                           ),
@@ -621,7 +629,7 @@ class _ReadRecordDialogState extends ConsumerState<_ReadRecordDialog> {
                         ? null
                         : _confirmClear,
                     child: Text(
-                      '清除',
+                      AppStrings.clear,
                       style: TextStyle(
                         color: (state.records.isEmpty || state.isClearing)
                             ? colorScheme.onSurfaceVariant
@@ -640,7 +648,7 @@ class _ReadRecordDialogState extends ConsumerState<_ReadRecordDialog> {
             SwitchListTile(
               dense: true,
               contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-              title: const Text('记录阅读历史'),
+              title: Text(AppStrings.rssRecordReadHistory),
               value: ref.watch(rssReadRecordPrefProvider),
               onChanged: (value) {
                 ref
@@ -669,12 +677,15 @@ class _ReadRecordDialogState extends ConsumerState<_ReadRecordDialog> {
       );
     }
     if (state.records.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 32),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('暂无阅读记录', style: TextStyle(fontSize: 14)),
+            Text(
+              AppStrings.rssNoReadingRecords,
+              style: const TextStyle(fontSize: 14),
+            ),
           ],
         ),
       );
@@ -695,7 +706,7 @@ class _ReadRecordDialogState extends ConsumerState<_ReadRecordDialog> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  record.title.isEmpty ? '(无标题)' : record.title,
+                  record.title.isEmpty ? AppStrings.rssUntitled : record.title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),

@@ -4,6 +4,7 @@ import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/privacy/privacy_content_notifier.dart';
 import '../providers/providers.dart';
@@ -65,11 +66,11 @@ class _EditBookInfoScreenState extends ConsumerState<EditBookInfoScreen> {
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       topBar: LegadoAppBar(
-        title: const Text('书籍信息编辑'),
+        title: Text(AppStrings.bookInfoEditTitle),
         actions: [
           TextButton(
             onPressed: _saving ? null : () => Navigator.pop(context, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton.icon(
             onPressed: _saving ? null : _save,
@@ -81,7 +82,7 @@ class _EditBookInfoScreenState extends ConsumerState<EditBookInfoScreen> {
                     child: AppCircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Symbols.check_rounded, size: 18),
-            label: const Text('保存'),
+            label: Text(AppStrings.save),
           ),
           const SizedBox(width: 8),
         ],
@@ -108,36 +109,36 @@ class _EditBookInfoScreenState extends ConsumerState<EditBookInfoScreen> {
                   children: [
                     TextFormField(
                       controller: _nameCtrl,
-                      decoration: const InputDecoration(
-                        labelText: '书名',
+                      decoration: InputDecoration(
+                        labelText: AppStrings.bookNameTip,
                       ),
                       textInputAction: TextInputAction.next,
                       validator: (v) => (v == null || v.trim().isEmpty)
-                          ? '书名不能为空'
+                          ? AppStrings.bookNameRequired
                           : null,
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: _authorCtrl,
-                      decoration: const InputDecoration(
-                        labelText: '作者',
+                      decoration: InputDecoration(
+                        labelText: AppStrings.author,
                       ),
                       textInputAction: TextInputAction.next,
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: _coverCtrl,
-                      decoration: const InputDecoration(
-                        labelText: '封面地址',
-                        hintText: '输入封面图片 URL',
+                      decoration: InputDecoration(
+                        labelText: AppStrings.coverUrlLabel,
+                        hintText: AppStrings.coverUrlHint,
                       ),
                       textInputAction: TextInputAction.next,
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: _introCtrl,
-                      decoration: const InputDecoration(
-                        labelText: '简介',
+                      decoration: InputDecoration(
+                        labelText: AppStrings.bookIntroLabel,
                         alignLabelWithHint: true,
                       ),
                       minLines: 4,
@@ -175,14 +176,14 @@ class _EditBookInfoScreenState extends ConsumerState<EditBookInfoScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '编辑书籍信息',
+                AppStrings.bookInfoEditTooltip,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
               ),
               const SizedBox(height: 8),
               Text(
-                '修改后点击保存生效',
+                AppStrings.bookInfoEditHint,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
@@ -248,13 +249,13 @@ class _EditBookInfoScreenState extends ConsumerState<EditBookInfoScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('书籍信息已保存')),
+        SnackBar(content: Text(AppStrings.bookInfoSaved)),
       );
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('保存失败: ${errorMessage(e)}')),
+        SnackBar(content: Text(AppStrings.bookInfoSaveFailed(errorMessage(e)))),
       );
       setState(() => _saving = false);
     }

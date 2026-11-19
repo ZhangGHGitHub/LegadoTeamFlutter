@@ -13,6 +13,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/bridge_http.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../routes.dart';
@@ -1147,7 +1148,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       if (!mounted) return;
       if (_book == null) {
         setState(() {
-          _error = '未找到书籍信息';
+          _error = AppStrings.comicBookNotFound;
           _loading = false;
         });
         return;
@@ -1181,7 +1182,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       if (!mounted) return;
       if (_chapters.isEmpty) {
         setState(() {
-          _error = '暂无章节';
+          _error = AppStrings.noChapters;
           _loading = false;
         });
         return;
@@ -1304,7 +1305,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       if (_imageUrls.isEmpty) {
         if (!_chapters[_currentChapterIndex].isVolume) {
           setState(() {
-            _error = '正文没有图片';
+            _error = AppStrings.comicNoImagesInContent;
             _errorChapterLevel = true;
           });
         }
@@ -1954,7 +1955,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
   Future<void> _savePageImage(int index) async {
     final data = await _resolvePageImage(index);
     if (data == null) {
-      _showPageActionSnackBar('无法获取图片数据');
+      _showPageActionSnackBar(AppStrings.comicNoImageData);
       return;
     }
     final fileName = 'manga-${DateTime.now().millisecondsSinceEpoch}${data.suffix}';
@@ -1963,7 +1964,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       // [D2] Android：MediaStore 直写（不经 SAF，绕开 file_picker 崩溃链路）
       final saved = await service.saveImageToDownloads(fileName, data.bytes);
       if (saved != null) {
-        _showPageActionSnackBar('已保存: $saved');
+        _showPageActionSnackBar(AppStrings.imageSavedTo(saved));
         return;
       }
       // 通道失败 / API < 29 → 兜底写应用文档目录（现有逻辑）
@@ -1971,9 +1972,9 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
         final dir = await getApplicationDocumentsDirectory();
         final file =
             File('${dir.path}/$fileName')..writeAsBytesSync(data.bytes);
-        _showPageActionSnackBar('已保存到文档目录: ${file.path}');
+        _showPageActionSnackBar(AppStrings.imageSavedToDocuments(file.path));
       } catch (e) {
-        _showPageActionSnackBar('保存图片失败: ${errorMessage(e)}');
+        _showPageActionSnackBar(AppStrings.imageSaveFailed(errorMessage(e)));
       }
       return;
     }
@@ -1984,21 +1985,21 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       // 旧代码漏传 → 保存恒失败且取消兜底分支永不可达）；取消时平台
       // 返回 null → 下方文档目录兜底写入仍由本方落盘，语义不变
       final path = await FilePicker.platform.saveFile(
-        dialogTitle: '保存图片',
+        dialogTitle: AppStrings.saveImageTitle,
         fileName: fileName,
         bytes: data.bytes,
       );
       if (path != null) {
         final file = File(path)..writeAsBytesSync(data.bytes);
-        _showPageActionSnackBar('已保存: ${file.path}');
+        _showPageActionSnackBar(AppStrings.imageSavedTo(file.path));
       } else {
         // 用户取消目录选择 → 兜底写应用文档目录
         final dir = await getApplicationDocumentsDirectory();
         final file = File('${dir.path}/$fileName')..writeAsBytesSync(data.bytes);
-        _showPageActionSnackBar('已保存到文档目录: ${file.path}');
+        _showPageActionSnackBar(AppStrings.imageSavedToDocuments(file.path));
       }
     } catch (e) {
-      _showPageActionSnackBar('保存图片失败: ${errorMessage(e)}');
+      _showPageActionSnackBar(AppStrings.imageSaveFailed(errorMessage(e)));
     }
   }
 
@@ -2007,7 +2008,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
   Future<void> _sharePageImage(int index) async {
     final data = await _resolvePageImage(index);
     if (data == null) {
-      _showPageActionSnackBar('无法获取图片数据');
+      _showPageActionSnackBar(AppStrings.comicNoImageData);
       return;
     }
     try {
@@ -2016,9 +2017,12 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
         '${dir.path}/manga-${DateTime.now().millisecondsSinceEpoch}${data.suffix}',
       );
       await file.writeAsBytes(data.bytes);
-      await Share.shareXFiles([XFile(file.path)], subject: '漫画图片');
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        subject: AppStrings.comicImageShareSubject,
+      );
     } catch (e) {
-      _showPageActionSnackBar('分享失败: ${errorMessage(e)}');
+      _showPageActionSnackBar(AppStrings.shareImageFailed(errorMessage(e)));
     }
   }
 
@@ -2030,9 +2034,9 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
   Future<void> _copyPageImage(int index) async {
     try {
       await Clipboard.setData(ClipboardData(text: _imageUrls[index]));
-      _showPageActionSnackBar('已复制图片链接');
+      _showPageActionSnackBar(AppStrings.comicImageLinkCopied);
     } catch (_) {
-      _showPageActionSnackBar('复制失败');
+      _showPageActionSnackBar(AppStrings.copyFailedShort);
     }
   }
 
@@ -2109,7 +2113,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
   /// 构建主内容区域
   Widget _buildContent() {
     if (_loading) {
-      return const LoadingIndicator(message: '加载漫画中...');
+      return LoadingIndicator(message: AppStrings.comicLoading);
     }
 
     if (_error != null) {
@@ -2139,7 +2143,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
             // 上下章按钮保留）
             if (!_hideMangaTitle) ...[
               Text(
-                chapter.title.isNotEmpty ? chapter.title : '暂无图片',
+                chapter.title.isNotEmpty ? chapter.title : AppStrings.noImages,
                 style: const TextStyle(color: Colors.white70, fontSize: 18),
               ),
               const SizedBox(height: 24),
@@ -2148,12 +2152,18 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
             if (_currentChapterIndex > 0)
               TextButton(
                 onPressed: _prevChapter,
-                child: const Text('上一章', style: TextStyle(color: Colors.white70)),
+                child: Text(
+                  AppStrings.previousChapter,
+                  style: const TextStyle(color: Colors.white70),
+                ),
               ),
             if (_currentChapterIndex < _chapters.length - 1)
               TextButton(
                 onPressed: _nextChapter,
-                child: const Text('下一章', style: TextStyle(color: Colors.white70)),
+                child: Text(
+                  AppStrings.nextChapter,
+                  style: const TextStyle(color: Colors.white70),
+                ),
               ),
           ],
         ),
@@ -2499,7 +2509,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
             const SizedBox(height: 12),
             // [STAGE-UI-P43UNIFY2 B4] 文案 0xFF888888 → 主题槽 onSurfaceVariant
             Text(
-              '图片加载失败',
+              AppStrings.imageLoadFailed,
               style: TextStyle(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
                 fontSize: 14,
@@ -2512,7 +2522,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
             OutlinedButton.icon(
               onPressed: () => _retryImage(index),
               icon: const Icon(Icons.refresh, size: 18),
-              label: const Text('重试'),
+              label: Text(AppStrings.retry),
             ),
           ],
         ),
@@ -2545,7 +2555,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
                 OutlinedButton.icon(
                   onPressed: _prevChapter,
                   icon: const Icon(Icons.arrow_back, size: 18),
-                  label: const Text('上一章'),
+                  label: Text(AppStrings.previousChapter),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.white70,
                     side: const BorderSide(color: Colors.white24),
@@ -2557,7 +2567,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
                 OutlinedButton.icon(
                   onPressed: _nextChapter,
                   icon: const Icon(Icons.arrow_forward, size: 18),
-                  label: const Text('下一章'),
+                  label: Text(AppStrings.nextChapter),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.white70,
                     side: const BorderSide(color: Colors.white24),
@@ -2633,7 +2643,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
         ? _chapters[_currentChapterIndex].title
         : null;
     return MangaMenuTopBar(
-      bookName: _book?.name ?? '漫画阅读',
+      bookName: _book?.name ?? AppStrings.comicReadingTitle,
       chapterName: chapterName,
       sourceName: _sourceName,
       onBack: () => Navigator.of(context).pop(),
@@ -2719,8 +2729,9 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       pageMax: (pageCount - 1).clamp(1, 999999).toDouble(),
       divisions: pageCount > 1 ? pageCount - 1 : null,
       pageEnabled: pageCount > 1,
-      readingPageDescription:
-          pageCount > 0 ? '页数 ${_visiblePageIndex + 1}/$pageCount' : '',
+      readingPageDescription: pageCount > 0
+          ? AppStrings.comicPageCount(_visiblePageIndex + 1, pageCount)
+          : '',
       onSeekPage: _seekToPage,
       // 目录键（弹目录 sheet，取证见 manga_catalog_sheet.dart）
       onOpenCatalog: _openCatalog,
@@ -3071,7 +3082,7 @@ class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
             const SizedBox(height: 12),
             // [STAGE-UI-P43UNIFY2 B4] 文案 0xFF888888 → 主题槽 onSurfaceVariant
             Text(
-              _error ?? '图片加载失败',
+              _error ?? AppStrings.imageLoadFailed,
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -3084,7 +3095,7 @@ class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
             OutlinedButton.icon(
               onPressed: _load,
               icon: const Icon(Icons.refresh, size: 18),
-              label: const Text('重试'),
+              label: Text(AppStrings.retry),
             ),
           ],
         ),
@@ -3303,7 +3314,7 @@ class _LocalCbzImageState extends ConsumerState<_LocalCbzImage> {
             ),
             const SizedBox(height: 12),
             Text(
-              _error ?? '图片加载失败',
+              _error ?? AppStrings.imageLoadFailed,
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -3314,7 +3325,7 @@ class _LocalCbzImageState extends ConsumerState<_LocalCbzImage> {
             OutlinedButton.icon(
               onPressed: _load,
               icon: const Icon(Icons.refresh, size: 18),
-              label: const Text('重试'),
+              label: Text(AppStrings.retry),
             ),
           ],
         ),
@@ -3443,7 +3454,7 @@ class _EpaperNetworkImageState extends State<_EpaperNetworkImage> {
       color: Colors.black.withValues(alpha: 0.55),
       child: Center(
         child: Text(
-          _error ?? '图片加载失败',
+          _error ?? AppStrings.imageLoadFailed,
           // [STAGE-UI-P43UNIFY2 B4] 文案 0xFF888888 → 主题槽 onSurfaceVariant
           style: TextStyle(
             color: Theme.of(context).colorScheme.onSurfaceVariant,

@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../bridge/ffi.dart' show BridgeError;
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/bookmark/bookmark_notifier.dart';
 import '../providers/privacy/privacy_content_notifier.dart';
@@ -48,7 +49,7 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       topBar: LegadoAppBar(
-        title: const Text('书签'),
+        title: Text(AppStrings.bookmarksLabel),
         actions: [
           IconButton(
             icon: const Icon(Symbols.search_rounded),
@@ -80,7 +81,7 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: () => notifier.loadAll(),
-              child: const Text('重试'),
+              child: Text(AppStrings.retry),
             ),
           ],
         ),
@@ -98,7 +99,9 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              _searchQuery.isEmpty ? '暂无书签' : '未找到匹配的书签',
+              _searchQuery.isEmpty
+                  ? AppStrings.noBookmarks
+                  : AppStrings.tocNoMatchingBookmarks,
               style: Theme.of(context).textTheme.bodyLarge,
             ),
           ],
@@ -163,14 +166,16 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
     await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除书签'),
+        title: Text(AppStrings.bookmarkDeleteTitle),
         content: Text(
-          locked ? '确定删除本书的书签吗？' : '确定删除「${bookmark.chapterName}」的书签吗？',
+          locked
+              ? AppStrings.bookmarkConfirmDeleteLocked
+              : AppStrings.bookmarkConfirmDeleteNamed(bookmark.chapterName),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           TextButton(
             onPressed: () async {
@@ -182,18 +187,18 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
                     .read(bookmarkNotifierProvider.notifier)
                     .deleteBookmark(bookmark.id);
                 if (!context.mounted) return;
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('书签已删除')));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(AppStrings.bookmarkDeleted)),
+                );
               } catch (e) {
                 if (!context.mounted) return;
                 final reason = e is BridgeError ? e.message : '$e';
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text('删除失败：$reason')));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(AppStrings.deleteFailed(reason))),
+                );
               }
             },
-            child: const Text('删除'),
+            child: Text(AppStrings.delete),
           ),
         ],
       ),
@@ -205,10 +210,10 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('搜索书签'),
+        title: Text(AppStrings.bookmarkSearchTitle),
         content: TextField(
           controller: _searchController,
-          decoration: const InputDecoration(hintText: '输入关键词搜索书签'),
+          decoration: InputDecoration(hintText: AppStrings.bookmarkSearchHint),
           autofocus: true,
           onSubmitted: (value) {
             Navigator.of(ctx).pop();
@@ -223,7 +228,7 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
               setState(() => _searchQuery = '');
               ref.read(bookmarkNotifierProvider.notifier).loadAll();
             },
-            child: const Text('清除'),
+            child: Text(AppStrings.clear),
           ),
           TextButton(
             onPressed: () {
@@ -232,7 +237,7 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
               setState(() => _searchQuery = query);
               ref.read(bookmarkNotifierProvider.notifier).search(query);
             },
-            child: const Text('搜索'),
+            child: Text(AppStrings.search),
           ),
         ],
       ),
@@ -354,7 +359,7 @@ class _BookmarkTile extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    '第 ${bookmark.chapterIndex + 1} 章',
+                    AppStrings.chapterNumberLabel(bookmark.chapterIndex + 1),
                     style: theme.textTheme.labelSmall?.copyWith(
                       // [FIX 2026-09-04] 正文次要文字走 onSurfaceVariant（outline 仅用于边框/装饰图标）
                       color: theme.colorScheme.onSurfaceVariant,
@@ -376,7 +381,7 @@ class _BookmarkTile extends StatelessWidget {
               if (bookmark.content.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(
-                  '备注: ${bookmark.content}',
+                  AppStrings.bookmarkNote(bookmark.content),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.secondary,
                     fontStyle: FontStyle.italic,

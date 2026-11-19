@@ -9,6 +9,7 @@ import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../providers/auto_task/auto_task_notifier.dart';
 import '../providers/providers.dart';
 import '../services/bridge_http.dart';
@@ -100,9 +101,9 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
         .tasks
         .any((t) => t.id == taskId);
     if (exists || listFailed) {
-      if (mounted) _snack(context, '暂时无法编辑该任务，请稍后重试');
+      if (mounted) _snack(context, AppStrings.autoTaskEditUnavailable);
     } else if (mounted) {
-      _snack(context, '未找到对应的定时任务');
+      _snack(context, AppStrings.autoTaskNotFound);
     }
   }
 
@@ -147,10 +148,15 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
     if (ok) {
       _resyncScheduler();
       if (mounted) {
-        _snack(context, isNew ? '已创建任务: ${confirmed.name}' : '已更新任务: ${confirmed.name}');
+        _snack(
+          context,
+          isNew
+              ? AppStrings.autoTaskCreated(confirmed.name)
+              : AppStrings.autoTaskUpdated(confirmed.name),
+        );
       }
     } else if (mounted) {
-      _snack(context, '保存失败');
+      _snack(context, AppStrings.saveFailedNoReason);
     }
   }
 
@@ -175,7 +181,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       topBar: LegadoAppBar(
-        title: const Text('定时任务'),
+        title: Text(AppStrings.autoTasksEntry),
         // [UI-fix v2.0.3 | 2026-08-06] 溢出菜单（对标原版 AutoTaskActivity
         // menu_import_local / menu_import_on_line / menu_export / menu_help）
         // — Qoder
@@ -200,12 +206,27 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
                   break;
               }
             },
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 'import_local', child: Text('导入本地任务')),
-              PopupMenuItem(value: 'import_online', child: Text('导入线上任务')),
-              PopupMenuItem(value: 'import_passphrase', child: Text('口令导入')),
-              PopupMenuItem(value: 'export', child: Text('导出任务')),
-              PopupMenuItem(value: 'help', child: Text('帮助')),
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'import_local',
+                child: Text(AppStrings.autoTaskImportLocal),
+              ),
+              PopupMenuItem(
+                value: 'import_online',
+                child: Text(AppStrings.autoTaskImportOnline),
+              ),
+              PopupMenuItem(
+                value: 'import_passphrase',
+                child: Text(AppStrings.importPassphraseAction),
+              ),
+              PopupMenuItem(
+                value: 'export',
+                child: Text(AppStrings.autoTaskExportTasks),
+              ),
+              PopupMenuItem(
+                value: 'help',
+                child: Text(AppStrings.helpLabel),
+              ),
             ],
           ),
         ],
@@ -230,7 +251,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
                   const SizedBox(height: 16),
                   FilledButton(
                     onPressed: () => notifier.loadTasks(),
-                    child: const Text('重试'),
+                    child: Text(AppStrings.retry),
                   ),
                 ],
               ),
@@ -245,12 +266,12 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
                   Icon(Symbols.schedule_rounded, size: 64,
                       color: Theme.of(context).colorScheme.onSurfaceVariant),
                   const SizedBox(height: 8),
-                  Text('暂无定时任务',
+                  Text(AppStrings.autoTasksEmpty,
                       style: TextStyle(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontSize: 16)),
                   const SizedBox(height: 4),
-                  Text('点击右下角按钮添加新任务',
+                  Text(AppStrings.autoTasksEmptyHint,
                       style: TextStyle(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontSize: 12)),
@@ -330,7 +351,9 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
           ),
           if (task.lastRunAt != null) ...[
             const SizedBox(height: 2),
-            Text('上次运行: ${task.lastRunAt} · ${task.lastResult ?? "未知"}',
+            Text(
+                AppStrings.autoTaskLastRun(
+                    '${task.lastRunAt}', task.lastResult ?? AppStrings.unknownLabel),
                 // [LAYOUT_PLAN P3] 列表行字级走 M3 Type Scale
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant)),
@@ -362,30 +385,34 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(28),
           ),
-          title: const Text('添加定时任务'),
+          title: Text(AppStrings.autoTaskAddTitle),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
                   controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: '任务名称',
-                    hintText: '例如：每日刷新',
+                  decoration: InputDecoration(
+                    labelText: AppStrings.taskNameLabel,
+                    hintText: AppStrings.taskNameHint,
                   ),
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   initialValue: taskType,
-                  decoration: const InputDecoration(
-                    labelText: '任务类型',
+                  decoration: InputDecoration(
+                    labelText: AppStrings.taskTypeLabel,
                   ),
-                  items: const [
+                  items: [
                     DropdownMenuItem(
-                        value: 'refreshToc', child: Text('刷新目录')),
+                        value: 'refreshToc',
+                        child: Text(AppStrings.taskTypeRefreshToc)),
                     DropdownMenuItem(
-                        value: 'updateSources', child: Text('更新书源')),
-                    DropdownMenuItem(value: 'backup', child: Text('自动备份')),
+                        value: 'updateSources',
+                        child: Text(AppStrings.taskTypeUpdateSources)),
+                    DropdownMenuItem(
+                        value: 'backup',
+                        child: Text(AppStrings.webdavAutoBackup)),
                   ],
                   onChanged: (val) {
                     setDialogState(() => taskType = val ?? 'refreshToc');
@@ -394,10 +421,10 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: cronController,
-                  decoration: const InputDecoration(
-                    labelText: 'Cron 表达式',
+                  decoration: InputDecoration(
+                    labelText: AppStrings.cronLabel,
                     hintText: '0 8 * * *',
-                    helperText: '标准5位 cron 表达式（分 时 日 月 周）',
+                    helperText: AppStrings.cronHelper,
                   ),
                 ),
               ],
@@ -406,7 +433,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消'),
+              child: Text(AppStrings.cancel),
             ),
             FilledButton(
               onPressed: () {
@@ -422,7 +449,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
                   ),
                 );
               },
-              child: const Text('添加'),
+              child: Text(AppStrings.addAction),
             ),
           ],
         ),
@@ -434,7 +461,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
       _resyncScheduler();
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已添加任务: ${result.name}')),
+          SnackBar(content: Text(AppStrings.autoTaskAdded(result.name))),
         );
       }
     }
@@ -454,13 +481,13 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
               contentPadding:
                   const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
               leading: const Icon(Symbols.play_arrow_rounded),
-              title: const Text('立即运行'),
+              title: Text(AppStrings.autoTaskRunNow),
               subtitle: Text(task.name),
               onTap: () {
                 Navigator.pop(ctx);
                 provider.runNow(task.id).then((_) => _resyncScheduler());
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('正在运行: ${task.name}')),
+                  SnackBar(content: Text(AppStrings.autoTaskRunning(task.name))),
                 );
               },
             ),
@@ -470,8 +497,8 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
               contentPadding:
                   const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
               leading: const Icon(Symbols.bug_report_rounded),
-              title: const Text('调试'),
-              subtitle: const Text('执行并查看结果日志'),
+              title: Text(AppStrings.debugLabel),
+              subtitle: Text(AppStrings.autoTaskDebugDesc),
               onTap: () {
                 Navigator.pop(ctx);
                 _openTaskDebug(context, task);
@@ -482,7 +509,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
               contentPadding:
                   const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
               leading: const Icon(Symbols.edit_rounded),
-              title: const Text('编辑任务'),
+              title: Text(AppStrings.autoTaskEditTask),
               onTap: () {
                 Navigator.pop(ctx);
                 _showEditTaskDialog(context, task);
@@ -493,7 +520,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
               contentPadding:
                   const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
               leading: Icon(Symbols.delete_rounded, color: Theme.of(context).colorScheme.error),
-              title: Text('删除任务',
+              title: Text(AppStrings.autoTaskDeleteTask,
                   style: TextStyle(color: Theme.of(context).colorScheme.error)),
               onTap: () {
                 Navigator.pop(ctx);
@@ -529,29 +556,33 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(28),
           ),
-          title: const Text('编辑定时任务'),
+          title: Text(AppStrings.autoTaskEditTitle),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
                   controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: '任务名称',
+                  decoration: InputDecoration(
+                    labelText: AppStrings.taskNameLabel,
                   ),
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   initialValue: taskType,
-                  decoration: const InputDecoration(
-                    labelText: '任务类型',
+                  decoration: InputDecoration(
+                    labelText: AppStrings.taskTypeLabel,
                   ),
-                  items: const [
+                  items: [
                     DropdownMenuItem(
-                        value: 'refreshToc', child: Text('刷新目录')),
+                        value: 'refreshToc',
+                        child: Text(AppStrings.taskTypeRefreshToc)),
                     DropdownMenuItem(
-                        value: 'updateSources', child: Text('更新书源')),
-                    DropdownMenuItem(value: 'backup', child: Text('自动备份')),
+                        value: 'updateSources',
+                        child: Text(AppStrings.taskTypeUpdateSources)),
+                    DropdownMenuItem(
+                        value: 'backup',
+                        child: Text(AppStrings.webdavAutoBackup)),
                   ],
                   onChanged: (value) {
                     setDialogState(() => taskType = value ?? 'refreshToc');
@@ -560,9 +591,9 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: cronController,
-                  decoration: const InputDecoration(
-                    labelText: 'Cron 表达式',
-                    helperText: '标准5位 cron 表达式（分 时 日 月 周）',
+                  decoration: InputDecoration(
+                    labelText: AppStrings.cronLabel,
+                    helperText: AppStrings.cronHelper,
                   ),
                 ),
               ],
@@ -571,7 +602,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消'),
+              child: Text(AppStrings.cancel),
             ),
             FilledButton(
               onPressed: () {
@@ -585,7 +616,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
                   ),
                 );
               },
-              child: const Text('保存'),
+              child: Text(AppStrings.save),
             ),
           ],
         ),
@@ -599,7 +630,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
         _resyncScheduler();
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('已更新任务: ${result.name}')),
+            SnackBar(content: Text(AppStrings.autoTaskUpdated(result.name))),
           );
         }
       }
@@ -625,10 +656,12 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
       if (path == null) return;
       final raw = await File(path).readAsString();
       if (context.mounted) {
-        await _importFromRaw(context, raw, '本地文件');
+        await _importFromRaw(context, raw, AppStrings.localFileLabel);
       }
     } catch (e) {
-      if (context.mounted) _snack(context, '读取文件失败: ${errorMessage(e)}');
+      if (context.mounted) {
+        _snack(context, AppStrings.readFileFailedWith(errorMessage(e)));
+      }
     }
   }
 
@@ -643,7 +676,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(28),
         ),
-        title: const Text('导入线上任务'),
+        title: Text(AppStrings.autoTaskImportOnline),
         content: TextField(
           controller: ctrl,
           decoration: const InputDecoration(
@@ -654,7 +687,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () {
@@ -663,7 +696,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
               if (url.isEmpty) return;
               _importOnline(context, url);
             },
-            child: const Text('导入'),
+            child: Text(AppStrings.importLabel),
           ),
         ],
       ),
@@ -672,7 +705,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
 
   /// 线上导入（对标 ImportAutoTaskDialog 网络分支）
   Future<void> _importOnline(BuildContext context, String url) async {
-    _snack(context, '正在获取任务配置…');
+    _snack(context, AppStrings.autoTaskFetchingConfig);
     try {
       final api = ref.read(bookApiProvider);
       final resp = await bridgeHttpGet(
@@ -682,15 +715,17 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
       );
       if (!resp.isSuccess) {
         if (context.mounted) {
-          _snack(context, '下载失败: HTTP ${resp.statusCode}');
+          _snack(context, AppStrings.downloadFailedHttp(resp.statusCode));
         }
         return;
       }
       if (context.mounted) {
-        await _importFromRaw(context, resp.body, '线上');
+        await _importFromRaw(context, resp.body, AppStrings.onlineLabel);
       }
     } catch (e) {
-      if (context.mounted) _snack(context, '下载失败: ${errorMessage(e)}');
+      if (context.mounted) {
+        _snack(context, AppStrings.downloadFailedWith(errorMessage(e)));
+      }
     }
   }
 
@@ -709,11 +744,11 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
           .map((e) => Map<String, dynamic>.from(e))
           .toList();
     } catch (_) {
-      _snack(context, '导入失败：JSON 格式无效');
+      _snack(context, AppStrings.importFailedJsonInvalid);
       return;
     }
     if (imported.isEmpty) {
-      _snack(context, '导入失败：未找到任务数据');
+      _snack(context, AppStrings.importFailedNoTaskData);
       return;
     }
 
@@ -734,7 +769,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
       final task = Map<String, dynamic>.of(imported[i]);
       final name = (task['name']?.toString() ?? '').trim();
       if (name.isEmpty) {
-        errors.add('缺少任务名称');
+        errors.add(AppStrings.autoTaskMissingName);
         continue;
       }
       task['name'] = name;
@@ -747,14 +782,14 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
       final due = await notifier.nextDueAt(cron: effectiveCron);
       final cronValid = due == null ? _isFiveFieldCron(effectiveCron) : due != -1;
       if (!cronValid) {
-        errors.add('「$name」请输入有效的五段 Cron 计划');
+        errors.add(AppStrings.autoTaskInvalidCron(name));
         continue;
       }
       final rawScript = task['script']?.toString() ?? '';
       final normalizedScript = await notifier.normalizeScript(rawScript);
       final script = (normalizedScript ?? rawScript).trim();
       if (script.isEmpty) {
-        errors.add('「$name」请输入 JavaScript 任务脚本');
+        errors.add(AppStrings.autoTaskMissingScript(name));
         continue;
       }
       task['script'] = normalizedScript ?? rawScript;
@@ -764,7 +799,11 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
       if (!context.mounted) return;
       _snack(
         context,
-        errors.isEmpty ? '导入失败：任务数据无效' : '导入失败：${errors.join('；')}',
+        errors.isEmpty
+            ? AppStrings.importFailedTaskDataInvalid
+            : AppStrings.importFailedWithDetails(
+                errors.join(AppStrings.semicolonJoinSeparator),
+              ),
       );
       return;
     }
@@ -785,7 +824,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
     }
     if (newTasks.isEmpty) {
       if (!context.mounted) return;
-      _snack(context, '导入失败：任务数据无效');
+      _snack(context, AppStrings.importFailedTaskDataInvalid);
       return;
     }
 
@@ -793,16 +832,18 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('导入任务'),
-        content: Text('从$source发现 ${newTasks.length} 个任务，是否导入？'),
+        title: Text(AppStrings.autoTaskImportTitle),
+        content: Text(
+          AppStrings.autoTaskImportConfirm(source, newTasks.length),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('导入'),
+            child: Text(AppStrings.importLabel),
           ),
         ],
       ),
@@ -846,7 +887,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
   Future<void> _exportTasks(BuildContext context) async {
     final tasks = ref.read(autoTaskNotifierProvider).tasks;
     if (tasks.isEmpty) {
-      _snack(context, '暂无任务可导出');
+      _snack(context, AppStrings.autoTaskNoTasksToExport);
       return;
     }
     final json = jsonEncode(tasks.map((t) => t.toJson()).toList());
@@ -854,7 +895,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
       context,
       content: json,
       fileName: 'exportAutoTask.json',
-      subject: '导出定时任务',
+      subject: AppStrings.autoTaskExportSubject,
       passphraseType: SourcePassphraseType.autoTask,
     );
     if (!context.mounted || result == null) return;
@@ -872,22 +913,22 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除任务'),
-        content: Text('确定要删除任务「${task.name}」吗？'),
+        title: Text(AppStrings.autoTaskDeleteTask),
+        content: Text(AppStrings.autoTaskConfirmDeleteNamed(task.name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () {
               Navigator.pop(ctx);
               provider.deleteTask(task.id).then((_) => _resyncScheduler());
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('已删除任务: ${task.name}')),
+                SnackBar(content: Text(AppStrings.autoTaskDeleted(task.name))),
               );
             },
-            child: const Text('删除'),
+            child: Text(AppStrings.delete),
           ),
         ],
       ),
@@ -958,7 +999,7 @@ class _BookUpdateTaskDialogState extends State<_BookUpdateTaskDialog> {
     if (!valid) {
       setState(() {
         _validating = false;
-        _cronError = 'Cron 表达式无效，请检查格式';
+        _cronError = AppStrings.cronInvalidFormat;
       });
       return;
     }
@@ -974,14 +1015,18 @@ class _BookUpdateTaskDialogState extends State<_BookUpdateTaskDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.isNew ? '创建书籍更新任务' : '编辑书籍更新任务'),
+      title: Text(
+        widget.isNew
+            ? AppStrings.createBookUpdateTask
+            : AppStrings.editBookUpdateTask,
+      ),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '到期后自动刷新该书目录并提示更新',
+              AppStrings.autoTaskBookUpdateDesc,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -989,8 +1034,8 @@ class _BookUpdateTaskDialogState extends State<_BookUpdateTaskDialog> {
             const SizedBox(height: 12),
             TextField(
               controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: '任务名称',
+              decoration: InputDecoration(
+                labelText: AppStrings.taskNameLabel,
               ),
             ),
             const SizedBox(height: 12),
@@ -1002,10 +1047,10 @@ class _BookUpdateTaskDialogState extends State<_BookUpdateTaskDialog> {
                 }
               },
               decoration: InputDecoration(
-                labelText: 'Cron 表达式',
+                labelText: AppStrings.cronLabel,
                 hintText: '*/30 * * * *',
                 border: const OutlineInputBorder(),
-                helperText: '标准5位 cron 表达式（分 时 日 月 周）',
+                helperText: AppStrings.cronHelper,
                 errorText: _cronError,
               ),
             ),
@@ -1015,11 +1060,11 @@ class _BookUpdateTaskDialogState extends State<_BookUpdateTaskDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         FilledButton(
           onPressed: _validating ? null : _onConfirm,
-          child: Text(widget.isNew ? '创建' : '保存'),
+          child: Text(widget.isNew ? AppStrings.createAction : AppStrings.save),
         ),
       ],
     );
@@ -1041,7 +1086,7 @@ Future<({int count, List<String> failures})> writeImportedAutoTasks({
   final failures = <String>[];
   for (final task in tasks) {
     final name = (task['name']?.toString() ?? '').trim();
-    final label = name.isEmpty ? '未命名任务' : name;
+    final label = name.isEmpty ? AppStrings.autoTaskUnnamed : name;
     try {
       if (await create(jsonEncode(task))) {
         count++;
@@ -1049,10 +1094,17 @@ Future<({int count, List<String> failures})> writeImportedAutoTasks({
       }
       final reason = lastError()?.trim();
       failures.add(
-        '$label：${reason == null || reason.isEmpty ? '写入失败' : reason}',
+        AppStrings.autoTaskLabeledReason(
+          label,
+          reason == null || reason.isEmpty
+              ? AppStrings.autoTaskWriteFailed
+              : reason,
+        ),
       );
     } catch (e) {
-      failures.add('$label：${errorMessage(e)}');
+      failures.add(
+        AppStrings.autoTaskLabeledReason(label, errorMessage(e)),
+      );
     }
   }
   return (count: count, failures: failures);
@@ -1066,14 +1118,25 @@ String importTasksResultMessage({
   required int parseErrors,
   required List<String> writeFailures,
 }) {
-  final parts = <String>[count == 0 ? '未导入任何任务' : '已导入 $count 个任务'];
+  final parts = <String>[
+    count == 0
+        ? AppStrings.autoTaskNoneImported
+        : AppStrings.autoTaskImportedCount(count),
+  ];
   if (parseErrors > 0) {
-    parts.add('跳过 $parseErrors 个无效任务');
+    parts.add(AppStrings.autoTaskSkippedInvalid(parseErrors));
   }
   if (writeFailures.isNotEmpty) {
-    final more =
-        writeFailures.length > 1 ? '（另有 ${writeFailures.length - 1} 个）' : '';
-    parts.add('${writeFailures.length} 个写入失败：${writeFailures.first}$more');
+    final more = writeFailures.length > 1
+        ? AppStrings.autoTaskWriteFailuresMore(writeFailures.length - 1)
+        : '';
+    parts.add(
+      AppStrings.autoTaskWriteFailures(
+        writeFailures.length,
+        writeFailures.first,
+        more,
+      ),
+    );
   }
-  return parts.join('，');
+  return parts.join(AppStrings.commaJoinSeparator);
 }

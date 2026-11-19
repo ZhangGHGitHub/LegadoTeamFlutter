@@ -4,6 +4,7 @@ import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 
+import '../l10n/app_strings.dart';
 import 'curl_analyze_url_sheet.dart';
 
 /// 代码编辑结果（对齐 CodeEditActivity RESULT_ACTION_*）
@@ -116,16 +117,16 @@ class _CodeEditScreenState extends State<CodeEditScreen> {
     final leave = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('退出'),
-        content: const Text('内容尚未保存，确定退出？'),
+        title: Text(AppStrings.exitLabel),
+        content: Text(AppStrings.codeEditUnsavedConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('退出'),
+            child: Text(AppStrings.exitLabel),
           ),
         ],
       ),
@@ -181,7 +182,7 @@ class _CodeEditScreenState extends State<CodeEditScreen> {
     if (idx < 0) idx = text.indexOf(q);
     if (idx < 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('未找到')),
+        SnackBar(content: Text(AppStrings.codeEditNotFound)),
       );
       return;
     }
@@ -215,17 +216,17 @@ class _CodeEditScreenState extends State<CodeEditScreen> {
           actions: [
             if (widget.writable && widget.showDebugSource)
               IconButton(
-                tooltip: '调试',
+                tooltip: AppStrings.debugLabel,
                 icon: const Icon(Symbols.bug_report_rounded),
                 onPressed: () => _save(debug: true),
               ),
             if (widget.writable)
               TextButton(
                 onPressed: () => _save(),
-                child: const Text('保存'),
+                child: Text(AppStrings.save),
               ),
             PopupMenuButton<String>(
-              tooltip: '更多',
+              tooltip: AppStrings.moreActions,
               position: PopupMenuPosition.under,
               onSelected: (v) async {
                 switch (v) {
@@ -242,17 +243,29 @@ class _CodeEditScreenState extends State<CodeEditScreen> {
                     );
                     if (mounted) {
                       messenger.showSnackBar(
-                        const SnackBar(content: Text('已复制全部')),
+                        SnackBar(content: Text(AppStrings.codeEditCopiedAll)),
                       );
                     }
                 }
               },
               itemBuilder: (_) => [
-                const PopupMenuItem(value: 'find', child: Text('查找')),
-                const PopupMenuItem(value: 'curl', child: Text('cURL 转换')),
+                PopupMenuItem(
+                  value: 'find',
+                  child: Text(AppStrings.codeEditFind),
+                ),
+                PopupMenuItem(
+                  value: 'curl',
+                  child: Text(AppStrings.codeEditCurlConvert),
+                ),
                 if (widget.writable && widget.showDebugSource)
-                  const PopupMenuItem(value: 'debug', child: Text('调试')),
-                const PopupMenuItem(value: 'copy_all', child: Text('复制全部')),
+                  PopupMenuItem(
+                    value: 'debug',
+                    child: Text(AppStrings.debugLabel),
+                  ),
+                PopupMenuItem(
+                  value: 'copy_all',
+                  child: Text(AppStrings.codeEditCopyAll),
+                ),
               ],
             ),
           ],
@@ -274,20 +287,20 @@ class _CodeEditScreenState extends State<CodeEditScreen> {
                         child: TextField(
                           controller: _findCtrl,
                           // [LAYOUT_PLAN P2] 输入框走 inputDecorationTheme，不手写边框
-                          decoration: const InputDecoration(
-                            hintText: '查找…',
+                          decoration: InputDecoration(
+                            hintText: AppStrings.codeEditFindHint,
                             isDense: true,
                           ),
                           onSubmitted: (_) => _findNext(),
                         ),
                       ),
                       IconButton(
-                        tooltip: '下一个',
+                        tooltip: AppStrings.codeEditNext,
                         onPressed: _findNext,
                         icon: const Icon(Symbols.keyboard_arrow_down_rounded),
                       ),
                       IconButton(
-                        tooltip: '关闭',
+                        tooltip: AppStrings.closeLabel,
                         onPressed: () => setState(() => _showFind = false),
                         icon: const Icon(Symbols.close_rounded),
                       ),

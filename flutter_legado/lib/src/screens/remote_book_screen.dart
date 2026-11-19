@@ -5,6 +5,7 @@ import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/remote_book/remote_book_notifier.dart';
 import '../routes.dart';
@@ -58,7 +59,9 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
     // 其余按「成功 N 本 + M 本失败 + 首条原因」与压缩包导入同范式提示。
     if (count == 0 && failures.isEmpty) {
       messenger.showSnackBar(
-        SnackBar(content: Text(state.error ?? '导入失败')),
+        SnackBar(
+          content: Text(state.error ?? AppStrings.importFailedShort),
+        ),
       );
       return;
     }
@@ -89,15 +92,15 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
       child: AppScaffold(
         // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
         topBar: LegadoAppBar(
-          title: const Text('远程书籍'),
+          title: Text(AppStrings.remoteBooks),
           actions: [
             IconButton(
               icon: const Icon(Symbols.help_rounded),
-              tooltip: '帮助',
+              tooltip: AppStrings.helpLabel,
               onPressed: () => showHelp(context, HelpAssets.webDavBookHelp),
             ),
             IconButton(
-              tooltip: '刷新',
+              tooltip: AppStrings.refreshActionLabel,
               icon: const Icon(Symbols.refresh_rounded),
               onPressed: state.isLoading ? null : () => notifier.refresh(),
             ),
@@ -117,22 +120,25 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                 }
               },
               itemBuilder: (_) => [
-                const PopupMenuItem(value: 'server', child: Text('服务器配置')),
+                PopupMenuItem(
+                  value: 'server',
+                  child: Text(AppStrings.webdavServerConfig),
+                ),
                 const PillMenuDivider(),
                 CheckedPopupMenuItem(
                   value: 'sort_name',
                   checked: state.sortKey == RemoteBookSort.name,
-                  child: const Text('按名称'),
+                  child: Text(AppStrings.sortByName),
                 ),
                 CheckedPopupMenuItem(
                   value: 'sort_time',
                   checked: state.sortKey == RemoteBookSort.time,
-                  child: const Text('按时间'),
+                  child: Text(AppStrings.sortByTime),
                 ),
                 const PillMenuDivider(),
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'webdav_settings',
-                  child: Text('默认 WebDAV 设置'),
+                  child: Text(AppStrings.defaultWebdavSettings),
                 ),
               ],
             ),
@@ -149,7 +155,7 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                 child: Row(
                   children: [
                     IconButton(
-                      tooltip: '返回上级',
+                      tooltip: AppStrings.backToParent,
                       onPressed:
                           state.dirStack.isEmpty ? null : () => notifier.goBackDir(),
                       icon: const Icon(Symbols.arrow_back_rounded),
@@ -170,9 +176,9 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: TextField(
                 controller: _searchCtrl,
-                decoration: const InputDecoration(
-                  hintText: '筛选 • 远程书籍',
-                  prefixIcon: Icon(Symbols.search_rounded),
+                decoration: InputDecoration(
+                  hintText: AppStrings.remoteBookFilterHint,
+                  prefixIcon: const Icon(Symbols.search_rounded),
                   isDense: true,
                 ),
                 onChanged: notifier.setFilter,
@@ -192,7 +198,7 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                   : state.visibleItems.isEmpty
                       ? Center(
                           child: Text(
-                            '没有文件',
+                            AppStrings.remoteBookNoFiles,
                             style: theme.textTheme.bodyLarge?.copyWith(
                               color: theme.colorScheme.onSurfaceVariant,
                             ),
@@ -229,7 +235,7 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                               ),
                               subtitle: item.isDir
                                   ? Text(
-                                      '文件夹',
+                                      AppStrings.bookshelfGroupStyleFolder,
                                       style: theme.textTheme.bodySmall?.copyWith(
                                         color: theme.colorScheme.onSurfaceVariant,
                                       ),
@@ -272,21 +278,30 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                   children: [
                     TextButton(
                       onPressed: () => notifier.selectAllVisible(true),
-                      child: const Text('全选'),
+                      child: Text(AppStrings.selectAll),
                     ),
                     TextButton(
                       onPressed: notifier.revertSelection,
-                      child: const Text('反选'),
+                      child: Text(AppStrings.invertSelection),
                     ),
                     const Spacer(),
-                    FilledButton(
-                      onPressed: state.isImporting || selectedCount == 0
-                          ? null
-                          : _importSelected,
-                      child: Text(
-                        state.isImporting
-                            ? '导入中…'
-                            : '加入书架${selectedCount > 0 ? ' ($selectedCount)' : ''}',
+                    // [L10N 批 2 组 C] 英文文案显著长于中文（如
+                    // "Add to Bookshelf (12)"），360dp 下原固定宽度 Row 会横向
+                    // 溢出；改为可收缩 + 单行省略，保持按钮语义不变。
+                    Flexible(
+                      child: FilledButton(
+                        onPressed: state.isImporting || selectedCount == 0
+                            ? null
+                            : _importSelected,
+                        child: Text(
+                          state.isImporting
+                              ? AppStrings.remoteBookImporting
+                              : (selectedCount > 0
+                                  ? AppStrings.addToBookshelfCount(selectedCount)
+                                  : AppStrings.addToBookshelf),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ),
                   ],
@@ -335,11 +350,11 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                   children: [
                     ListTile(
                       title: Text(
-                        '服务器配置',
+                        AppStrings.webdavServerConfig,
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       trailing: IconButton(
-                        tooltip: '添加',
+                        tooltip: AppStrings.addAction,
                         icon: const Icon(Symbols.add_rounded),
                         onPressed: () async {
                           final created = await _editServerDialog();
@@ -378,8 +393,8 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                         children: [
                           RadioListTile<int>(
                             value: SettingsService.defaultRemoteServerId,
-                            title: const Text('默认'),
-                            subtitle: const Text('使用备份设置中的 WebDAV（books/）'),
+                            title: Text(AppStrings.defaultLabel),
+                            subtitle: Text(AppStrings.remoteBookDefaultServerDesc),
                           ),
                           ConstrainedBox(
                             constraints: BoxConstraints(
@@ -394,7 +409,9 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                                   value: s.id,
                                   title: Text(s.name.isEmpty ? s.url : s.name),
                                   subtitle: Text(
-                                    s.isValid ? s.url : '配置无效（请编辑修复）',
+                                    s.isValid
+                                        ? s.url
+                                        : AppStrings.remoteBookServerInvalid,
                                     maxLines: 1,
                                   ),
                                   secondary: Row(
@@ -415,18 +432,21 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                                           final ok = await showDialog<bool>(
                                             context: context,
                                             builder: (d) => AlertDialog(
-                                              title: const Text('删除'),
-                                              content: const Text('确认删除该服务器？'),
+                                              title: Text(AppStrings.delete),
+                                              content: Text(
+                                                AppStrings
+                                                    .remoteBookConfirmDeleteServer,
+                                              ),
                                               actions: [
                                                 TextButton(
                                                   onPressed: () =>
                                                       Navigator.pop(d, false),
-                                                  child: const Text('取消'),
+                                                  child: Text(AppStrings.cancel),
                                                 ),
                                                 FilledButton(
                                                   onPressed: () =>
                                                       Navigator.pop(d, true),
-                                                  child: const Text('删除'),
+                                                  child: Text(AppStrings.delete),
                                                 ),
                                               ],
                                             ),
@@ -507,7 +527,7 @@ class _ServerEditDialogState extends State<_ServerEditDialog> {
     // 对齐参考版 RemoteBookScreen（名称与地址均非空才允许保存）：
     // 旧实现空 URL 直接 `return`，对话框无任何提示、用户不知为何没保存。
     if (name.isEmpty || url.isEmpty) {
-      setState(() => _error = '名称和地址不能为空');
+      setState(() => _error = AppStrings.remoteBookNameUrlRequired);
       return;
     }
     setState(() => _error = null);
@@ -527,14 +547,18 @@ class _ServerEditDialogState extends State<_ServerEditDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.existing == null ? '添加服务器' : '编辑服务器'),
+      title: Text(
+        widget.existing == null
+            ? AppStrings.remoteBookAddServer
+            : AppStrings.remoteBookEditServer,
+      ),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: _nameCtrl,
-              decoration: const InputDecoration(labelText: '名称'),
+              decoration: InputDecoration(labelText: AppStrings.nameLabel),
             ),
             TextField(
               controller: _urlCtrl,
@@ -573,11 +597,11 @@ class _ServerEditDialogState extends State<_ServerEditDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         FilledButton(
           onPressed: _save,
-          child: const Text('保存'),
+          child: Text(AppStrings.save),
         ),
       ],
     );

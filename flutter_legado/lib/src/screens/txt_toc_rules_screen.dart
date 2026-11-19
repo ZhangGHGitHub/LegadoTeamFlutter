@@ -7,6 +7,7 @@ import '../widgets/legado_app_bar.dart';
 import '../widgets/md3_fast_scroller.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/txt_toc_rules/txt_toc_rules_notifier.dart';
 import '../services/source_share_passphrase.dart';
@@ -84,9 +85,9 @@ It was a dark and stormy night.''';
                 hasScrollBody: false,
                 child: EmptyState(
                   icon: Symbols.format_list_numbered_rounded,
-                  title: '暂无目录规则',
+                  title: AppStrings.txtTocRulesEmpty,
                   // [台账 4-1 ② | 2.0.274] 新建入口移至右下角 FAB
-                  subtitle: '点击右下角 + 添加识别章节标题的正则规则',
+                  subtitle: AppStrings.txtTocRulesEmptyHint,
                 ),
               )
             else
@@ -119,7 +120,7 @@ It was a dark and stormy night.''';
       // （app_theme floatingActionButtonTheme = primaryContainer 底 / primary
       // 前景，随调色板切换），不硬编码黄色；替代原顶栏圆形 + 钮
       floatingActionButton: FloatingActionButton(
-        tooltip: '添加规则',
+        tooltip: AppStrings.addRuleAction,
         onPressed: () => _showRuleForm(context),
         child: const Icon(Symbols.add_rounded),
       ),
@@ -134,20 +135,32 @@ It was a dark and stormy night.''';
       large: true,
       leading: IconButton(
         icon: const Icon(Symbols.arrow_back_rounded),
-        tooltip: '返回',
+        tooltip: AppStrings.backLabel,
         onPressed: () => Navigator.of(context).maybePop(),
       ),
-      title: const Text('TXT 目录规则'),
+      title: Text(AppStrings.txtTocRulesLabel),
       actions: [
         PopupMenuButton<String>(
-          tooltip: '更多操作',
+          tooltip: AppStrings.moreOptions,
           icon: const Icon(Symbols.more_vert_rounded),
           onSelected: _onMoreMenuSelected,
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'importDefault', child: Text('导入默认')),
-            PopupMenuItem(value: 'passphrase', child: Text('口令导入')),
-            PopupMenuItem(value: 'export', child: Text('导出规则')),
-            PopupMenuItem(value: 'help', child: Text('帮助')),
+          itemBuilder: (_) => [
+            PopupMenuItem(
+              value: 'importDefault',
+              child: Text(AppStrings.importDefaultAction),
+            ),
+            PopupMenuItem(
+              value: 'passphrase',
+              child: Text(AppStrings.importPassphraseAction),
+            ),
+            PopupMenuItem(
+              value: 'export',
+              child: Text(AppStrings.txtTocExportRules),
+            ),
+            PopupMenuItem(
+              value: 'help',
+              child: Text(AppStrings.helpLabel),
+            ),
           ],
         ),
       ],
@@ -179,7 +192,7 @@ It was a dark and stormy night.''';
     final rules = ref.read(txtTocRulesNotifierProvider).rules;
     if (rules.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('暂无可导出的目录规则')),
+        SnackBar(content: Text(AppStrings.txtTocNoRulesToExport)),
       );
       return;
     }
@@ -191,7 +204,7 @@ It was a dark and stormy night.''';
       fileName: 'exportTxtTocRule.json',
       // 参考版 BaseRuleViewModel.uploadSelectedRules 固定上传该名
       uploadFileName: 'export_rules.json',
-      subject: '导出目录规则',
+      subject: AppStrings.txtTocExportSubject,
       passphraseType: SourcePassphraseType.tocRule,
     );
     if (!mounted || result == null) return;
@@ -206,7 +219,7 @@ It was a dark and stormy night.''';
         .importDefaultRules();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已导入 $n 条原版默认 TXT 目录规则')),
+      SnackBar(content: Text(AppStrings.txtTocImportedDefault(n))),
     );
   }
 
@@ -214,12 +227,16 @@ It was a dark and stormy night.''';
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除规则'),
-        content: Text('确定删除「${rule.name.isEmpty ? '未命名' : rule.name}」吗？'),
+        title: Text(AppStrings.deleteRuleTitle),
+        content: Text(
+          AppStrings.txtTocConfirmDeleteNamed(
+            rule.name.isEmpty ? AppStrings.unnamedTheme : rule.name,
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           TextButton(
             style: TextButton.styleFrom(
@@ -229,13 +246,13 @@ It was a dark and stormy night.''';
               Navigator.pop(ctx);
               ref.read(txtTocRulesNotifierProvider.notifier).deleteRule(rule.id);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('规则已删除'),
-                  duration: Duration(seconds: 1),
+                SnackBar(
+                  content: Text(AppStrings.replaceRuleDeleted),
+                  duration: const Duration(seconds: 1),
                 ),
               );
             },
-            child: const Text('删除'),
+            child: Text(AppStrings.delete),
           ),
         ],
       ),
@@ -253,7 +270,9 @@ It was a dark and stormy night.''';
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(isEdit ? '编辑规则' : '添加规则'),
+        title: Text(
+          isEdit ? AppStrings.editRule : AppStrings.addRuleAction,
+        ),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -262,30 +281,30 @@ It was a dark and stormy night.''';
               // 字段分组间距 12dp
               TextField(
                 controller: nameCtrl,
-                decoration: const InputDecoration(
-                  labelText: '规则名称',
+                decoration: InputDecoration(
+                  labelText: AppStrings.dictRuleName,
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: ruleCtrl,
-                decoration: const InputDecoration(
-                  labelText: '正则表达式',
+                decoration: InputDecoration(
+                  labelText: AppStrings.regexPattern,
                   hintText: r'^第\s*\d+\s*章',
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: replacementCtrl,
-                decoration: const InputDecoration(
-                  labelText: '替换为（可选）',
+                decoration: InputDecoration(
+                  labelText: AppStrings.txtTocReplaceWith,
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: exampleCtrl,
-                decoration: const InputDecoration(
-                  labelText: '示例文本（可选）',
+                decoration: InputDecoration(
+                  labelText: AppStrings.txtTocExampleText,
                 ),
               ),
             ],
@@ -294,13 +313,13 @@ It was a dark and stormy night.''';
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () {
               if (ruleCtrl.text.trim().isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('正则表达式不能为空')),
+                  SnackBar(content: Text(AppStrings.rulePatternRequired)),
                 );
                 return;
               }
@@ -321,7 +340,7 @@ It was a dark and stormy night.''';
               }
               Navigator.pop(ctx);
             },
-            child: Text(isEdit ? '保存' : '添加'),
+            child: Text(isEdit ? AppStrings.save : AppStrings.addAction),
           ),
         ],
       ),
@@ -341,7 +360,7 @@ It was a dark and stormy night.''';
         builder: (ctx, setState) {
           final result = _runTest(rule.rule, textCtrl.text);
           return AlertDialog(
-            title: Text('测试规则：${rule.name}'),
+            title: Text(AppStrings.txtTocTestTitle(rule.name)),
             content: SizedBox(
               width: double.maxFinite,
               child: Column(
@@ -352,14 +371,14 @@ It was a dark and stormy night.''';
                     controller: textCtrl,
                     maxLines: 6,
                     // [LAYOUT_PLAN P2] 输入框走 inputDecorationTheme（不显式 border）
-                    decoration: const InputDecoration(
-                      labelText: '待匹配文本',
+                    decoration: InputDecoration(
+                      labelText: AppStrings.txtTocMatchText,
                     ),
                     onChanged: (_) => setState(() {}),
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    '匹配结果（${result.matches.length}）',
+                    AppStrings.txtTocMatchResults(result.matches.length),
                     style: Theme.of(ctx).textTheme.titleSmall,
                   ),
                   const SizedBox(height: 8),
@@ -373,14 +392,14 @@ It was a dark and stormy night.''';
                     ),
                     child: result.error != null
                         ? Text(
-                            '正则错误：${result.error}',
+                            AppStrings.txtTocRegexError('${result.error}'),
                             style: TextStyle(
                               color: Theme.of(ctx).colorScheme.error,
                             ),
                           )
                         : result.matches.isEmpty
                             ? Text(
-                                '无匹配项',
+                                AppStrings.txtTocNoMatches,
                                 style: TextStyle(
                                   color: Theme.of(ctx).colorScheme.outline,
                                 ),
@@ -403,7 +422,7 @@ It was a dark and stormy night.''';
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: const Text('关闭'),
+                child: Text(AppStrings.closeLabel),
               ),
             ],
           );
@@ -468,7 +487,9 @@ class _RuleTile extends StatelessWidget {
       return example;
     }
     final r = rule.rule;
-    return '正则:${r.length > 40 ? '${r.substring(0, 40)}…' : r}';
+    return AppStrings.txtTocRegexPrefix(
+      r.length > 40 ? '${r.substring(0, 40)}…' : r,
+    );
   }
 
   @override
@@ -493,7 +514,9 @@ class _RuleTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      rule.name.isEmpty ? '(未命名)' : rule.name,
+                      rule.name.isEmpty
+                          ? AppStrings.unnamedParen
+                          : rule.name,
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
@@ -512,14 +535,14 @@ class _RuleTile extends StatelessWidget {
                       children: [
                         // [台账 4-1 ③] 图标化动作：铅笔编辑 / 垃圾桶删除 /
                         // 测试保留为次级（图标+文字小钮）
-                        _iconAction(context, Symbols.edit_rounded, '编辑',
-                            onEdit),
+                        _iconAction(context, Symbols.edit_rounded,
+                            AppStrings.edit, onEdit),
                         const SizedBox(width: 6),
                         _iconAction(context, Symbols.delete_outline_rounded,
-                            '删除', onDelete),
+                            AppStrings.delete, onDelete),
                         const SizedBox(width: 6),
                         _iconAction(context, Symbols.play_arrow_rounded,
-                            '测试', onTest),
+                            AppStrings.testAction, onTest),
                       ],
                     ),
                   ],

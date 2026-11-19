@@ -11,6 +11,7 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../l10n/app_strings.dart';
 import '../providers/cover_settings/cover_settings_notifier.dart';
 import '../services/cover_album_store.dart';
 import '../widgets/cover_album_preview.dart';
@@ -76,14 +77,14 @@ class CoverAlbumSelectSheet extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        '选择封面相册',
+                        AppStrings.coverAlbumSelectTitle,
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                     ),
                     if (onManage != null)
                       IconButton(
                         key: const ValueKey('coverAlbumManageAction'),
-                        tooltip: '管理相册',
+                        tooltip: AppStrings.manageAlbums,
                         icon: const Icon(Symbols.settings_rounded),
                         onPressed: onManage,
                       ),
@@ -95,8 +96,8 @@ class CoverAlbumSelectSheet extends StatelessWidget {
                     IosListTile(
                       key: const ValueKey('coverAlbumBuiltinOption'),
                       leading: const CoverAlbumPreview(path: null),
-                      title: '应用内置封面',
-                      subtitle: '使用应用内置默认封面',
+                      title: AppStrings.builtinCoverAlbum,
+                      subtitle: AppStrings.builtinCoverAlbumDesc,
                       showChevron: false,
                       trailing: selectedId == null
                           ? Icon(
@@ -115,8 +116,10 @@ class CoverAlbumSelectSheet extends StatelessWidget {
                         key: ValueKey('coverAlbumOption_${album.id}'),
                         leading: CoverAlbumPreview(path: album.previewPath),
                         title: album.name,
-                        subtitle:
-                            '日间 ${album.lightCount} · 夜间 ${album.darkCount}',
+                        subtitle: AppStrings.coverAlbumDayNightCount(
+                          album.lightCount,
+                          album.darkCount,
+                        ),
                         showChevron: false,
                         trailing: selectedId == album.id
                             ? Icon(

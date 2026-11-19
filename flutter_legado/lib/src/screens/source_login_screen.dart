@@ -5,6 +5,7 @@ import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../l10n/app_strings.dart';
 import '../providers/source_login/source_login_notifier.dart';
 
 /// 书源登录页面
@@ -76,18 +77,18 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
   Future<void> _openLoginUrl() async {
     final url = widget.loginUrl;
     if (url == null || url.isEmpty) {
-      _showSnack('该书源未配置登录链接');
+      _showSnack(AppStrings.sourceLoginNoUrl);
       return;
     }
     final uri = Uri.tryParse(url);
     if (uri == null || !uri.hasScheme) {
-      _showSnack('登录链接无效');
+      _showSnack(AppStrings.sourceLoginInvalidUrl);
       return;
     }
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
-      _showSnack('无法打开登录链接');
+      _showSnack(AppStrings.sourceLoginCannotOpenUrl);
     }
   }
 
@@ -95,7 +96,7 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
     final name = _cookieNameCtrl.text.trim();
     final value = _cookieValueCtrl.text.trim();
     if (name.isEmpty) {
-      _showSnack('Cookie 名称不能为空');
+      _showSnack(AppStrings.sourceLoginCookieNameRequired);
       return;
     }
     ref.read(sourceLoginNotifierProvider.notifier).addCookie(name, value);
@@ -107,7 +108,7 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
     final name = _headerNameCtrl.text.trim();
     final value = _headerValueCtrl.text.trim();
     if (name.isEmpty) {
-      _showSnack('Header 名称不能为空');
+      _showSnack(AppStrings.sourceLoginHeaderNameRequired);
       return;
     }
     ref.read(sourceLoginNotifierProvider.notifier).addHeader(name, value);
@@ -134,11 +135,11 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
         sourceName: widget.sourceName,
       );
       if (mounted) {
-        _showSnack('登录信息已保存');
+        _showSnack(AppStrings.sourceLoginSaved);
         Navigator.of(context).pop(true);
       }
     } catch (_) {
-      if (mounted) _showSnack('保存失败，请重试');
+      if (mounted) _showSnack(AppStrings.sourceLoginSaveFailedRetry);
     } finally {
       if (mounted) {
         Navigator.of(context, rootNavigator: true).pop();
@@ -161,21 +162,21 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       topBar: LegadoAppBar(
-        title: Text('登录 - ${widget.sourceName}'),
+        title: Text(AppStrings.sourceLoginTitle(widget.sourceName)),
         bottom: TabBar(
           controller: _tabController,
           // 全局 tabBarTheme 设了 TabAlignment.start，仅可滚动 TabBar 合法；
           // 非 scrollable 须显式 fill（对齐 toc_screen 处理）— 登录红屏修复
           tabAlignment: TabAlignment.fill,
-          tabs: const [
-            Tab(text: '手动输入'),
-            Tab(text: '登录链接'),
+          tabs: [
+            Tab(text: AppStrings.sourceLoginManualTab),
+            Tab(text: AppStrings.sourceLoginUrlTab),
           ],
         ),
         actions: [
           IconButton(
             icon: const Icon(Symbols.delete_rounded),
-            tooltip: '清空',
+            tooltip: AppStrings.clearHistory,
             onPressed: _clear,
           ),
         ],
@@ -199,7 +200,7 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Symbols.save_rounded),
-            label: const Text('保存登录信息'),
+            label: Text(AppStrings.sourceLoginSave),
           ),
         ),
       ),
@@ -222,7 +223,8 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Token（可选）', style: theme.textTheme.titleSmall),
+                Text(AppStrings.sourceLoginTokenOptional,
+                    style: theme.textTheme.titleSmall),
                 const SizedBox(height: 8),
                 TextField(
                   controller: _tokenCtrl,
@@ -287,7 +289,8 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Headers（可选）', style: theme.textTheme.titleSmall),
+                Text(AppStrings.sourceLoginHeadersOptional,
+                    style: theme.textTheme.titleSmall),
                 const SizedBox(height: 8),
                 _buildKeyValueRow(
                   nameCtrl: _headerNameCtrl,
@@ -375,7 +378,7 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
             const Icon(Symbols.open_in_browser_rounded, size: 64),
             const SizedBox(height: 16),
             Text(
-              url == null || url.isEmpty ? '该书源未配置登录链接' : url,
+              url == null || url.isEmpty ? AppStrings.sourceLoginNoUrl : url,
               style: theme.textTheme.bodyMedium,
               textAlign: TextAlign.center,
             ),
@@ -383,11 +386,11 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
             FilledButton.icon(
               onPressed: _openLoginUrl,
               icon: const Icon(Symbols.launch_rounded),
-              label: const Text('在浏览器中打开'),
+              label: Text(AppStrings.openInBrowserLabel),
             ),
             const SizedBox(height: 12),
             Text(
-              '在浏览器完成登录后，复制 Cookie 并切换到「手动输入」标签页粘贴。',
+              AppStrings.sourceLoginUrlTabHint,
               style: theme.textTheme.bodySmall,
               textAlign: TextAlign.center,
             ),

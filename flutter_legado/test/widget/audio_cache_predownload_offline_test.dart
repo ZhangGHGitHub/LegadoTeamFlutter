@@ -112,9 +112,9 @@ void main() {
           reason: '溢出菜单项 $value 不应被误删',
         );
       }
-      // 原版菜单文案（values-zh）
-      expect(src.contains("Text('缓存章节范围')"), isTrue);
-      expect(src.contains("Text('清除本章缓存')"), isTrue);
+      // 原版菜单文案（values-zh）：已接入 AppStrings，文案本身在 l10n 表中维护
+      expect(src.contains('AppStrings.audioCacheRangeTitle'), isTrue);
+      expect(src.contains('AppStrings.audioClearChapterCache'), isTrue);
     });
   });
 

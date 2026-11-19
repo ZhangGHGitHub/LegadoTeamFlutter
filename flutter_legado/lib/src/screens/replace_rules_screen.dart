@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../services/bridge_http.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../providers/replace_rule/replace_rule_notifier.dart';
@@ -95,7 +96,7 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
                     color: Theme.of(context).colorScheme.onPrimary,
                   ),
                   decoration: InputDecoration(
-                    hintText: '搜索规则',
+                    hintText: AppStrings.sourceSearchRules,
                     hintStyle: TextStyle(
                       color: Theme.of(
                         context,
@@ -137,7 +138,7 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
               actions: [
                 // [UI-fix v2.0.2 | 2026-08-06] 分组筛选入口（对标原版 menu_group）— Qoder
                 PopupMenuButton<String?>(
-                  tooltip: '分组筛选',
+                  tooltip: AppStrings.replaceRuleGroupFilter,
                   icon: Icon(
                     _groupFilter == null
                         ? Symbols.filter_list_rounded
@@ -145,54 +146,69 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
                   ),
                   onSelected: (v) => setState(() => _groupFilter = v),
                   itemBuilder: (_) => [
-                    const PopupMenuItem<String?>(
+                    PopupMenuItem<String?>(
                       value: null,
-                      child: Text('全部'),
+                      child: Text(AppStrings.allLabel),
                     ),
-                    const PopupMenuItem<String?>(
+                    PopupMenuItem<String?>(
                       value: '__enabled__',
-                      child: Text('启用'),
+                      child: Text(AppStrings.sourceEnabledLabel),
                     ),
-                    const PopupMenuItem<String?>(
+                    PopupMenuItem<String?>(
                       value: '__disabled__',
-                      child: Text('禁用'),
+                      child: Text(AppStrings.rssDisable),
                     ),
-                    const PopupMenuItem<String?>(
+                    PopupMenuItem<String?>(
                       value: '__null__',
-                      child: Text('无分组'),
+                      child: Text(AppStrings.replaceRuleUngrouped),
                     ),
                     for (final g in _collectGroups(state.rules))
-                      PopupMenuItem<String?>(value: g, child: Text('分组：$g')),
+                      PopupMenuItem<String?>(
+                        value: g,
+                        child: Text(AppStrings.groupNamesLabel(g)),
+                      ),
                   ],
                 ),
                 // P2-12：分组管理（对标原版 menu_group_manage → GroupManageDialog）
                 IconButton(
                   icon: const Icon(Symbols.folder_rounded),
-                  tooltip: '分组管理',
+                  tooltip: AppStrings.groupManageTitle,
                   onPressed: () => _showGroupManage(context, state.rules),
                 ),
                 // [UI-fix v2.0.2 | 2026-08-06] 导入入口接 ReplaceRuleImportConfirmScreen
                 // （对标原版 ReplaceRuleActivity menu_import：本地/网络/二维码均已接通） — Qoder
                 PopupMenuButton<String>(
-                  tooltip: '导入',
+                  tooltip: AppStrings.importLabel,
                   icon: const Icon(Symbols.file_download_rounded),
                   onSelected: _handleImportMenu,
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'local', child: Text('本地导入')),
-                    PopupMenuItem(value: 'online', child: Text('网络导入')),
-                    PopupMenuItem(value: 'qrcode', child: Text('二维码导入')),
-                    PopupMenuItem(value: 'passphrase', child: Text('口令导入')),
+                  itemBuilder: (_) => [
+                    PopupMenuItem(
+                      value: 'local',
+                      child: Text(AppStrings.rssImportLocal),
+                    ),
+                    PopupMenuItem(
+                      value: 'online',
+                      child: Text(AppStrings.rssImportOnline),
+                    ),
+                    PopupMenuItem(
+                      value: 'qrcode',
+                      child: Text(AppStrings.rssImportQr),
+                    ),
+                    PopupMenuItem(
+                      value: 'passphrase',
+                      child: Text(AppStrings.importPassphraseAction),
+                    ),
                   ],
                 ),
                 // [UI-fix v2.0.2 | 2026-08-06] 批量模式入口 — Qoder
                 IconButton(
                   icon: const Icon(Symbols.checklist_rounded),
-                  tooltip: '批量操作',
+                  tooltip: AppStrings.batchActions,
                   onPressed: () => setState(() => _batchMode = true),
                 ),
                 IconButton(
                   icon: const Icon(Symbols.help_rounded),
-                  tooltip: '帮助',
+                  tooltip: AppStrings.helpLabel,
                   onPressed: () =>
                       showHelp(context, HelpAssets.replaceRuleHelp),
                 ),
@@ -223,7 +239,7 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
                   const SizedBox(height: 16),
                   ElevatedButton(
                     onPressed: () => notifier.load(),
-                    child: const Text('重试'),
+                    child: Text(AppStrings.retry),
                   ),
                 ],
               ),
@@ -240,10 +256,11 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
                     color: Theme.of(context).colorScheme.outline,
                   ),
                   const SizedBox(height: 16),
-                  Text('暂无替换规则', style: Theme.of(context).textTheme.bodyLarge),
+                  Text(AppStrings.noReplaceRules,
+                      style: Theme.of(context).textTheme.bodyLarge),
                   const SizedBox(height: 8),
                   Text(
-                    '点击右上角 + 添加规则',
+                    AppStrings.replaceRuleEmptyAddHint,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
@@ -253,7 +270,7 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
           if (filtered.isEmpty) {
             return Center(
               child: Text(
-                '未找到匹配「$_filter」的规则',
+                AppStrings.replaceRuleNoMatch(_filter),
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             );
@@ -369,7 +386,7 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
           const SizedBox(width: 6),
           Expanded(
             child: Text(
-              '筛选/搜索状态下暂不支持拖拽排序',
+              AppStrings.replaceRuleSubsetReorderHint,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -385,9 +402,9 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
   /// 文案不承诺「已恢复原顺序」：`load()` 回滚本身可能失败（DB 不可用），
   /// 此时 state.error 会驱动错误态，SnackBar 只陈述保存失败。
   void _showSortFailure() {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('排序保存失败')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(AppStrings.sortSaveFailedNoReason)),
+    );
   }
 
   // ===== [UI-fix v2.0.2 | 2026-08-06] 分组筛选 — Qoder =====
@@ -478,14 +495,14 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
     return LegadoAppBar(
       leading: IconButton(
         icon: const Icon(Symbols.close_rounded),
-        tooltip: '退出批量模式',
+        tooltip: AppStrings.rssExitBatchMode,
         onPressed: _exitBatch,
       ),
-      title: Text('已选择 ${_selected.length} 项'),
+      title: Text(AppStrings.rssSelectedCount(_selected.length)),
       actions: [
         IconButton(
           icon: const Icon(Symbols.select_all_rounded),
-          tooltip: '全选',
+          tooltip: AppStrings.selectAll,
           onPressed: () {
             final state = ref.read(replaceRuleNotifierProvider);
             setState(() {
@@ -494,14 +511,23 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
           },
         ),
         PopupMenuButton<String>(
-          tooltip: '批量操作',
+          tooltip: AppStrings.batchActions,
           onSelected: _handleBatchAction,
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'enable', child: Text('启用选中')),
-            PopupMenuItem(value: 'disable', child: Text('禁用选中')),
-            PopupMenuItem(value: 'top', child: Text('置顶')),
-            PopupMenuItem(value: 'bottom', child: Text('置底')),
-            PopupMenuItem(value: 'export', child: Text('导出选中')),
+          itemBuilder: (_) => [
+            PopupMenuItem(
+              value: 'enable',
+              child: Text(AppStrings.enableSelected),
+            ),
+            PopupMenuItem(
+              value: 'disable',
+              child: Text(AppStrings.disableSelected),
+            ),
+            PopupMenuItem(value: 'top', child: Text(AppStrings.pinToTop)),
+            PopupMenuItem(value: 'bottom', child: Text(AppStrings.rssMoveToBottom)),
+            PopupMenuItem(
+              value: 'export',
+              child: Text(AppStrings.exportSelected),
+            ),
           ],
         ),
       ],
@@ -564,7 +590,7 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
       fileName: 'exportReplaceRule.json',
       // 参考版 BaseRuleViewModel.uploadSelectedRules 固定上传该名
       uploadFileName: 'export_rules.json',
-      subject: '导出替换规则',
+      subject: AppStrings.replaceRuleExportSubject,
       passphraseType: SourcePassphraseType.replaceRule,
     );
     if (!mounted || result == null) return;
@@ -632,7 +658,11 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
       Navigator.of(context).pop(); // 关闭加载指示
       if (!response.isSuccess) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('获取替换规则失败：HTTP ${response.statusCode}')),
+          SnackBar(
+            content: Text(
+              AppStrings.replaceRuleFetchFailedHttp(response.statusCode),
+            ),
+          ),
         );
         return;
       }
@@ -642,9 +672,13 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
         Navigator.of(context).pop();
       }
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('获取替换规则失败：${errorMessage(e)}')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              AppStrings.replaceRuleFetchFailed(errorMessage(e)),
+            ),
+          ),
+        );
       }
     }
   }
@@ -667,9 +701,9 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
       await _parseAndConfirm(trimmed);
       return;
     }
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('扫码内容不是可识别的替换规则数据')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(AppStrings.replaceRuleQrInvalid)),
+    );
   }
 
   /// 本地文件导入（对标原版 menu_import_local：任选文件，解析层容错）
@@ -683,7 +717,9 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
       if (picked == null || picked.files.isEmpty) return;
       final path = picked.files.single.path;
       if (path == null) {
-        messenger.showSnackBar(const SnackBar(content: Text('无法获取文件路径')));
+        messenger.showSnackBar(
+          SnackBar(content: Text(AppStrings.rssCannotGetFilePath)),
+        );
         return;
       }
       final text = await File(path).readAsString();
@@ -691,9 +727,11 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
       await _parseAndConfirm(text);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('从文件导入失败：${errorMessage(e)}')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppStrings.rssImportFileFailed(errorMessage(e))),
+          ),
+        );
       }
     }
   }
@@ -728,15 +766,15 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
     try {
       candidates = _parseRulesText(text);
     } catch (_) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('格式错误，未解析到替换规则')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppStrings.replaceRuleParseFailed)),
+      );
       return;
     }
     if (candidates.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('格式错误，未解析到替换规则')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppStrings.replaceRuleParseFailed)),
+      );
       return;
     }
     if (!mounted) return;
@@ -752,9 +790,9 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
     if (!mounted) return;
     // 确认页返回导入成功条数；取消返回 null/0
     if (imported != null && imported > 0) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('导入完成（$imported 条）')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppStrings.replaceRuleImportedCount(imported))),
+      );
     }
   }
 
@@ -766,22 +804,22 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除规则'),
-        content: Text('确定删除「${rule.name}」吗？'),
+        title: Text(AppStrings.deleteRuleTitle),
+        content: Text(AppStrings.replaceRuleConfirmDeleteNamed(rule.name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           TextButton(
             onPressed: () {
               Navigator.of(ctx).pop();
               provider.deleteRule(rule.id);
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('规则已删除')));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(AppStrings.replaceRuleDeleted)),
+              );
             },
-            child: const Text('删除'),
+            child: Text(AppStrings.delete),
           ),
         ],
       ),
@@ -867,7 +905,7 @@ class _ReplaceRuleTile extends StatelessWidget {
                 // [批12 P3] 排序手柄：48×48 透明命中层（Material 最小触控目标），
                 // 图标仍居中 24dp；监听器包住整个命中区域
                 Semantics(
-                  label: '拖动排序',
+                  label: AppStrings.dragToReorder,
                   button: true,
                   child: ReorderableDragStartListener(
                     index: index,
@@ -884,14 +922,18 @@ class _ReplaceRuleTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      rule.name.isEmpty ? '(未命名)' : rule.name,
+                      rule.name.isEmpty ? AppStrings.unnamedParen : rule.name,
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${rule.isRegex ? "正则" : "文本"}: ${rule.pattern} → ${rule.replacement}',
+                      AppStrings.replaceRulePatternSummary(
+                        rule.isRegex ? AppStrings.regexLabel : AppStrings.textLabel,
+                        rule.pattern,
+                        rule.replacement,
+                      ),
                       style: theme.textTheme.bodySmall?.copyWith(
                         // [FIX 2026-09-04] 正文次要文字走 onSurfaceVariant（outline 仅用于边框/装饰图标）
                         color: theme.colorScheme.onSurfaceVariant,
@@ -901,7 +943,7 @@ class _ReplaceRuleTile extends StatelessWidget {
                     ),
                     if (rule.scope != null && rule.scope!.isNotEmpty)
                       Text(
-                        '范围: ${rule.scope}',
+                        AppStrings.replaceRuleScopeLabel(rule.scope!),
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: theme.colorScheme.secondary,
                         ),
@@ -921,7 +963,7 @@ class _ReplaceRuleTile extends StatelessWidget {
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                   visualDensity: VisualDensity.compact,
-                  tooltip: '编辑',
+                  tooltip: AppStrings.edit,
                   onPressed: onEdit,
                 ),
                 // 更多菜单（对标 iv_menu_more）
@@ -931,12 +973,15 @@ class _ReplaceRuleTile extends StatelessWidget {
                     size: 20,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
-                  tooltip: '更多',
+                  tooltip: AppStrings.moreActions,
                   onSelected: (v) {
                     if (v == 'delete') onDelete();
                   },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'delete', child: Text('删除')),
+                  itemBuilder: (_) => [
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Text(AppStrings.delete),
+                    ),
                   ],
                 ),
               ],
@@ -971,7 +1016,7 @@ class _ImportUrlDialogState extends State<_ImportUrlDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('从 URL 导入替换规则'),
+      title: Text(AppStrings.replaceRuleImportUrlTitle),
       content: SizedBox(
         width: double.maxFinite,
         child: Column(
@@ -981,12 +1026,15 @@ class _ImportUrlDialogState extends State<_ImportUrlDialog> {
             TextField(
               controller: _controller,
               autofocus: widget.history.isEmpty,
-              decoration: const InputDecoration(hintText: '输入替换规则 URL 地址'),
+              decoration: InputDecoration(
+                hintText: AppStrings.replaceRuleImportUrlHint,
+              ),
               keyboardType: TextInputType.url,
             ),
             if (widget.history.isNotEmpty) ...[
               const SizedBox(height: 12),
-              Text('历史记录', style: Theme.of(context).textTheme.labelMedium),
+              Text(AppStrings.rssHistory,
+                  style: Theme.of(context).textTheme.labelMedium),
               const SizedBox(height: 4),
               for (final url in widget.history)
                 InkWell(
@@ -1009,7 +1057,7 @@ class _ImportUrlDialogState extends State<_ImportUrlDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         FilledButton(
           onPressed: () {
@@ -1017,7 +1065,7 @@ class _ImportUrlDialogState extends State<_ImportUrlDialog> {
             if (url.isEmpty) return;
             Navigator.pop(context, url);
           },
-          child: const Text('导入'),
+          child: Text(AppStrings.importLabel),
         ),
       ],
     );

@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../services/bridge_http.dart';
 import '../providers/providers.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/rule_sub/rule_sub_notifier.dart';
 import '../providers/source/source_notifier.dart';
@@ -54,11 +55,11 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
     return AppScaffold(
       // 原版顶栏：标题「规则订阅」+ 新增按钮（menu_add）
       topBar: LegadoAppBar(
-        title: const Text('规则订阅'),
+        title: Text(AppStrings.rssRuleSubscription),
         actions: [
           IconButton(
             icon: const Icon(Symbols.add_rounded),
-            tooltip: '新增订阅',
+            tooltip: AppStrings.ruleSubAdd,
             onPressed: () => _showEditDialog(context, null),
           ),
         ],
@@ -69,7 +70,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
 
   Widget _buildBody(BuildContext context, RuleSubState state) {
     if (state.loading && state.subs.isEmpty) {
-      return const LoadingIndicator(message: '加载订阅...');
+      return LoadingIndicator(message: AppStrings.ruleSubLoading);
     }
     if (state.error != null && state.subs.isEmpty) {
       return ErrorView(
@@ -78,10 +79,10 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
       );
     }
     if (state.subs.isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: Symbols.rss_feed_rounded,
-        title: '暂无订阅',
-        subtitle: '点击右上角「新增订阅」添加书源/订阅源/替换规则订阅',
+        title: AppStrings.ruleSubEmpty,
+        subtitle: AppStrings.ruleSubEmptyHint,
       );
     }
 
@@ -167,14 +168,14 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
               // 编辑图标（对标 iv_edit）
               IconButton(
                 icon: const Icon(Symbols.edit_rounded, size: 20),
-                tooltip: '编辑',
+                tooltip: AppStrings.edit,
                 visualDensity: VisualDensity.compact,
                 onPressed: () => _showEditDialog(context, sub),
               ),
               // 更多图标（对标 iv_menu_more）
               IconButton(
                 icon: const Icon(Symbols.more_vert_rounded, size: 20),
-                tooltip: '更多选项',
+                tooltip: AppStrings.rssMoreOptions,
                 visualDensity: VisualDensity.compact,
                 onPressed: () => _showSubMenu(context, sub),
               ),
@@ -196,18 +197,20 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
           children: [
             ListTile(
               leading: const Icon(Symbols.system_update_alt_rounded),
-              title: const Text('检查更新'),
+              title: Text(AppStrings.ruleSubCheckUpdate),
               onTap: () => Navigator.pop(ctx, 'check_update'),
             ),
             ListTile(
               leading: const Icon(Symbols.download_rounded),
-              title: const Text('应用更新'),
+              title: Text(AppStrings.ruleSubApplyUpdate),
               onTap: () => Navigator.pop(ctx, 'apply_update'),
             ),
             ListTile(
               leading: Icon(Symbols.delete_rounded, color: colorScheme.error),
-              title:
-                  Text('删除', style: TextStyle(color: colorScheme.error)),
+              title: Text(
+                AppStrings.delete,
+                style: TextStyle(color: colorScheme.error),
+              ),
               onTap: () => Navigator.pop(ctx, 'delete'),
             ),
           ],
@@ -233,7 +236,9 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
             Navigator.of(context).pop();
           }
           messenger.showSnackBar(
-            SnackBar(content: Text('检查更新失败：${errorMessage(e)}')),
+            SnackBar(
+              content: Text(AppStrings.ruleSubCheckUpdateFailed(errorMessage(e))),
+            ),
           );
           return;
         }
@@ -244,10 +249,12 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
         final version = (result['remoteVersion'] ?? '').toString();
         messenger.showSnackBar(SnackBar(
           content: Text(error.isNotEmpty
-              ? '检查更新失败：${errorMessage(error)}'
+              ? AppStrings.ruleSubCheckUpdateFailed(errorMessage(error))
               : (hasUpdate
-                  ? '发现新版本${version.isNotEmpty ? '：$version' : ''}'
-                  : '已是最新版本')),
+                  ? (version.isNotEmpty
+                      ? AppStrings.ruleSubNewVersion(version)
+                      : AppStrings.ruleSubNewVersionNoNumber)
+                  : AppStrings.ruleSubUpToDate)),
         ));
       case 'apply_update':
         showDialog<void>(
@@ -263,7 +270,9 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
             Navigator.of(context).pop();
           }
           messenger.showSnackBar(
-            SnackBar(content: Text('应用更新失败：${errorMessage(e)}')),
+            SnackBar(
+              content: Text(AppStrings.ruleSubApplyUpdateFailed(errorMessage(e))),
+            ),
           );
           return;
         }
@@ -272,22 +281,26 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
         final error = (result['error'] ?? '').toString();
         if (error.isNotEmpty || result['success'] != true) {
           messenger.showSnackBar(SnackBar(
-            content: Text('应用更新失败：${error.isEmpty ? '未知错误' : error}'),
+            content: Text(
+              AppStrings.ruleSubApplyUpdateFailed(
+                error.isEmpty ? AppStrings.unknownError : error,
+              ),
+            ),
           ));
         } else {
           final added = (result['itemsAdded'] ?? 0).toString();
           final updated = (result['itemsUpdated'] ?? 0).toString();
           final removed = (result['itemsRemoved'] ?? 0).toString();
           messenger.showSnackBar(SnackBar(
-            content: Text('更新完成：新增 $added、更新 $updated、移除 $removed'),
+            content: Text(AppStrings.ruleSubUpdateDone(added, updated, removed)),
           ));
         }
       case 'delete':
         final confirmed = await showConfirmDialog(
           context,
-          title: '删除订阅',
-          content: '确定要删除订阅「${sub.name}」吗？',
-          confirmText: '删除',
+          title: AppStrings.ruleSubDeleteTitle,
+          content: AppStrings.ruleSubConfirmDeleteNamed(sub.name),
+          confirmText: AppStrings.delete,
           isDestructive: true,
         );
         if (confirmed && context.mounted) {
@@ -310,7 +323,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
         notifier.findDuplicate(result.url, excludeId: result.id);
     if (duplicate != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('URL 已存在（${duplicate.name}）')),
+        SnackBar(content: Text(AppStrings.ruleSubUrlExists(duplicate.name))),
       );
       return;
     }
@@ -328,7 +341,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
         await _importReplaceRules(context, sub);
       default:
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('未知订阅类型：${sub.subType}')),
+          SnackBar(content: Text(AppStrings.ruleSubUnknownType(sub.subType))),
         );
     }
   }
@@ -352,7 +365,9 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
         Navigator.of(context).pop();
       }
       messenger.showSnackBar(
-        SnackBar(content: Text('获取书源失败：${errorMessage(e)}')),
+        SnackBar(
+          content: Text(AppStrings.ruleSubFetchBookSourcesFailed(errorMessage(e))),
+        ),
       );
       return;
     }
@@ -361,7 +376,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
 
     if (sources.isEmpty) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('格式错误，未解析到书源')),
+        SnackBar(content: Text(AppStrings.ruleSubParseNoBookSource)),
       );
       return;
     }
@@ -376,7 +391,9 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
       ),
     );
     if (ok == true && mounted) {
-      messenger.showSnackBar(const SnackBar(content: Text('导入完成')));
+      messenger.showSnackBar(
+        SnackBar(content: Text(AppStrings.ruleSubImportDone)),
+      );
     }
   }
 
@@ -396,7 +413,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
         Navigator.of(context).pop();
       }
       messenger.showSnackBar(
-        SnackBar(content: Text('获取订阅源失败：${errorMessage(e)}')),
+        SnackBar(content: Text(AppStrings.ruleSubFetchRssFailed(errorMessage(e)))),
       );
       return;
     }
@@ -405,7 +422,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
 
     if (items.isEmpty) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('格式错误，未解析到订阅源')),
+        SnackBar(content: Text(AppStrings.ruleSubParseNoRss)),
       );
       return;
     }
@@ -432,7 +449,9 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
       ),
     );
     if (ok == true && mounted) {
-      messenger.showSnackBar(const SnackBar(content: Text('导入完成')));
+      messenger.showSnackBar(
+        SnackBar(content: Text(AppStrings.ruleSubImportDone)),
+      );
     }
   }
 
@@ -452,7 +471,9 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
         Navigator.of(context).pop();
       }
       messenger.showSnackBar(
-        SnackBar(content: Text('获取替换规则失败：${errorMessage(e)}')),
+        SnackBar(
+          content: Text(AppStrings.ruleSubFetchReplaceFailed(errorMessage(e))),
+        ),
       );
       return;
     }
@@ -461,7 +482,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
 
     if (items.isEmpty) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('格式错误，未解析到替换规则')),
+        SnackBar(content: Text(AppStrings.ruleSubParseNoReplace)),
       );
       return;
     }
@@ -489,7 +510,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
     );
     if (count != null && count > 0 && mounted) {
       messenger.showSnackBar(
-        SnackBar(content: Text('已导入 $count 条替换规则')),
+        SnackBar(content: Text(AppStrings.ruleSubImportedReplace(count))),
       );
     }
   }
@@ -593,7 +614,7 @@ class _RuleSubEditDialogState extends State<_RuleSubEditDialog> {
     final url = _urlCtrl.text.trim();
     if (url.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('URL 不能为空')),
+        SnackBar(content: Text(AppStrings.ruleSubUrlRequired)),
       );
       return;
     }
@@ -620,7 +641,7 @@ class _RuleSubEditDialogState extends State<_RuleSubEditDialog> {
     // 禁用态文字色（对标原版 isEnabled=false 的置灰效果）
     final disabledColor = colorScheme.onSurface.withValues(alpha: 0.4);
     return AlertDialog(
-      title: const Text('规则订阅'),
+      title: Text(AppStrings.rssRuleSubscription),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -628,19 +649,19 @@ class _RuleSubEditDialogState extends State<_RuleSubEditDialog> {
             // 类型下拉（对标 sp_type：书源/订阅源/替换规则）
             DropdownButtonFormField<String>(
               initialValue: _type,
-              decoration: const InputDecoration(labelText: '类型'),
-              items: const [
+              decoration: InputDecoration(labelText: AppStrings.typeLabel),
+              items: [
                 DropdownMenuItem(
                   value: RuleSub.bookSource,
-                  child: Text('书源'),
+                  child: Text(AppStrings.bookSourceLabel),
                 ),
                 DropdownMenuItem(
                   value: RuleSub.rssSource,
-                  child: Text('订阅源'),
+                  child: Text(AppStrings.rssSourceNoun),
                 ),
                 DropdownMenuItem(
                   value: RuleSub.replaceRule,
-                  child: Text('替换规则'),
+                  child: Text(AppStrings.replaceRulesLabel),
                 ),
               ],
               onChanged: (v) {
@@ -650,7 +671,7 @@ class _RuleSubEditDialogState extends State<_RuleSubEditDialog> {
             const SizedBox(height: 12),
             TextField(
               controller: _nameCtrl,
-              decoration: const InputDecoration(labelText: '名称'),
+              decoration: InputDecoration(labelText: AppStrings.nameLabel),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -665,12 +686,12 @@ class _RuleSubEditDialogState extends State<_RuleSubEditDialog> {
               runSpacing: 4,
               children: [
                 _buildCheckText(
-                  '自动更新',
+                  AppStrings.autoUpdateLabel,
                   _autoUpdate,
                   _onAutoUpdateChanged,
                 ),
                 _buildCheckText(
-                  '静默更新',
+                  AppStrings.ruleSubSilentUpdate,
                   _silentUpdate && silentEnabled,
                   silentEnabled
                       ? (v) => setState(() => _silentUpdate = v)
@@ -679,7 +700,7 @@ class _RuleSubEditDialogState extends State<_RuleSubEditDialog> {
                 Padding(
                   padding: const EdgeInsets.only(left: 8),
                   child: Text(
-                    '更新间隔',
+                    AppStrings.ruleSubUpdateInterval,
                     style: TextStyle(
                       fontSize: 14,
                       color: intervalEnabled
@@ -712,7 +733,7 @@ class _RuleSubEditDialogState extends State<_RuleSubEditDialog> {
                 Padding(
                   padding: const EdgeInsets.only(left: 4),
                   child: Text(
-                    '小时',
+                    AppStrings.hoursUnit,
                     style: TextStyle(
                       fontSize: 14,
                       color: intervalEnabled
@@ -729,11 +750,11 @@ class _RuleSubEditDialogState extends State<_RuleSubEditDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         FilledButton(
           onPressed: _confirm,
-          child: const Text('确定'),
+          child: Text(AppStrings.confirm),
         ),
       ],
     );
