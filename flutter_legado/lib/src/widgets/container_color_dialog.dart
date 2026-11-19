@@ -12,6 +12,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../l10n/app_strings.dart';
 import '../utils/color_hex.dart';
 
 /// 预设色板（对齐原版 ColorPreference cpv_dialogType="preset"）
@@ -110,8 +111,8 @@ class _ContainerColorDialogState extends State<ContainerColorDialog> {
             ],
             decoration: InputDecoration(
               labelText: 'HEX',
-              hintText: '#AARRGGBB 或 #RRGGBB',
-              errorText: invalid ? '请输入 6/8 位十六进制颜色' : null,
+              hintText: AppStrings.colorInputHint,
+              errorText: invalid ? AppStrings.colorInputInvalid : null,
             ),
             onChanged: (_) => setState(() {}),
             onSubmitted: (_) => _submit(),
@@ -148,11 +149,11 @@ class _ContainerColorDialogState extends State<ContainerColorDialog> {
         ),
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         FilledButton(
           onPressed: _parsed == null ? null : _submit,
-          child: const Text('确定'),
+          child: Text(AppStrings.confirm),
         ),
       ],
     );

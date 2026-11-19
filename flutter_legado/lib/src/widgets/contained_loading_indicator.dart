@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_strings.dart';
+
 /// M3 Expressive ContainedLoadingIndicator 等效组件
 ///
 /// 对齐 Compose Material3 Expressive 的 ContainedLoadingIndicator 视觉签名：
@@ -16,22 +18,22 @@ class ContainedLoadingIndicator extends StatelessWidget {
   /// 内置环颜色（默认 colorScheme.primary）
   final Color? color;
 
-  /// 无障碍语义标签
-  final String semanticsLabel;
+  /// 无障碍语义标签（null = 取 [AppStrings.loadingSemantics]）
+  final String? semanticsLabel;
 
   const ContainedLoadingIndicator({
     super.key,
     this.size = 48,
     this.strokeWidth = 3.0,
     this.color,
-    this.semanticsLabel = '加载中',
+    this.semanticsLabel,
   });
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Semantics(
-      label: semanticsLabel,
+      label: semanticsLabel ?? AppStrings.loadingSemantics,
       child: Container(
         width: size,
         height: size,

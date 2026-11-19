@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../l10n/app_strings.dart';
 import 'confirm_dialog.dart';
 import '../utils/error_message.dart';
 
@@ -96,7 +97,8 @@ class _GroupManageDialogState<T> extends State<GroupManageDialog<T>> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('操作失败：${errorMessage(e)}')),
+          SnackBar(content: Text(AppStrings.failureWithReason(
+              AppStrings.operationFailedNoReason, errorMessage(e)))),
         );
       }
     } finally {
@@ -108,15 +110,15 @@ class _GroupManageDialogState<T> extends State<GroupManageDialog<T>> {
   Future<void> _addGroup() async {
     final name = await showDialog<String>(
       context: context,
-      builder: (_) => const _TextInputDialog(
-        title: '添加分组',
-        hintText: '分组名称',
+      builder: (_) => _TextInputDialog(
+        title: AppStrings.addGroup,
+        hintText: AppStrings.groupNameLabel,
       ),
     );
     if (name == null || name.isEmpty || !mounted) return;
     if (_groups.contains(name)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('分组「$name」已存在')),
+        SnackBar(content: Text(AppStrings.groupExists(name))),
       );
       return;
     }
@@ -135,14 +137,17 @@ class _GroupManageDialogState<T> extends State<GroupManageDialog<T>> {
         setState(() {});
         if (moved == 0) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('没有未分组的${widget.itemNoun}可归入该分组')),
+            SnackBar(
+              content: Text(AppStrings.noUngroupedItems(widget.itemNoun)),
+            ),
           );
         }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('添加分组失败：${errorMessage(e)}')),
+          SnackBar(content: Text(AppStrings.failureWithReason(
+              AppStrings.addGroupFailedNoReason, errorMessage(e)))),
         );
       }
     } finally {
@@ -154,8 +159,8 @@ class _GroupManageDialogState<T> extends State<GroupManageDialog<T>> {
     final newName = await showDialog<String>(
       context: context,
       builder: (_) => _TextInputDialog(
-        title: '重命名分组',
-        hintText: '输入新分组名称',
+        title: AppStrings.renameGroup,
+        hintText: AppStrings.renameGroupHint,
         initialText: group,
       ),
     );
@@ -164,7 +169,7 @@ class _GroupManageDialogState<T> extends State<GroupManageDialog<T>> {
     }
     if (_groups.contains(newName)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('分组「$newName」已存在')),
+        SnackBar(content: Text(AppStrings.groupExists(newName))),
       );
       return;
     }
@@ -174,9 +179,9 @@ class _GroupManageDialogState<T> extends State<GroupManageDialog<T>> {
   Future<void> _delete(String group) async {
     final confirmed = await showConfirmDialog(
       context,
-      title: '删除分组',
-      content: '确定要删除分组「$group」吗？分组内${widget.itemNoun}将移出该分组。',
-      confirmText: '删除',
+      title: AppStrings.deleteGroup,
+      content: AppStrings.confirmDeleteGroup(group, widget.itemNoun),
+      confirmText: AppStrings.delete,
       isDestructive: true,
     );
     if (!confirmed || !mounted) return;
@@ -193,7 +198,7 @@ class _GroupManageDialogState<T> extends State<GroupManageDialog<T>> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: Row(
         children: [
-          const Expanded(child: Text('分组管理')),
+          Expanded(child: Text(AppStrings.groupManageTitle)),
           if (_busy)
             const Padding(
               padding: EdgeInsets.only(right: 8),
@@ -205,7 +210,7 @@ class _GroupManageDialogState<T> extends State<GroupManageDialog<T>> {
             ),
           IconButton(
             icon: const Icon(Symbols.add_rounded),
-            tooltip: '添加分组',
+            tooltip: AppStrings.addGroup,
             visualDensity: VisualDensity.compact,
             onPressed: _busy ? null : _addGroup,
           ),
@@ -218,7 +223,7 @@ class _GroupManageDialogState<T> extends State<GroupManageDialog<T>> {
                 padding: const EdgeInsets.symmetric(vertical: 24),
                 child: Center(
                   child: Text(
-                    '暂无分组',
+                    AppStrings.noGroups,
                     style: TextStyle(color: scheme.onSurfaceVariant),
                   ),
                 ),
@@ -245,7 +250,7 @@ class _GroupManageDialogState<T> extends State<GroupManageDialog<T>> {
                       children: [
                         IconButton(
                           icon: const Icon(Symbols.edit_rounded, size: 20),
-                          tooltip: '重命名',
+                          tooltip: AppStrings.rename,
                           visualDensity: VisualDensity.compact,
                           onPressed: _busy ? null : () => _rename(group),
                         ),
@@ -255,7 +260,7 @@ class _GroupManageDialogState<T> extends State<GroupManageDialog<T>> {
                             size: 20,
                             color: scheme.error,
                           ),
-                          tooltip: '删除',
+                          tooltip: AppStrings.delete,
                           visualDensity: VisualDensity.compact,
                           onPressed: _busy ? null : () => _delete(group),
                         ),
@@ -268,7 +273,7 @@ class _GroupManageDialogState<T> extends State<GroupManageDialog<T>> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, _changed),
-          child: const Text('关闭'),
+          child: Text(AppStrings.dialogClose),
         ),
       ],
     );
@@ -319,11 +324,11 @@ class _TextInputDialogState extends State<_TextInputDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(context, _controller.text.trim()),
-          child: const Text('确定'),
+          child: Text(AppStrings.confirm),
         ),
       ],
     );

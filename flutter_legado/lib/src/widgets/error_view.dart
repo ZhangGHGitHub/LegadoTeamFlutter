@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../l10n/app_strings.dart';
+
 /// 错误状态组件 — 显示错误信息 + 重试按钮（可选：次要操作，如「换源」）
 class ErrorView extends StatelessWidget {
   final String message;
@@ -51,7 +53,7 @@ class ErrorView extends StatelessWidget {
                       FilledButton.icon(
                         onPressed: onRetry,
                         icon: const Icon(Symbols.refresh_rounded),
-                        label: const Text('重试'),
+                        label: Text(AppStrings.retry),
                       ),
                     ],
                     if (onSecondaryAction != null) ...[
@@ -59,7 +61,9 @@ class ErrorView extends StatelessWidget {
                       OutlinedButton.icon(
                         onPressed: onSecondaryAction,
                         icon: Icon(secondaryActionIcon ?? Symbols.swap_horiz_rounded),
-                        label: Text(secondaryActionLabel ?? '换源'),
+                        label: Text(
+                          secondaryActionLabel ?? AppStrings.changeSource,
+                        ),
                       ),
                     ],
                   ],

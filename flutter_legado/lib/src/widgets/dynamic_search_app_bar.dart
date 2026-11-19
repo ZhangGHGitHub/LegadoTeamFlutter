@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../l10n/app_strings.dart';
 import 'legado_app_bar.dart';
 
 /// [UI_SYNC_REFACTOR S1b] Dynamic 搜索行顶栏（对齐参考仓 DynamicTopAppBar）
@@ -110,7 +111,8 @@ class _DynamicSearchAppBarState extends State<DynamicSearchAppBar> {
       actions: [
         // [UI_SYNC_REFACTOR S1b] 搜索切换钮（对齐参考 onSearchToggle）
         IconButton(
-          tooltip: _expanded ? '收起搜索' : '展开搜索',
+          tooltip:
+              _expanded ? AppStrings.collapseSearch : AppStrings.expandSearch,
           icon: Icon(_expanded
               ? Symbols.search_off_rounded
               : Symbols.search_rounded),

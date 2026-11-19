@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../models/eye_protection.dart';
 import '../providers/theme/eye_protection_notifier.dart';
 import 'ios_widgets.dart';
@@ -48,19 +49,22 @@ class EyeProtectionConfigPanel extends ConsumerWidget {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
-          child: Text('护眼模式', style: Theme.of(context).textTheme.titleLarge),
+          child: Text(
+            AppStrings.eyeProtection,
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
         ),
         IosGroup(
           children: [
             SettingSwitchRow(
-              title: '启用护眼模式',
-              subtitle: '使用暖色调降低蓝光',
+              title: AppStrings.enableEyeProtection,
+              subtitle: AppStrings.enableEyeProtectionDesc,
               value: settings.enabled,
               onChanged: notifier.setEnabled,
             ),
             SettingSwitchRow(
-              title: '深色模式时自动开启',
-              subtitle: '跟随阅读界面的深色/浅色模式自动切换',
+              title: AppStrings.eyeProtectionAutoDark,
+              subtitle: AppStrings.eyeProtectionAutoDarkDesc,
               value: settings.autoNight,
               onChanged: notifier.setAutoNight,
             ),
@@ -70,23 +74,23 @@ class EyeProtectionConfigPanel extends ConsumerWidget {
                 onChanged: notifier.setIntensity,
                 // 阅读侧文案对齐参考版 EyeProtectionConfigSheet（护眼强度）；
                 // 外观页沿用 ThemeConfigScreen 的「色温」（默认参数）
-                title: '护眼强度',
-                descriptionPrefix: '当前强度',
+                title: AppStrings.eyeProtectionIntensity,
+                descriptionPrefix: AppStrings.eyeProtectionCurrentIntensity,
               ),
               SettingSwitchRow(
-                title: '定时开启',
-                subtitle: '仅在设定的时间段内生效',
+                title: AppStrings.eyeProtectionScheduled,
+                subtitle: AppStrings.eyeProtectionScheduledDesc,
                 value: settings.schedule,
                 onChanged: notifier.setSchedule,
               ),
               if (settings.schedule) ...[
                 IosListTile(
-                  title: '开始时间',
+                  title: AppStrings.startTime,
                   value: settings.startTime,
                   onTap: () => pickEyeProtectionTime(context, ref, start: true),
                 ),
                 IosListTile(
-                  title: '结束时间',
+                  title: AppStrings.endTime,
                   value: settings.endTime,
                   onTap: () =>
                       pickEyeProtectionTime(context, ref, start: false),
@@ -119,7 +123,7 @@ Future<void> pickEyeProtectionTime(
       hour: current?.hour ?? 0,
       minute: current?.minute ?? 0,
     ),
-    helpText: start ? '开始时间' : '结束时间',
+    helpText: start ? AppStrings.startTime : AppStrings.endTime,
     builder: (context, child) => MediaQuery(
       data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
       child: child!,
@@ -148,18 +152,20 @@ class EyeProtectionIntensityRow extends StatefulWidget {
   final int value;
   final ValueChanged<int> onChanged;
 
-  /// 行标题：外观页「色温」/ 阅读面板「护眼强度」（参考版两处文案不同）
-  final String title;
+  /// 行标题：外观页「色温」/ 阅读面板「护眼强度」（参考版两处文案不同；
+  /// null = 取 [AppStrings.colorTemperature]）
+  final String? title;
 
   /// 当前值说明前缀：外观页「当前色温」/ 阅读面板「当前强度」
-  final String descriptionPrefix;
+  /// （null = 取 [AppStrings.colorTemperatureCurrent]）
+  final String? descriptionPrefix;
 
   const EyeProtectionIntensityRow({
     super.key,
     required this.value,
     required this.onChanged,
-    this.title = '色温',
-    this.descriptionPrefix = '当前色温',
+    this.title,
+    this.descriptionPrefix,
   });
 
   @override
@@ -180,9 +186,13 @@ class _EyeProtectionIntensityRowState extends State<EyeProtectionIntensityRow> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(widget.title, style: theme.textTheme.titleMedium),
           Text(
-            '${widget.descriptionPrefix}：$shown',
+            widget.title ?? AppStrings.colorTemperature,
+            style: theme.textTheme.titleMedium,
+          ),
+          Text(
+            '${widget.descriptionPrefix ?? AppStrings.colorTemperatureCurrent}'
+            '：$shown',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),

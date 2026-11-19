@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../providers/privacy/privacy_notifier.dart';
 import '../../providers/privacy/privacy_state.dart';
 import '../../routes.dart';
@@ -40,16 +41,16 @@ Future<bool> showPrivacyUnlockDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
         key: const ValueKey('privacyNoPasswordDialog'),
-        title: const Text('未设置隐私密码'),
-        content: const Text('私密内容需要隐私密码。请先在隐私设置中设置密码后再验证。'),
+        title: Text(AppStrings.privacyNotSet),
+        content: Text(AppStrings.privacyNotSetDesc),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('去设置'),
+            child: Text(AppStrings.goToSettings),
           ),
         ],
       ),
@@ -63,7 +64,7 @@ Future<bool> showPrivacyUnlockDialog(
   final result = await showDialog<bool>(
     context: context,
     builder: (dialogContext) => _PrivacyUnlockDialog(
-      title: title ?? '验证隐私密码',
+      title: title ?? AppStrings.verifyPrivacyPassword,
       bookUrl: bookUrl,
       groupId: groupId,
     ),
@@ -115,7 +116,7 @@ class _PrivacyUnlockDialogState extends ConsumerState<_PrivacyUnlockDialog>
     if (_busy) return;
     final password = _controller.text;
     if (password.isEmpty) {
-      setState(() => _error = '请输入密码');
+      setState(() => _error = AppStrings.enterPassword);
       return;
     }
     setState(() {
@@ -136,7 +137,7 @@ class _PrivacyUnlockDialogState extends ConsumerState<_PrivacyUnlockDialog>
     }
     setState(() {
       _busy = false;
-      _error = '密码错误，请重试';
+      _error = AppStrings.wrongPasswordRetry;
     });
   }
 
@@ -187,7 +188,7 @@ class _PrivacyUnlockDialogState extends ConsumerState<_PrivacyUnlockDialog>
             textInputAction: TextInputAction.done,
             onSubmitted: (_) => _submit(),
             decoration: InputDecoration(
-              labelText: '隐私密码',
+              labelText: AppStrings.privacyPasswordLabel,
               errorText: _error,
               border: const OutlineInputBorder(),
             ),
@@ -206,7 +207,7 @@ class _PrivacyUnlockDialogState extends ConsumerState<_PrivacyUnlockDialog>
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Symbols.fingerprint_rounded, size: 18),
-                label: const Text('使用生物识别'),
+                label: Text(AppStrings.useBiometrics),
               ),
             ),
           ],
@@ -218,7 +219,7 @@ class _PrivacyUnlockDialogState extends ConsumerState<_PrivacyUnlockDialog>
           onPressed: (_busy || _biometricBusy)
               ? null
               : () => Navigator.pop(context, false),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         FilledButton(
           key: const ValueKey('privacyUnlockConfirm'),
@@ -229,15 +230,15 @@ class _PrivacyUnlockDialogState extends ConsumerState<_PrivacyUnlockDialog>
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('验证'),
+              : Text(AppStrings.verifyAction),
         ),
       ],
     );
   }
 
   String _scopeHint(PrivacyUnlockScope scope) => switch (scope) {
-    PrivacyUnlockScope.everyTime => '验证后仅放行当前内容，离开即重新锁定',
-    PrivacyUnlockScope.appSession => '验证后本次应用内不再重复验证',
-    PrivacyUnlockScope.untilBackground => '验证后离开后台超过宽限时间需重新验证',
+    PrivacyUnlockScope.everyTime => AppStrings.privacyScopeEveryTime,
+    PrivacyUnlockScope.appSession => AppStrings.privacyScopeAppSession,
+    PrivacyUnlockScope.untilBackground => AppStrings.privacyScopeUntilBackground,
   };
 }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../l10n/app_strings.dart';
 import 'group_manage_dialog.dart';
 
 /// 替换规则分组管理弹窗（对标原版 `ui/replace/GroupManageDialog`）
@@ -21,7 +22,7 @@ class ReplaceRuleGroupManageDialog extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return GroupManageDialog<ReplaceRule>(
-      itemNoun: '规则',
+      itemNoun: AppStrings.rulesSection,
       items: rules,
       groupOf: (r) => r.group,
       copyWithGroup: (r, g) => r.copyWith(group: g),

@@ -17,6 +17,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../providers/explore/explore_show_notifier.dart';
 
 /// 页码输入最大位数（对齐参考版 `input.filter(Char::isDigit).take(4)`）
@@ -38,7 +39,7 @@ class ExploreRefreshControl extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return IconButton(
       key: const ValueKey('explore-refresh-action'),
-      tooltip: '刷新',
+      tooltip: AppStrings.refreshActionLabel,
       icon: const Icon(Symbols.refresh_rounded),
       onPressed: () async {
         final accepted = await ref
@@ -46,9 +47,9 @@ class ExploreRefreshControl extends ConsumerWidget {
             .refresh();
         if (accepted || !context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('正在加载，请稍候再刷新'),
-            duration: Duration(seconds: 1),
+          SnackBar(
+            content: Text(AppStrings.loadingPleaseWait),
+            duration: const Duration(seconds: 1),
           ),
         );
       },
@@ -79,9 +80,9 @@ class ExplorePageControl extends ConsumerWidget {
         final current = ref.read(exploreShowNotifierProvider(args));
         if (current.isLoading || current.isLoadingPrevious) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('正在加载，请加载完成后再跳页'),
-              duration: Duration(seconds: 1),
+            SnackBar(
+              content: Text(AppStrings.loadingPleaseWaitToJump),
+              duration: const Duration(seconds: 1),
             ),
           );
           return;
@@ -89,7 +90,7 @@ class ExplorePageControl extends ConsumerWidget {
         _showPageDialog(context, ref, pageLabel);
       },
       child: Text(
-        '第 $pageLabel 页',
+        AppStrings.pageNumberLabel('$pageLabel'),
         style: theme.textTheme.bodyMedium?.copyWith(
           fontWeight: FontWeight.w500,
         ),
@@ -147,13 +148,13 @@ class _ExploreJumpPageDialogState extends State<_ExploreJumpPageDialog> {
   Widget build(BuildContext context) {
     final target = _targetPage;
     return AlertDialog(
-      title: const Text('跳转到页码'),
+      title: Text(AppStrings.jumpToPage),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '输入目标页码（1-$_maxPageLabel），跳转后列表从该页开始加载',
+            AppStrings.jumpToPageHint(_maxPageLabel),
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
@@ -167,8 +168,8 @@ class _ExploreJumpPageDialogState extends State<_ExploreJumpPageDialog> {
               FilteringTextInputFormatter.digitsOnly,
               LengthLimitingTextInputFormatter(explorePageInputMaxLength),
             ],
-            decoration: const InputDecoration(
-              hintText: '页码（最多 4 位）',
+            decoration: InputDecoration(
+              hintText: AppStrings.pageNumberHint,
               isDense: true,
             ),
             onChanged: (_) => setState(() {}),
@@ -182,13 +183,13 @@ class _ExploreJumpPageDialogState extends State<_ExploreJumpPageDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         TextButton(
           onPressed: target == null
               ? null
               : () => Navigator.of(context).pop(target),
-          child: const Text('确定'),
+          child: Text(AppStrings.confirm),
         ),
       ],
     );

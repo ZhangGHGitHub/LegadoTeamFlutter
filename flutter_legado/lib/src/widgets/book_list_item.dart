@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/book.dart';
 import '../models/bookshelf_settings.dart';
 import '../providers/cover_settings/cover_settings_notifier.dart';
@@ -101,7 +102,7 @@ class BookListItem extends StatelessWidget {
           children: [
             Semantics(
               container: true,
-              label: '已隐藏',
+              label: AppStrings.hiddenLabel,
               child: ExcludeSemantics(
                 child: InkWell(
                   onTap: onTap,
@@ -197,7 +198,8 @@ class BookListItem extends StatelessWidget {
         _SummaryRow(
           icon: Symbols.person_rounded,
           text: compact && unread > 0
-              ? '${book.author.isEmpty ? '未知作者' : book.author} · $unread 章未读'
+              ? '${book.author.isEmpty ? AppStrings.unknownAuthor : book.author}'
+                  ' · ${AppStrings.unreadChapters(unread)}'
               : book.author,
           style: subtitleStyle,
           dense: dense,

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_strings.dart';
+
 /// 热力图配色模式（对齐参考仓库 HeatmapMode）
 enum Md3HeatmapMode {
   /// 每日阅读时长（秒；数据源 readRecordDailyList，Rust 契约 2026-08-29）
@@ -101,10 +103,10 @@ class Md3HeatmapCalendar extends StatelessWidget {
   }
 
   String _formatDuration(int seconds) {
-    if (seconds < 60) return '$seconds 秒';
+    if (seconds < 60) return AppStrings.heatmapSeconds(seconds);
     final m = seconds ~/ 60;
-    if (m < 60) return '$m 分钟';
-    return '${m ~/ 60} 小时 ${m % 60} 分';
+    if (m < 60) return AppStrings.heatmapMinutes(m);
+    return AppStrings.heatmapHoursMinutes(m ~/ 60, m % 60);
   }
 
   @override
@@ -140,7 +142,11 @@ class Md3HeatmapCalendar extends StatelessWidget {
       if (mode == Md3HeatmapMode.duration) {
         return '${day.month}/${day.day} · ${_formatDuration(dailySeconds[day] ?? 0)}';
       }
-      return '${day.month}/${day.day} · ${dailyCounts[day] ?? 0} 本';
+      return AppStrings.heatmapDayBooks(
+        day.month,
+        day.day,
+        dailyCounts[day] ?? 0,
+      );
     }
 
     return Column(
@@ -192,7 +198,7 @@ class Md3HeatmapCalendar extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
             Text(
-              '少',
+              AppStrings.heatmapLess,
               style: Theme.of(context)
                   .textTheme
                   .labelSmall
@@ -212,8 +218,8 @@ class Md3HeatmapCalendar extends StatelessWidget {
               ),
             Text(
               mode == Md3HeatmapMode.duration
-                  ? '多（格 = 当日阅读时长）'
-                  : '多（格 = 当日阅读书籍数）',
+                  ? AppStrings.heatmapMoreDuration
+                  : AppStrings.heatmapMoreBooks,
               style: Theme.of(context)
                   .textTheme
                   .labelSmall

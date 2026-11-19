@@ -10,6 +10,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../l10n/app_strings.dart';
 import '../providers/association/association_state.dart';
 import '../screens/association_import_dialog.dart';
 import '../services/source_share_passphrase.dart';
@@ -22,8 +23,9 @@ Future<void> importPassphraseFromClipboard(BuildContext context) async {
   if (text.isEmpty) {
     await _showMessage(
       context,
-      title: '剪贴板为空',
-      message: '请先复制分享口令（以「${SourceSharePassphrase.prefix}」开头）。',
+      title: AppStrings.sourceClipboardEmpty,
+      message:
+          AppStrings.passphraseMalformed(SourceSharePassphrase.prefix),
     );
     return;
   }
@@ -47,20 +49,22 @@ Future<void> importPassphraseText(BuildContext context, String text) async {
     case SourcePassphraseNotFound():
       await _showMessage(
         context,
-        title: '不是分享口令',
-        message: '未识别到「${SourceSharePassphrase.prefix}」前缀，请确认已完整复制。',
+        title: AppStrings.passphraseNotShare,
+        message: AppStrings.passphrasePrefixMissing(
+          SourceSharePassphrase.prefix,
+        ),
       );
     case SourcePassphraseInvalid():
       await _showMessage(
         context,
-        title: '口令无效',
-        message: '口令格式或分享链接无效，可能复制不完整，请重新复制。',
+        title: AppStrings.passphraseInvalid,
+        message: AppStrings.passphraseFormatInvalid,
       );
     case SourcePassphraseExpired():
       await _showMessage(
         context,
-        title: '口令已过期',
-        message: '该口令已超过分享有效期，请联系分享者重新生成。',
+        title: AppStrings.passphraseExpired,
+        message: AppStrings.passphraseExpiredDesc,
       );
   }
 }
@@ -89,7 +93,7 @@ Future<void> _showMessage(
       actions: [
         FilledButton(
           onPressed: () => Navigator.of(ctx).pop(),
-          child: const Text('确定'),
+          child: Text(AppStrings.confirm),
         ),
       ],
     ),

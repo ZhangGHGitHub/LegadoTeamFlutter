@@ -107,7 +107,10 @@ class ListMoreFooter extends StatelessWidget {
                   ),
                 ),
                 if (onRetry != null)
-                  TextButton(onPressed: onRetry, child: const Text('重试')),
+                  TextButton(
+                    onPressed: onRetry,
+                    child: Text(AppStrings.retry),
+                  ),
               ],
             ),
           ),

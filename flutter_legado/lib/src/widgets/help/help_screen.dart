@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../screens/code_edit_screen.dart';
 import 'help_markdown_builders.dart';
 import 'help_markdown_styles.dart';
@@ -17,12 +18,14 @@ class HelpScreen extends StatefulWidget {
   const HelpScreen({
     super.key,
     required this.assetPath,
-    this.title = '帮助',
+    this.title,
   });
 
   /// 资产路径，如 `assets/web/help/md/appHelp.md`
   final String assetPath;
-  final String title;
+
+  /// 标题（null = 取 [AppStrings.helpLabel]）
+  final String? title;
 
   @override
   State<HelpScreen> createState() => _HelpScreenState();
@@ -76,7 +79,7 @@ class _HelpScreenState extends State<HelpScreen> {
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('无法打开链接：$href')),
+          SnackBar(content: Text(AppStrings.cannotOpenLinkWith(href))),
         );
       }
     }
@@ -95,7 +98,7 @@ class _HelpScreenState extends State<HelpScreen> {
     if (content == null) return;
     await CodeEditScreen.open(
       context,
-      title: widget.title,
+      title: widget.title ?? AppStrings.helpLabel,
       initialText: content,
       writable: false,
     );
@@ -127,7 +130,7 @@ class _HelpScreenState extends State<HelpScreen> {
             automaticallyImplyLeading: false,
             centerTitle: false,
             title: Text(
-              widget.title,
+              widget.title ?? AppStrings.helpLabel,
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
@@ -136,18 +139,18 @@ class _HelpScreenState extends State<HelpScreen> {
               if (_sections.isNotEmpty)
                 IconButton(
                   icon: const Icon(Symbols.list_alt_rounded),
-                  tooltip: '目录',
+                  tooltip: AppStrings.helpToc,
                   onPressed: () =>
                       _scaffoldKey.currentState?.openEndDrawer(),
                 ),
               IconButton(
                 icon: const Icon(Symbols.code_rounded),
-                tooltip: '源码',
+                tooltip: AppStrings.helpSourceCode,
                 onPressed: _markdown == null ? null : _openSourceView,
               ),
               TextButton(
                 onPressed: _close,
-                child: const Text('关闭'),
+                child: Text(AppStrings.dialogClose),
               ),
             ],
           ),
@@ -162,7 +165,10 @@ class _HelpScreenState extends State<HelpScreen> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text('加载帮助失败：$_error', textAlign: TextAlign.center),
+          child: Text(
+            AppStrings.helpLoadFailed('$_error'),
+            textAlign: TextAlign.center,
+          ),
         ),
       );
     }
@@ -183,7 +189,7 @@ class _HelpScreenState extends State<HelpScreen> {
   }
 
   Widget _buildTocDrawer(ThemeData theme, ColorScheme cs) {
-    final labels = ['全部', ..._sections.map((s) => s.title)];
+    final labels = [AppStrings.allLabel, ..._sections.map((s) => s.title)];
     return Drawer(
       width: 264,
       child: SafeArea(
@@ -193,7 +199,7 @@ class _HelpScreenState extends State<HelpScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
               child: Text(
-                '目录',
+                AppStrings.helpToc,
                 style: theme.textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.w600,
                 ),

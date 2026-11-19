@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../providers/auto_task/auto_task_notifier.dart';
 import '../providers/providers.dart';
 import '../services/auto_task_scheduler.dart';
@@ -194,7 +195,9 @@ class _AutoTaskDebugDialogState extends ConsumerState<AutoTaskDebugDialog> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: Row(
         children: [
-          Expanded(child: Text('调试：${widget.task.name}')),
+          Expanded(
+            child: Text('${AppStrings.debugLabel}: ${widget.task.name}'),
+          ),
           if (_running)
             const SizedBox(
               width: 18,
@@ -209,7 +212,7 @@ class _AutoTaskDebugDialogState extends ConsumerState<AutoTaskDebugDialog> {
         child: SingleChildScrollView(
           controller: _scroll,
           child: SelectableText(
-            _output.isEmpty ? '准备中…' : _output.toString(),
+            _output.isEmpty ? AppStrings.preparing : _output.toString(),
             style: const TextStyle(
               fontFamily: 'monospace',
               fontSize: 13,
@@ -221,11 +224,11 @@ class _AutoTaskDebugDialogState extends ConsumerState<AutoTaskDebugDialog> {
       actions: [
         TextButton(
           onPressed: _running ? null : _run,
-          child: const Text('重新运行'),
+          child: Text(AppStrings.rerun),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('关闭'),
+          child: Text(AppStrings.dialogClose),
         ),
       ],
     );

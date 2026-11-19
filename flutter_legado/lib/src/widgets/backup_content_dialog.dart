@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_strings.dart';
 import '../services/backup_content_service.dart';
 
 /// 「备份内容」多选 Dialog（C1 逐表备份忽略）
@@ -11,15 +12,18 @@ class BackupContentDialog extends StatefulWidget {
   const BackupContentDialog({
     super.key,
     required this.initial,
-    this.title = '备份内容',
-    this.subtitle = '勾选后备份时不写入该表；恢复该备份时本机这些表保持原值。',
+    this.title,
+    this.subtitle,
   });
 
   /// 已忽略的表键集合
   final Set<String> initial;
 
-  final String title;
-  final String subtitle;
+  /// 对话框标题（null = 取 [AppStrings.backupContentTitle]）
+  final String? title;
+
+  /// 说明文案（null = 取 [AppStrings.backupContentSubtitle]）
+  final String? subtitle;
 
   @override
   State<BackupContentDialog> createState() => _BackupContentDialogState();
@@ -37,7 +41,7 @@ class _BackupContentDialogState extends State<BackupContentDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.title),
+      title: Text(widget.title ?? AppStrings.backupContentTitle),
       content: SizedBox(
         width: double.maxFinite,
         child: SingleChildScrollView(
@@ -46,7 +50,7 @@ class _BackupContentDialogState extends State<BackupContentDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                widget.subtitle,
+                widget.subtitle ?? AppStrings.backupContentSubtitle,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -75,11 +79,11 @@ class _BackupContentDialogState extends State<BackupContentDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         TextButton(
           onPressed: () => Navigator.pop(context, <String>{..._ignored}),
-          child: const Text('确定'),
+          child: Text(AppStrings.confirm),
         ),
       ],
     );

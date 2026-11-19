@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../l10n/app_strings.dart';
 import '../services/app_update_service.dart';
 
 /// 更新说明 Dialog（对齐 UpdateDialog：版本号 / 日志 / 下载 / 忽略）
@@ -39,7 +40,9 @@ class _UpdateDialog extends StatelessWidget {
         width: double.maxFinite,
         child: SingleChildScrollView(
           child: SelectableText(
-            info.updateLog.trim().isEmpty ? '（无更新说明）' : info.updateLog,
+            info.updateLog.trim().isEmpty
+                ? AppStrings.noUpdateLog
+                : info.updateLog,
             style: theme.textTheme.bodyMedium,
           ),
         ),
@@ -51,16 +54,16 @@ class _UpdateDialog extends StatelessWidget {
             if (context.mounted) {
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('已忽略此版本')),
+                SnackBar(content: Text(AppStrings.versionIgnored)),
               );
             }
           },
-          child: const Text('忽略此版本'),
+          child: Text(AppStrings.ignoreThisVersion),
         ),
         if (hasBackup)
           TextButton(
             onPressed: () => _open(info.backupDownloadUrl),
-            child: const Text('备用下载'),
+            child: Text(AppStrings.backupDownload),
           ),
         TextButton(
           onPressed: () => _open(
@@ -69,14 +72,14 @@ class _UpdateDialog extends StatelessWidget {
                 ? info.backupDownloadUrl
                 : info.downloadUrl,
           ),
-          child: const Text('浏览器打开'),
+          child: Text(AppStrings.openInBrowser),
         ),
         FilledButton(
           onPressed: () async {
             await _open(info.downloadUrl);
             if (context.mounted) Navigator.pop(context);
           },
-          child: const Text('下载'),
+          child: Text(AppStrings.downloadAction),
         ),
       ],
     );

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_strings.dart';
 import '../services/settings_service.dart';
 
 /// 忽略项多选 Dialog（恢复忽略默认；备份忽略复用同一 UI）
@@ -11,19 +12,19 @@ class RestoreIgnoreDialog extends StatefulWidget {
   const RestoreIgnoreDialog({
     super.key,
     required this.initial,
-    this.title = '恢复忽略',
-    this.subtitle = '恢复时跳过对应项；备份忽略请单独设置。',
+    this.title,
+    this.subtitle,
     this.keys = SettingsService.restoreIgnoreKeys,
     this.titles = SettingsService.restoreIgnoreTitles,
   });
 
   final Map<String, bool> initial;
 
-  /// 对话框标题（备份忽略复用同一 UI）
-  final String title;
+  /// 对话框标题（备份忽略复用同一 UI；null = 取 [AppStrings.restoreIgnoreTitle]）
+  final String? title;
 
-  /// 说明文案
-  final String subtitle;
+  /// 说明文案（null = 取 [AppStrings.restoreIgnoreSubtitle]）
+  final String? subtitle;
 
   /// 可勾选项键（默认恢复忽略 8 项）
   final List<String> keys;
@@ -47,7 +48,7 @@ class _RestoreIgnoreDialogState extends State<RestoreIgnoreDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.title),
+      title: Text(widget.title ?? AppStrings.restoreIgnoreTitle),
       content: SizedBox(
         width: double.maxFinite,
         child: SingleChildScrollView(
@@ -56,7 +57,7 @@ class _RestoreIgnoreDialogState extends State<RestoreIgnoreDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                widget.subtitle,
+                widget.subtitle ?? AppStrings.restoreIgnoreSubtitle,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -83,12 +84,12 @@ class _RestoreIgnoreDialogState extends State<RestoreIgnoreDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         TextButton(
           onPressed: () =>
               Navigator.pop(context, Map<String, bool>.from(_checked)),
-          child: const Text('确定'),
+          child: Text(AppStrings.confirm),
         ),
       ],
     );

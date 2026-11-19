@@ -22,6 +22,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../providers/privacy/privacy_notifier.dart';
 import '../../providers/privacy/privacy_state.dart';
 import 'privacy_splash_placeholder.dart';
@@ -110,7 +111,7 @@ class _PrivacyAppStartGateState extends ConsumerState<PrivacyAppStartGate>
     if (_submitting) return;
     final password = _passwordController.text;
     if (password.isEmpty) {
-      setState(() => _error = '请输入密码');
+      setState(() => _error = AppStrings.enterPassword);
       return;
     }
     setState(() {
@@ -123,7 +124,7 @@ class _PrivacyAppStartGateState extends ConsumerState<PrivacyAppStartGate>
     if (!mounted) return;
     setState(() {
       _submitting = false;
-      if (!ok) _error = '密码错误';
+      if (!ok) _error = AppStrings.wrongPassword;
     });
     if (ok) {
       _passwordController.clear();
@@ -198,8 +199,8 @@ class _PrivacyAppStartGateState extends ConsumerState<PrivacyAppStartGate>
         pageKey: const ValueKey('privacyPolicyErrorPage'),
         retryKey: const ValueKey('privacyPolicyRetryButton'),
         exitKey: const ValueKey('privacyPolicyExitButton'),
-        title: '无法读取隐私设置',
-        description: '为保护私密内容，隐私设置恢复前不会显示应用内容。请重试。',
+        title: AppStrings.privacyPolicyReadFailed,
+        description: AppStrings.privacyPolicyReadFailedDesc,
       );
     } else if (privacy.credentialError != null) {
       // fail-closed：凭据读取失败时只允许重试，不显示任何应用内容
@@ -209,8 +210,8 @@ class _PrivacyAppStartGateState extends ConsumerState<PrivacyAppStartGate>
         pageKey: const ValueKey('privacyCredentialErrorPage'),
         retryKey: const ValueKey('privacyCredentialRetryButton'),
         exitKey: const ValueKey('privacyCredentialExitButton'),
-        title: '无法读取隐私凭据',
-        description: '为保护私密内容，凭据恢复前不会显示应用内容。请重试。',
+        title: AppStrings.privacyCredentialReadFailed,
+        description: AppStrings.privacyCredentialReadFailedDesc,
       );
     } else if (privacy.needsAppStartLock) {
       overlay = _buildLockScreen(context, privacy);
@@ -283,13 +284,13 @@ class _PrivacyAppStartGateState extends ConsumerState<PrivacyAppStartGate>
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('重试'),
+                      : Text(AppStrings.retry),
                 ),
                 const SizedBox(height: 8),
                 TextButton(
                   key: exitKey,
                   onPressed: () => SystemNavigator.pop(),
-                  child: const Text('退出应用'),
+                  child: Text(AppStrings.exitApp),
                 ),
               ],
             ),
@@ -314,13 +315,13 @@ class _PrivacyAppStartGateState extends ConsumerState<PrivacyAppStartGate>
                 Icon(Symbols.lock_rounded, size: 56, color: scheme.primary),
                 const SizedBox(height: 16),
                 Text(
-                  '隐私空间',
+                  AppStrings.privacySpace,
                   style: Theme.of(context).textTheme.headlineSmall,
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '输入隐私密码以继续',
+                  AppStrings.privacyEnterPassword,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),
@@ -337,9 +338,9 @@ class _PrivacyAppStartGateState extends ConsumerState<PrivacyAppStartGate>
                   autocorrect: false,
                   textInputAction: TextInputAction.done,
                   onSubmitted: (_) => _submit(),
-                  decoration: const InputDecoration(
-                    labelText: '隐私密码',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: AppStrings.privacyPasswordLabel,
+                    border: const OutlineInputBorder(),
                   ),
                 ),
                 if (_error != null) ...[
@@ -365,7 +366,7 @@ class _PrivacyAppStartGateState extends ConsumerState<PrivacyAppStartGate>
                             height: 18,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Text('解锁'),
+                        : Text(AppStrings.unlockAction),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -376,14 +377,14 @@ class _PrivacyAppStartGateState extends ConsumerState<PrivacyAppStartGate>
                       key: const ValueKey('privacyLockBiometricButton'),
                       onPressed: _submitting ? null : _submitBiometric,
                       icon: const Icon(Symbols.fingerprint_rounded, size: 18),
-                      label: const Text('使用生物识别'),
+                      label: Text(AppStrings.useBiometrics),
                     ),
                   ),
                 const SizedBox(height: 8),
                 TextButton(
                   key: const ValueKey('privacyExitAppButton'),
                   onPressed: () => SystemNavigator.pop(),
-                  child: const Text('退出应用'),
+                  child: Text(AppStrings.exitApp),
                 ),
               ],
             ),

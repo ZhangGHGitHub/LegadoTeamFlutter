@@ -3,6 +3,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../../l10n/app_strings.dart';
 import '../../providers/ui_settings/ui_settings_notifier.dart';
 import '../../routes.dart';
 import '../../screens/settings_screen.dart';
@@ -387,7 +388,7 @@ class MyPaneEmptyState extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Text(
-                '选择左侧项目',
+                AppStrings.myPaneEmptyHint,
                 key: const ValueKey('my-pane-empty'),
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(

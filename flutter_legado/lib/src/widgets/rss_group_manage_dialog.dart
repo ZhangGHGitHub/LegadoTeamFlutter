@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../l10n/app_strings.dart';
 import 'group_manage_dialog.dart';
 
 /// 订阅源分组管理弹窗（对标原版 GroupManageDialog）
@@ -22,7 +23,7 @@ class RssGroupManageDialog extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return GroupManageDialog<RssSource>(
-      itemNoun: '订阅源',
+      itemNoun: AppStrings.rssSourceNoun,
       items: sources,
       groupOf: (s) => s.sourceGroup,
       copyWithGroup: (s, g) => s.copyWith(sourceGroup: g),

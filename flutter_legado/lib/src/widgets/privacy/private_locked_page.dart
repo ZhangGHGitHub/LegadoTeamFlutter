@@ -11,24 +11,25 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../providers/privacy/privacy_state.dart';
 
 /// 锁定页说明文案（有密码 → 引导验证；无密码 → 引导设置）
 String privacyLockedDescription(
   PrivacyState privacy, {
-  String fallback = '验证后查看内容',
+  String? fallback,
 }) {
-  if (!privacy.hasPassword) return '请先在隐私设置中设置密码';
-  return fallback;
+  if (!privacy.hasPassword) return AppStrings.setPasswordInPrivacyFirst;
+  return fallback ?? AppStrings.verifyToViewContent;
 }
 
 /// 锁定页动作文案
 String privacyLockedActionText(
   PrivacyState privacy, {
-  String fallback = '验证并查看',
+  String? fallback,
 }) {
-  if (!privacy.hasPassword) return '去设置密码';
-  return fallback;
+  if (!privacy.hasPassword) return AppStrings.goSetPassword;
+  return fallback ?? AppStrings.verifyAndViewContent;
 }
 
 /// 私密内容整页锁定
@@ -105,7 +106,7 @@ class PrivateLockedPage extends StatelessWidget {
                 key: const ValueKey('private-locked-biometric'),
                 onPressed: onBiometric,
                 icon: const Icon(Symbols.fingerprint_rounded, size: 18),
-                label: const Text('使用生物识别'),
+                label: Text(AppStrings.useBiometrics),
               ),
             ],
           ],

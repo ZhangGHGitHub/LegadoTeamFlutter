@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../models/manga_config.dart';
 import '../../screens/reader_comic/manga_auto_read.dart';
 import '../../screens/reader_comic/manga_click_actions.dart';
@@ -394,7 +395,7 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
   /// [P4-3 M4 批1] 页脚内容胶囊组样例数据（与 [_footerPreview] 同源，
   /// 保证胶囊文案与预览条逐段一致：第三话 / 页数 4/30 / 章节 1/45 /
   /// 总进度 0.3%；隐藏段对应 MangaFooterConfig 的 hide* 字段）
-  static const String _sampleChapterName = '第三话';
+  static String get _sampleChapterName => AppStrings.mangaSampleChapter;
   static const int _sampleChapterIndex = 0;
   static const int _sampleChapterSize = 45;
   static const int _samplePageIndex = 3;
@@ -515,7 +516,7 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
               child: Text(
                 // [P4-3 M3 修4] 标题对齐参考版 MangaSettingsPanel
                 // 「漫画阅读设置」（M2 旧称「漫画设置」）
-                '漫画阅读设置',
+                AppStrings.mangaReadingSettings,
                 // [深色主题 Batch A-1] 标题 #1C1C1E → onSurface
                 style: TextStyle(
                   fontSize: 20,
@@ -551,13 +552,13 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                 // 替代 M2「翻页模式」下拉）+ 模式条件行：单页式保留页面适配
                 // 下拉、条漫新增侧边留白滑杆（0..45%，对齐参考版
                 // SettingSlider sidePaddingPercent 仅 isWebtoon 显示）
-                _section('阅读模式'),
+                _section(AppStrings.mangaReadingMode),
                 _card([
                   // [漫画设置作用域] 翻页模式作用域选择（跟随全局/本书；
                   // 无当前书或上游未接书级写路径时不渲染 → 仅全局）
                   if (_showScrollModeScope)
                     _scopeRow(
-                      title: '翻页模式',
+                      title: AppStrings.flipMode,
                       prefix: 'mangaScrollMode',
                       bookScope: _bookScrollMode != null,
                       onChanged: _changeScrollModeScope,
@@ -566,7 +567,7 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                   if (_showPageScale) ...[
                     _divider(),
                     _dropdownTile(
-                      title: '页面适配',
+                      title: AppStrings.mangaPageScale,
                       value: _pageScaleType,
                       options: MangaPageScaleType.options,
                       labelOf: MangaPageScaleType.labelOf,
@@ -582,7 +583,7 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                   if (_showSidePadding) ...[
                     _divider(),
                     _sliderTile(
-                      title: '侧边留白',
+                      title: AppStrings.mangaSidePadding,
                       // [漫画设置作用域] 侧边留白作用域选择（跟随全局/本书）
                       titleTrailing: _showSidePaddingScope
                           ? _scopePills(
@@ -621,11 +622,11 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                 // MangaSettingsPanel L755-767：开关 + 速度滑杆 1..15；
                 // 速度项随开关显隐，对齐原版 ReadMangaActivity L572-575）
                 if (_showAutoReadSection) ...[
-                  _section('自动翻页'),
+                  _section(AppStrings.mangaAutoRead),
                   _card([
                     _switchTile(
-                      title: '自动翻页',
-                      subtitle: '单页式定时翻页；条漫定时滚动',
+                      title: AppStrings.mangaAutoRead,
+                      subtitle: AppStrings.mangaAutoReadDesc,
                       value: _autoRead,
                       onChanged: (v) {
                         setState(() => _autoRead = v);
@@ -635,11 +636,11 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                     if (_autoRead) ...[
                       _divider(),
                       _sliderTile(
-                        title: '自动速度',
+                        title: AppStrings.mangaAutoSpeed,
                         value: _autoReadSpeed.toDouble(),
                         min: MangaAutoRead.minSpeed.toDouble(),
                         max: MangaAutoRead.maxSpeed.toDouble(),
-                        label: '$_autoReadSpeed 档',
+                        label: AppStrings.mangaSpeedLevel(_autoReadSpeed),
                         onChanged: (v) {
                           final rounded = v
                               .round()
@@ -653,10 +654,10 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                     ],
                   ]),
                 ],
-                _section('显示效果'),
+                _section(AppStrings.mangaDisplayEffects),
                 _card([
                   _switchTile(
-                    title: '灰度',
+                    title: AppStrings.mangaGrayscale,
                     value: _gray,
                     onChanged: (v) {
                       setState(() {
@@ -669,8 +670,8 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                   ),
                   _divider(),
                   _switchTile(
-                    title: '电子纸',
-                    subtitle: '灰度近似；阈值已持久化',
+                    title: AppStrings.mangaEInk,
+                    subtitle: AppStrings.mangaEInkDesc,
                     value: _eInk,
                     onChanged: (v) {
                       setState(() {
@@ -684,7 +685,7 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                   if (_eInk) ...[
                     _divider(),
                     _sliderTile(
-                      title: '电子纸阈值',
+                      title: AppStrings.mangaEInkThreshold,
                       value: _threshold.toDouble(),
                       min: 0,
                       max: 255,
@@ -699,11 +700,11 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                 // [P4-3 M4 批3] 「滤镜」入口跳转锚点（ensureVisible 目标）
                 Container(
                   key: _colorFilterSectionKey,
-                  child: _section('色彩滤镜'),
+                  child: _section(AppStrings.mangaColorFilter),
                 ),
                 _card([
                   _sliderTile(
-                    title: '亮度',
+                    title: AppStrings.brightnessLabel,
                     value: _filter.l.toDouble(),
                     min: 0,
                     max: 255,
@@ -767,7 +768,7 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                 // 对齐 segmented control；复用既有键 footerOrientation /
                 // hideFooter，字段零新增；「长按设为全局默认」语义登记
                 // 不做——需书级/全局设置分层，残余差异汇报注明）
-                _section('页脚设置'),
+                _section(AppStrings.mangaFooterSettings),
                 _card([
                   _footerQuickRow(),
                   _divider(),
@@ -788,10 +789,10 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                 // 背景色板行（黑/白/灰/绿/蓝 + 当前色圆点；键名对齐
                 // 原版 PreferKey，键持久化经各 on*Changed 回调落库）
                 if (_showBehaviorSection) ...[
-                  _section('其他'),
+                  _section(AppStrings.otherSection),
                   _card([
                     _checkboxTile(
-                      title: '禁用点击翻页',
+                      title: AppStrings.mangaDisableClickScroll,
                       value: _disableClickScroll,
                       onChanged: (v) {
                         setState(() => _disableClickScroll = v);
@@ -800,7 +801,7 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                     ),
                     _divider(),
                     _checkboxTile(
-                      title: '禁用漫画缩放',
+                      title: AppStrings.mangaDisableScale,
                       value: _disableMangaScale,
                       onChanged: (v) {
                         setState(() => _disableMangaScale = v);
@@ -809,7 +810,7 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                     ),
                     _divider(),
                     _checkboxTile(
-                      title: '禁用翻页动画',
+                      title: AppStrings.mangaDisablePageAnim,
                       value: _disableMangaPageAnim,
                       onChanged: (v) {
                         setState(() => _disableMangaPageAnim = v);
@@ -818,7 +819,7 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                     ),
                     _divider(),
                     _checkboxTile(
-                      title: '隐藏漫画列表标题',
+                      title: AppStrings.mangaHideTitle,
                       value: _hideMangaTitle,
                       onChanged: (v) {
                         setState(() => _hideMangaTitle = v);
@@ -827,7 +828,7 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                     ),
                     _divider(),
                     _checkboxTile(
-                      title: '音量键翻页',
+                      title: AppStrings.mangaVolumeKey,
                       value: _volumeKeyPage,
                       onChanged: (v) {
                         setState(() => _volumeKeyPage = v);
@@ -836,7 +837,7 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                     ),
                     _divider(),
                     _checkboxTile(
-                      title: '反转音量键翻页方向',
+                      title: AppStrings.mangaReverseVolumeKey,
                       value: _reverseVolumeKeyPage,
                       onChanged: (v) {
                         setState(() => _reverseVolumeKeyPage = v);
@@ -845,7 +846,7 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                     ),
                     _divider(),
                     _checkboxTile(
-                      title: '长按保存图片',
+                      title: AppStrings.mangaLongPressSave,
                       value: _mangaLongClickSaveImage,
                       onChanged: (v) {
                         setState(() => _mangaLongClickSaveImage = v);
@@ -854,7 +855,7 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                     ),
                     _divider(),
                     _checkboxTile(
-                      title: '禁用加载淡入动画',
+                      title: AppStrings.mangaDisableFadeIn,
                       value: _disableMangaCrossFade,
                       onChanged: (v) {
                         setState(() => _disableMangaCrossFade = v);
@@ -870,7 +871,7 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                 // 3x3 网格每格显示当前动作名，点击循环切换
                 // -1→0→1→2→3→4→-1 并持久化，屏内即时生效）
                 if (_showClickActionsSection) ...[
-                  _section('点击区域'),
+                  _section(AppStrings.mangaTapAreas),
                   _card([_clickActionsGrid()]),
                 ],
               ],
@@ -912,7 +913,7 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
             ),
           const SizedBox(height: 4),
           Text(
-            '点击格子循环切换该区域动作',
+            AppStrings.mangaClickActionHint,
             style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
           ),
         ],
@@ -972,7 +973,7 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
       onPressed: _jumpToColorFilter,
       icon: Icon(Icons.colorize, color: scheme.primary),
       label: Text(
-        '滤镜',
+        AppStrings.mangaFilterEntry,
         style: TextStyle(color: scheme.onSurface),
       ),
     );
@@ -1164,14 +1165,14 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
       children: [
         pill(
           key: ValueKey('$prefix-scopeGlobal'),
-          label: '跟随全局',
+          label: AppStrings.mangaFollowGlobal,
           selected: !bookScope,
           onTap: () => onChanged(false),
         ),
         const SizedBox(width: 6),
         pill(
           key: ValueKey('$prefix-scopeBook'),
-          label: '本书',
+          label: AppStrings.mangaThisBook,
           selected: bookScope,
           onTap: () => onChanged(true),
         ),
@@ -1245,7 +1246,7 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
         _footer.footerOrientation == MangaFooterConfig.alignCenter;
     final entries = <(String, bool, VoidCallback)>[
       (
-        '左对齐',
+        AppStrings.mangaAlignLeft,
         !isCenter && !_footer.hideFooter,
         () {
           setState(() {
@@ -1256,7 +1257,7 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
         },
       ),
       (
-        '居中',
+        AppStrings.mangaAlignCenter,
         isCenter && !_footer.hideFooter,
         () {
           setState(() {
@@ -1267,7 +1268,7 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
         },
       ),
       (
-        '隐藏页脚',
+        AppStrings.mangaHideFooter,
         _footer.hideFooter,
         () {
           setState(() => _footer.hideFooter = !_footer.hideFooter);
@@ -1319,8 +1320,8 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
       imageCount: _sampleImageCount,
     );
     final text = _footer.hideFooter
-        ? '页脚已隐藏'
-        : (label.isEmpty ? '（页脚内容为空）' : label);
+        ? AppStrings.mangaFooterHidden
+        : (label.isEmpty ? AppStrings.mangaFooterEmpty : label);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
       child: Container(
@@ -1369,7 +1370,7 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
         () => _footer.hideChapterName = !_footer.hideChapterName,
       ),
       (
-        '页数',
+        AppStrings.mangaPageCount,
         _footer.hidePageNumberLabel,
         () => _footer.hidePageNumberLabel = !_footer.hidePageNumberLabel,
       ),
@@ -1379,7 +1380,7 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
         () => _footer.hidePageNumber = !_footer.hidePageNumber,
       ),
       (
-        '章节',
+        AppStrings.mangaChapterLabel,
         _footer.hideChapterLabel,
         () => _footer.hideChapterLabel = !_footer.hideChapterLabel,
       ),
@@ -1389,7 +1390,7 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
         () => _footer.hideChapter = !_footer.hideChapter,
       ),
       (
-        '总进度',
+        AppStrings.mangaProgressLabel,
         _footer.hideProgressRatioLabel,
         () => _footer.hideProgressRatioLabel = !_footer.hideProgressRatioLabel,
       ),
@@ -1568,7 +1569,7 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '背景颜色',
+            AppStrings.mangaBgColor,
             style: TextStyle(fontSize: 16, color: scheme.onSurface),
           ),
           const SizedBox(height: 8),

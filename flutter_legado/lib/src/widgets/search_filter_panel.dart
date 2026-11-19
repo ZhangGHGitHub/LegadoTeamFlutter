@@ -3,6 +3,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../providers/search/search_notifier.dart';
@@ -117,7 +118,8 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
             // 标题行（[UI-fix v2.0.3 | 2026-08-07] 分组 Tab 移除后仅余书源单选）— Qoder
             Row(
               children: [
-                Text('选择书源', style: Theme.of(context).textTheme.titleMedium),
+                Text(AppStrings.selectSource,
+                    style: Theme.of(context).textTheme.titleMedium),
                 const Spacer(),
                 if (state.hasFilter)
                   TextButton(
@@ -127,7 +129,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
                           .clearAllFilter();
                       Navigator.pop(context);
                     },
-                    child: const Text('全部书源'),
+                    child: Text(AppStrings.allSources),
                   ),
               ],
             ),
@@ -136,7 +138,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
             TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: '搜索...',
+                hintText: AppStrings.searchPlaceholder,
                 prefixIcon: const Icon(Symbols.search_rounded, size: 20),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? IconButton(
@@ -175,7 +177,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
               width: double.infinity,
               child: FilledButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('确定'),
+                child: Text(AppStrings.confirm),
               ),
             ),
           ],
@@ -188,7 +190,9 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
   Widget _buildStatsRow(SearchState state) {
     final selected = state.selectedSourceUrls.length;
     return Text(
-      selected > 0 ? '已选择 1 个书源' : '未选择书源（搜索全部）',
+      selected > 0
+          ? AppStrings.searchOneSourceSelected
+          : AppStrings.searchNoSourceSelected,
       style: Theme.of(context).textTheme.bodySmall,
     );
   }
@@ -202,11 +206,12 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
           Icon(Symbols.error_rounded,
               size: 48, color: Theme.of(context).colorScheme.error),
           const SizedBox(height: 8),
-          Text('加载失败', style: Theme.of(context).textTheme.bodyMedium),
+          Text(AppStrings.loadFailed,
+              style: Theme.of(context).textTheme.bodyMedium),
           const SizedBox(height: 8),
           TextButton(
             onPressed: _loadSources,
-            child: const Text('重试'),
+            child: Text(AppStrings.retry),
           ),
         ],
       ),
@@ -224,7 +229,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
             Icon(Symbols.search_off_rounded,
                 size: 48, color: Theme.of(context).colorScheme.onSurfaceVariant),
             const SizedBox(height: 8),
-            Text('未找到匹配的书源',
+            Text(AppStrings.noMatchingSourcesLabel,
                 style: Theme.of(context).textTheme.bodyMedium),
           ],
         ),

@@ -10,6 +10,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/explore/explore_main_state.dart';
 
@@ -81,7 +82,7 @@ class _ExploreKindSelectSheetState extends State<_ExploreKindSelectSheet> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Text(
-                '选择分类',
+                AppStrings.selectCategory,
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
@@ -92,13 +93,13 @@ class _ExploreKindSelectSheetState extends State<_ExploreKindSelectSheet> {
               child: TextField(
                 controller: _searchController,
                 decoration: InputDecoration(
-                  hintText: '搜索分类',
+                  hintText: AppStrings.searchCategory,
                   isDense: true,
                   prefixIcon: const Icon(Symbols.search_rounded, size: 20),
                   suffixIcon: _query.isEmpty
                       ? null
                       : IconButton(
-                          tooltip: '清除',
+                          tooltip: AppStrings.clear,
                           icon: const Icon(Symbols.close_rounded, size: 18),
                           onPressed: () {
                             _searchController.clear();
@@ -114,7 +115,7 @@ class _ExploreKindSelectSheetState extends State<_ExploreKindSelectSheet> {
               child: filtered.isEmpty
                   ? Center(
                       child: Text(
-                        '没有匹配的分类',
+                        AppStrings.noMatchingCategory,
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),

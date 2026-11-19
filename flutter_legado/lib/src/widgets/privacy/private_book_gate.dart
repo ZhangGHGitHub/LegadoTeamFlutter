@@ -18,6 +18,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../providers/privacy/privacy_content_notifier.dart';
 import '../../providers/privacy/privacy_notifier.dart';
@@ -33,9 +34,9 @@ class PrivateBookGate extends ConsumerStatefulWidget {
     required this.bookUrl,
     required this.child,
     this.book,
-    this.title = '私密内容',
-    this.description = '验证后继续',
-    this.actionText = '验证并继续',
+    this.title,
+    this.description,
+    this.actionText,
   });
 
   /// 当前内容对应的书籍 URL（空 = 无书身份，无法判定，直接放行）
@@ -47,14 +48,16 @@ class PrivateBookGate extends ConsumerStatefulWidget {
   /// 授权后渲染的内容（阅读器/播放器）
   final Widget child;
 
-  /// 锁定页标题
-  final String title;
+  /// 锁定页标题（null = 取 [AppStrings.privateContent]）
+  final String? title;
 
-  /// 锁定页说明（无密码时由 [privacyLockedDescription] 覆盖）
-  final String description;
+  /// 锁定页说明（null = 取 [AppStrings.verifyToContinue]；无密码时由
+  /// [privacyLockedDescription] 覆盖）
+  final String? description;
 
-  /// 锁定页动作文案（无密码时由 [privacyLockedActionText] 覆盖）
-  final String actionText;
+  /// 锁定页动作文案（null = 取 [AppStrings.verifyAndContinue]；无密码时由
+  /// [privacyLockedActionText] 覆盖）
+  final String? actionText;
 
   @override
   ConsumerState<PrivateBookGate> createState() => _PrivateBookGateState();
@@ -112,7 +115,7 @@ class _PrivateBookGateState extends ConsumerState<PrivateBookGate> {
       context,
       ref,
       bookUrl: bookUrl,
-      title: '验证后继续',
+      title: AppStrings.verifyToContinue,
     );
     if (!mounted) return;
     if (unlocked) return;
@@ -194,14 +197,14 @@ class _PrivateBookGateState extends ConsumerState<PrivateBookGate> {
       key: const ValueKey('privateBookGateLocked'),
       body: SafeArea(
         child: PrivateLockedPage(
-          title: widget.title,
+          title: widget.title ?? AppStrings.privateContent,
           description: privacyLockedDescription(
             privacy,
-            fallback: widget.description,
+            fallback: widget.description ?? AppStrings.verifyToContinue,
           ),
           actionText: privacyLockedActionText(
             privacy,
-            fallback: widget.actionText,
+            fallback: widget.actionText ?? AppStrings.verifyAndContinue,
           ),
           onAction: () => _requestUnlock(bookUrl),
         ),

@@ -8,6 +8,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../models/main_tab.dart';
 import '../models/models.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
@@ -52,13 +53,15 @@ class _LoginRequiredView extends ConsumerWidget {
             Icon(Symbols.lock_outline_rounded, size: 44, color: colorScheme.tertiary),
             const SizedBox(height: 12),
             Text(
-              '书源需要登录',
+              AppStrings.sourceRequiresLogin,
               style: textTheme.titleMedium
                   ?.copyWith(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 6),
             Text(
-              message.isNotEmpty ? message : '登录后即可浏览该分类内容',
+              message.isNotEmpty
+                  ? message
+                  : AppStrings.loginToBrowseCategory,
               textAlign: TextAlign.center,
               maxLines: 4,
               overflow: TextOverflow.ellipsis,
@@ -72,7 +75,7 @@ class _LoginRequiredView extends ConsumerWidget {
               children: [
                 OutlinedButton(
                   onPressed: onRetry,
-                  child: const Text('重试'),
+                  child: Text(AppStrings.retry),
                 ),
                 const SizedBox(width: 12),
                 FilledButton(
@@ -85,7 +88,7 @@ class _LoginRequiredView extends ConsumerWidget {
                             onRetry();
                           }
                         },
-                  child: const Text('去登录'),
+                  child: Text(AppStrings.goLogin),
                 ),
               ],
             ),
@@ -242,9 +245,9 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
         .refresh();
     if (accepted || !mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('正在加载，请稍候再刷新'),
-        duration: Duration(seconds: 1),
+      SnackBar(
+        content: Text(AppStrings.loadingPleaseWait),
+        duration: const Duration(seconds: 1),
       ),
     );
   }
@@ -353,10 +356,10 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
     }
 
     if (state.books.isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: Symbols.explore_rounded,
-        title: '暂无书籍',
-        subtitle: '该分类下没有找到书籍',
+        title: AppStrings.noBooks,
+        subtitle: AppStrings.noBooksInCategory,
       );
     }
 
@@ -381,8 +384,8 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
     if (visibleBooks.isEmpty) {
       return EmptyState(
         icon: Symbols.filter_alt_rounded,
-        title: '筛选后无匹配书籍',
-        subtitle: '已加载的书籍中没有匹配「${widget.filterKeyword}」',
+        title: AppStrings.noBooksAfterFilter,
+        subtitle: AppStrings.filteredNoMatch(widget.filterKeyword),
       );
     }
 
@@ -618,7 +621,7 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
           child: TextButton(
             style: TextButton.styleFrom(foregroundColor: colorScheme.onSurface),
             onPressed: onRetry,
-            child: const Text('上一页加载失败，点击重试'),
+            child: Text(AppStrings.prevPageLoadFailed),
           ),
         ),
       );
@@ -628,7 +631,7 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Center(
         child: Text(
-          '下拉加载上一页',
+          AppStrings.pullToLoadPrevPage,
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -659,7 +662,7 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
             onPressed: () => ref
                 .read(exploreShowNotifierProvider(args).notifier)
                 .loadMore(),
-            child: const Text('加载失败，点击重试'),
+            child: Text(AppStrings.loadFailedTapToRetry),
           ),
         ),
       );

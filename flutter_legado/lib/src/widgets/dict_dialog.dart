@@ -3,6 +3,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/dict/dict_notifier.dart';
 import 'md3_loading_indicator.dart';
@@ -66,7 +67,7 @@ class _DictDialogState extends ConsumerState<DictDialog>
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('无法打开在线词典')),
+          SnackBar(content: Text(AppStrings.cannotOpenOnlineDict)),
         );
       }
     }
@@ -78,7 +79,10 @@ class _DictDialogState extends ConsumerState<DictDialog>
     final scheme = theme.colorScheme;
     final state = ref.watch(dictNotifierProvider);
     final height = MediaQuery.sizeOf(context).height * 0.55;
-    final tabs = <String>['本地', ...state.rules.map((r) => r.name)];
+    final tabs = <String>[
+      AppStrings.dictLocalTab,
+      ...state.rules.map((r) => r.name),
+    ];
 
     return SizedBox(
       height: height,
@@ -100,7 +104,7 @@ class _DictDialogState extends ConsumerState<DictDialog>
                 const Spacer(),
                 IconButton(
                   icon: const Icon(Symbols.close_rounded),
-                  tooltip: '关闭',
+                  tooltip: AppStrings.dialogClose,
                   onPressed: () => Navigator.pop(context),
                 ),
               ],
@@ -151,7 +155,7 @@ class _DictDialogState extends ConsumerState<DictDialog>
     if (entry == null || entry.definitions.isEmpty) {
       return Center(
         child: Text(
-          '本地词典未收录',
+          AppStrings.dictNotInLocal,
           style: theme.textTheme.bodyMedium?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
@@ -187,14 +191,14 @@ class _DictDialogState extends ConsumerState<DictDialog>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '在 ${rule.name} 中查询「${widget.word.trim()}」',
+            AppStrings.dictQueryInRule(rule.name, widget.word.trim()),
             style: theme.textTheme.bodyLarge,
           ),
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: () => _launchOnline(rule),
             icon: const Icon(Symbols.open_in_browser_rounded),
-            label: const Text('打开在线词典'),
+            label: Text(AppStrings.openOnlineDict),
           ),
         ],
       ),

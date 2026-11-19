@@ -2057,4 +2057,623 @@ class AppStrings {
       _locale == 'zh' ? '导入默认失败：$error' : 'Failed to import defaults: $error';
   static String selectedItemsCount(int count) =>
       _locale == 'zh' ? '已选 $count 项' : '$count selected';
+
+  // ============== L10N 批 1 线 B：widgets 根层 + privacy/manga/help/navigation ==============
+
+  // ----- 通用按钮 / 标签 -----
+  static String get dialogClose => _get('关闭', 'Close');
+  static String get imageLoadFailedLabel =>
+      _get('图片加载失败', 'Failed to load the image');
+  static String get listLayoutLabel => _get('列表', 'List');
+  static String get gridLayoutLabel => _get('网格', 'Grid');
+  static String get loadingSemantics => _get('加载中', 'Loading');
+  static String get allLabel => _get('全部', 'All');
+  static String get searchPlaceholder => _get('搜索...', 'Search...');
+  static String get copyAction => _get('复制', 'Copy');
+  static String get copiedLabel => _get('已复制', 'Copied');
+  static String get copyErrorLabel => _get('复制错误', 'Copy error');
+  static String get originalErrorLabel => _get('原始错误：', 'Original error: ');
+  static String get testAction => _get('测试', 'Test');
+  static String get previewAction => _get('预览', 'Preview');
+  static String get downloadAction => _get('下载', 'Download');
+  static String get verifyAction => _get('验证', 'Verify');
+  static String get unlockAction => _get('解锁', 'Unlock');
+  static String get startAction => _get('开始', 'Start');
+  static String get hiddenLabel => _get('已隐藏', 'Hidden');
+  static String get unknownTime => _get('未知时间', 'Unknown time');
+  static String get unknownError => _get('未知错误', 'Unknown error');
+  static String get noneLabel => _get('（无）', '(None)');
+  static String get noUpdateLog => _get('（无更新说明）', '(No changelog)');
+  static String get uncategorized => _get('未分类', 'Uncategorized');
+  static String get selectOperation => _get('选择操作', 'Select action');
+  static String get goLogin => _get('去登录', 'Log in');
+  static String get notNow => _get('暂不', 'Not now');
+  static String get confirmTextDefault => _get('确认', 'Confirm');
+  static String get cancelTextDefault => _get('取消', 'Cancel');
+
+  // ----- 通用参数化 -----
+  static String unreadChapters(int count) =>
+      _locale == 'zh' ? '$count 章未读' : '$count unread chapters';
+  static String failureWithReason(String action, String error) =>
+      _locale == 'zh' ? '$action失败：$error' : '$action failed: $error';
+  static String copiedLink(String url) =>
+      _locale == 'zh' ? '已复制链接：$url' : 'Link copied: $url';
+  static String loginDialogTitle(String name) =>
+      _locale == 'zh' ? '登录 - $name' : 'Log in - $name';
+  static String loginTitleWithSource(String name) =>
+      _locale == 'zh' ? '登录 $name' : 'Log in to $name';
+
+  // ----- 漫画阅读设置（manga/manga_config_sheet） -----
+  static String get mangaReadingSettings =>
+      _get('漫画阅读设置', 'Manga Reading Settings');
+  static String get mangaReadingMode => _get('阅读模式', 'Reading strategy');
+  static String get mangaPageScale => _get('页面适配', 'Page fit');
+  static String get mangaSidePadding => _get('侧边留白', 'Side margin');
+  static String get mangaAutoReadDesc => _get(
+      '单页式定时翻页；条漫定时滚动',
+      'Timed page turning in paged mode; timed scrolling in webtoon mode');
+  static String get mangaAutoRead => _get('自动翻页', 'Auto scroll');
+  static String get mangaAlignCenter => _get('居中', 'Center');
+  static String get copyLinkLabel => _get('复制链接', 'Copy link');
+  static String get mangaAutoSpeed => _get('自动速度', 'Auto speed');
+  static String mangaSpeedLevel(int level) =>
+      _locale == 'zh' ? '$level 档' : 'Level $level';
+  static String get mangaDisplayEffects => _get('显示效果', 'Display');
+  static String get mangaGrayscale => _get('灰度', 'Grayscale');
+  static String get mangaEInk => _get('电子纸', 'E-ink');
+  static String get mangaEInkDesc =>
+      _get('灰度近似；阈值已持久化', 'Approximate grayscale; the threshold is saved');
+  static String get mangaEInkThreshold => _get('电子纸阈值', 'E-ink threshold');
+  static String get mangaColorFilter => _get('色彩滤镜', 'Color filter');
+  static String get brightnessLabel => _get('亮度', 'Brightness');
+  static String get mangaFooterSettings => _get('页脚设置', 'Footer');
+  static String get mangaTapAreas => _get('点击区域', 'Tap areas');
+  static String get mangaFilterEntry => _get('滤镜', 'Filter');
+  static String get mangaFollowGlobal => _get('跟随全局', 'Follow global');
+  static String get mangaThisBook => _get('本书', 'This book');
+  static String get mangaAlignLeft => _get('左对齐', 'Left aligned');
+  static String get mangaHideFooter => _get('隐藏页脚', 'Hide footer');
+  static String get mangaFooterHidden => _get('页脚已隐藏', 'Footer hidden');
+  static String get mangaFooterEmpty =>
+      _get('（页脚内容为空）', '(Footer content is empty)');
+  static String get mangaPageCount => _get('页数', 'Page');
+  static String get mangaChapterLabel => _get('章节', 'Chapter');
+  static String get mangaProgressLabel => _get('总进度', 'Progress');
+  static String get mangaBgColor => _get('背景颜色', 'Background color');
+  static String get mangaClickActionHint =>
+      _get('点击格子循环切换该区域动作', 'Tap a cell to cycle the action for that area');
+  static String get mangaDisableClickScroll =>
+      _get('禁用点击翻页', 'Disable Tap to Turn Page');
+  static String get mangaDisableScale => _get('禁用漫画缩放', 'Disable Manga Zoom');
+  static String get mangaDisablePageAnim =>
+      _get('禁用翻页动画', 'Disable Page Turn Animation');
+  static String get mangaHideTitle => _get('隐藏漫画列表标题', 'Hide Manga List Titles');
+  static String get mangaVolumeKey => _get('音量键翻页', 'Volume Keys to Turn Page');
+  static String get mangaReverseVolumeKey =>
+      _get('反转音量键翻页方向', 'Reverse Volume-Key Page Turn Direction');
+  static String get mangaLongPressSave =>
+      _get('长按保存图片', 'Long press to save image');
+  static String get mangaDisableFadeIn =>
+      _get('禁用加载淡入动画', 'Disable Loading Fade-In Animation');
+  static String get mangaSampleChapter => _get('第三话', 'Ep-3');
+
+  // ----- 朗读定时（read_aloud_timer_sheet） -----
+  static String get readAloudTimerTitle => _get('定时停止', 'Stop timer');
+  static String get minutesTab => _get('分钟', 'Minutes');
+  static String get chaptersTab => _get('章节', 'Chapters');
+  static String readAloudTimerMinutes(int minutes) =>
+      _locale == 'zh' ? '$minutes 分钟' : '$minutes min';
+  static String readAloudTimerChapters(int chapters) =>
+      _locale == 'zh' ? '$chapters 章' : '$chapters chapters';
+  static String readAloudTimerRemaining(String countdown) =>
+      _locale == 'zh' ? '剩余 $countdown' : '$countdown left';
+  static String readAloudTimerChaptersRemaining(int chapters) =>
+      _locale == 'zh' ? '剩余 $chapters 章' : '$chapters chapters left';
+  static String get readAloudTimerFinishChapterStop =>
+      _get('读完本章后停止', 'Stop after finishing this chapter');
+  static String get readAloudTimerFinishChapter =>
+      _get('读完本章再停', 'Finish the current chapter first');
+  static String get readAloudTimerFinishChapterDesc => _get(
+      '到点后继续读完当前章，再在章末停止',
+      'When the timer ends, finish the current chapter and stop at its end');
+  static String get readAloudTimerChapterModeHint => _get(
+      '章节模式会在读完设定章数后的章末停止，无需「读完本章再停」。',
+      'Chapter mode stops at the end of the chapter after the set number of chapters, so "finish the current chapter first" is not needed.');
+  static String get readAloudTimerStop => _get('停止定时', 'Stop timer');
+  static String get readAloudTimerOff => _get('关闭定时', 'Turn timer off');
+
+  // ----- 导出对话框（export_dialog） -----
+  static String exportBookTitle(String name) =>
+      _locale == 'zh' ? '导出$name' : 'Export $name';
+  static String get exportFormat => _get('导出格式', 'Export format');
+  static String get exportEncoding => _get('字符编码', 'Character encoding');
+  static String get exportFileNameTemplate => _get('文件名模板', 'File name template');
+  static String get exportFileNameVars =>
+      _get('可用变量：{name} {author}', 'Available variables: {name} {author}');
+  static String get exportChapterRange => _get('章节范围', 'Chapter range');
+  static String get exportChapterRangeHint => _get(
+      '索引从 0 起；留空表示全部章节', 'Index starts at 0; leave empty for all chapters');
+  static String get exportRangeStart => _get('起始', 'Start');
+  static String get exportRangeEnd => _get('结束', 'End');
+  static String get exportPath => _get('导出路径', 'Export path');
+  static String get exportPickDirectory =>
+      _get('点击选择导出目录', 'Tap to choose the export folder');
+  static String get exportChooseDirectory =>
+      _get('选择导出目录', 'Choose export folder');
+  static String get exportIncludeToc => _get('包含目录', 'Include chapters');
+  static String get exportIncludeTocDesc =>
+      _get('导出时包含书籍的目录结构', "Include the book's chapter list in the export");
+  static String get exportUploadWebdav => _get('上传到 WebDAV', 'Upload to WebDAV');
+  static String get exportUploadWebdavDesc =>
+      _get('导出完成后自动上传到远程服务器', 'Upload to the remote server after exporting');
+  static String exportPreviewFailed(String error) =>
+      _locale == 'zh' ? '获取预览信息失败：$error' : 'Failed to load the preview: $error';
+  static String exportChapterCount(int count) =>
+      _locale == 'zh' ? '章节数：$count' : 'Chapters: $count';
+  static String get exportInProgress => _get('正在导出...', 'Exporting...');
+  static String get exportUnsupportedFormat =>
+      _get('不支持的导出格式', 'Unsupported export format');
+  static String get exportPickPathFirst =>
+      _get('请先选择导出目录', 'Choose an export folder first');
+  static String get exportStarting => _get('开始导出...', 'Starting export...');
+  static String get exportWritingFile =>
+      _get('导出完成，正在写入文件...', 'Export finished, writing the file...');
+  static String exportWriteFailed(String error) =>
+      _locale == 'zh' ? '文件写入失败：$error' : 'Failed to write the file: $error';
+  static String get exportUploadingToWebdav =>
+      _get('上传到 WebDAV...', 'Uploading to WebDAV...');
+  static String get exportUploadDone =>
+      _get('导出并上传成功！', 'Exported and uploaded successfully!');
+  static String get exportUploadFailedAfter => _get(
+      '导出成功，但 WebDAV 上传失败', 'Exported successfully, but the WebDAV upload failed');
+  static String exportSavedTo(String path) =>
+      _locale == 'zh' ? '已保存：$path' : 'Saved: $path';
+  static String get exportSuccess => _get('导出成功！', 'Export successful!');
+
+  // ----- 导出目标 Sheet（export_file_sheet） -----
+  static String exportUploadSuccessWith(String url) =>
+      _locale == 'zh' ? '上传成功：$url' : 'Uploaded: $url';
+  static String get exportUploadFailedTitle => _get('上传失败', 'Upload failed');
+  static String get exportSaveFailedTitle => _get('保存失败', 'Save failed');
+  static String get exportSaving => _get('正在保存…', 'Saving…');
+  static String get exportUploading => _get('正在上传…', 'Uploading…');
+  static String get exportSaveToLocal => _get('保存到本地', 'Save to local');
+  static String get exportSystemSaveDialogDesc => _get(
+      '通过系统保存对话框选择保存位置', 'Choose the location in the system save dialog');
+  static String get exportFirstSaveHint => _get(
+      '首次保存需选择保存文件夹，之后沿用', 'Choose a folder on first save; it is reused afterwards');
+  static String exportSavedToFolder(String directory) =>
+      _locale == 'zh' ? '保存到「$directory」' : 'Saved to "$directory"';
+  static String get exportChangeSaveLocation =>
+      _get('换个保存位置', 'Change save location');
+  static String get exportChooseFolderDesc =>
+      _get('选择文件保存到哪个文件夹', 'Choose the folder to save the file in');
+  static String exportCurrentFolder(String directory) => _locale == 'zh'
+      ? '当前：$directory · 点击重新选择文件夹'
+      : 'Current: $directory · tap to choose another folder';
+  static String get exportUploadDirect => _get('上传直链', 'Upload direct link');
+  static String get exportUploadDirectDesc => _get(
+      '按直链上传规则上传，返回可分享的下载链接',
+      'Upload using the direct-link rules and get a shareable download link');
+  static String exportFileLabel(String name) =>
+      _locale == 'zh' ? '导出文件：$name' : 'File: $name';
+  static String get exportFolderSelected => _get('已选文件夹', 'Folder selected');
+  static String get exportUploadSuccessTitle => _get('上传成功', 'Uploaded');
+  static String get exportCopyPassphrase => _get('复制口令', 'Copy passphrase');
+  static String get exportCopyPassphraseDesc => _get(
+      '生成可粘贴到阅读「口令导入」的分享口令，可设置有效期',
+      'Generate a passphrase for "Passphrase import" in Legado, with an optional expiry');
+  static String get exportChangePosition => _get('换个位置', 'Change location');
+  static String get exportUseLegacyDialog =>
+      _get('改用系统另存对话框', 'Use the system save-as dialog');
+  static String copyFailedWith(String error) =>
+      _locale == 'zh' ? '复制失败：$error' : 'Copy failed: $error';
+
+  // ----- 源规则帮助（source_rule_help_sheet） -----
+  static String get sourceRuleHelpTitle => _get('规则语法帮助', 'Rule syntax help');
+  static String get sourceRuleHelpSubtitle => _get(
+      '书源规则速查：各规则含义、@ 前缀语法与 jsLib 常用函数。',
+      'Quick reference for book source rules: what each rule does, the @ prefix syntax, and common jsLib functions.');
+  static String get sourceRuleSection30 =>
+      _get('阅读 3.0 源规则说明', 'Legado 3.0 source rules');
+  static String get sourceRuleCode30 => _get(
+      '搜索: searchUrl   发现: exploreUrl\n详情: bookInfoRule   目录: tocRule   正文: contentRule',
+      'Search: searchUrl   Discover: exploreUrl\nDetails: bookInfoRule   TOC: tocRule   Content: contentRule');
+  static String get sourceRuleSearchDesc => _get(
+      'searchUrl：列表页请求地址，{{key}} 表示关键词、{{page}} 表示页码。',
+      'searchUrl: request URL of the list page; {{key}} is the keyword and {{page}} is the page number.');
+  static String get sourceRuleExploreDesc => _get(
+      'exploreUrl：发现页的分类/榜单地址，可用规则生成分类与子列表。',
+      'exploreUrl: category/ranking URL for the Discover page; rules can generate categories and sub-lists.');
+  static String get sourceRuleInfoDesc => _get(
+      'bookInfoRule：从详情页解析书名、作者、封面、简介与目录页链接。',
+      'bookInfoRule: parse title, author, cover, summary and the TOC URL from the details page.');
+  static String get sourceRuleTocDesc => _get(
+      'tocRule：从目录页解析章节名与章节链接列表（含分卷结构）。',
+      'tocRule: parse chapter names and links from the TOC page (including volume structure).');
+  static String get sourceRuleContentDesc => _get(
+      'contentRule：从章节页解析正文内容，可用 ## 做正则替换清洗。',
+      'contentRule: parse the content from the chapter page; ## can be used for regex replacement.');
+  static String get sourceRulePrefixSection => _get('@规则语法', '@ rule syntax');
+  static String get sourceRulePrefixDesc => _get(
+      '规则前缀决定解析方式；不加前缀时默认按 HTML 规则解析。'
+          '常用组合：|| 取首个非空、&& 合并、%% 交错、## 正则替换。',
+      'The rule prefix decides how to parse; without a prefix HTML rules are used. '
+          'Common combinations: || first non-empty, && merge, %% interleave, ## regex replace.');
+  static String get sourceRuleJsLibSection =>
+      _get('jsLib 与内置变量', 'jsLib and built-in variables');
+  static String get sourceRuleJsLibDesc => _get(
+      'jsLib 中定义的函数可被 search / getChapters / getContent 复用'
+          '（JS 书源即 mainJs 顶层函数）。常用内置对象与函数：',
+      'Functions defined in jsLib can be reused by search / getChapters / getContent '
+          '(for JS sources these are top-level functions in mainJs). Common built-in objects and functions:');
+  static String get sourceRuleCssDesc => _get(
+      '按 CSS 选择器从 HTML 中取文本或属性。',
+      'Extract text or attributes from HTML with a CSS selector.');
+  static String get sourceRuleJsonDesc => _get(
+      '按 JSONPath 从 JSON 响应中取值。', 'Extract values from a JSON response with JSONPath.');
+  static String get sourceRuleJsDesc => _get(
+      '交给 JavaScript 处理上一步结果并返回最终值。',
+      'Pass the previous result to JavaScript and return the final value.');
+  static String get sourceRuleXPathDesc =>
+      _get('按 XPath 从 HTML/XML 中取值。', 'Extract values from HTML/XML with XPath.');
+  static String get sourceRuleAjaxDesc => _get(
+      '发起 HTTP 请求并返回响应文本（自动携带 Cookie 与请求头）。',
+      'Send an HTTP request and return the response text (cookies and headers are included automatically).');
+  static String get sourceRuleBase64Desc => _get(
+      '对 Base64 字符串解码并返回原始文本。',
+      'Decode a Base64 string and return the original text.');
+  static String get sourceRuleBookDesc => _get(
+      '当前书籍对象，含 bookUrl / name / author / tocUrl 等字段。',
+      'The current book object with fields such as bookUrl / name / author / tocUrl.');
+  static String get sourceRuleBaseUrlDesc =>
+      _get('当前规则对应的页面地址。', 'The page URL the current rule applies to.');
+  static String get sourceRuleChapterDesc => _get(
+      '当前章节对象，含 url / title 等字段。',
+      'The current chapter object with fields such as url / title.');
+  static String get sourceRuleResultDesc => _get(
+      '上一步规则的输出结果（链式规则中继续处理时使用）。',
+      'Output of the previous rule (used when chaining rules).');
+  static String sourceRuleExample(String description, String sample) =>
+      _locale == 'zh' ? '$description 例：$sample' : '$description e.g. $sample';
+
+  // ----- 分组管理（group_manage_dialog 及三域薄包装） -----
+  static String get groupManageTitle => _get('分组管理', 'Group Management');
+  static String get addGroup => _get('添加分组', 'Add group');
+  static String get groupNameLabel => _get('分组名称', 'Group name');
+  static String get renameGroup => _get('重命名分组', 'Rename group');
+  static String get renameGroupHint => _get('输入新分组名称', 'Enter a new group name');
+  static String get deleteGroup => _get('删除分组', 'Delete group');
+  static String get noGroups => _get('暂无分组', 'No groups');
+  static String get rssSourceNoun => _get('订阅源', 'RSS source');
+  static String groupExists(String name) =>
+      _locale == 'zh' ? '分组「$name」已存在' : 'Group "$name" already exists';
+  static String noUngroupedItems(String noun) => _locale == 'zh'
+      ? '没有未分组的$noun可归入该分组'
+      : 'No ungrouped $noun to add to this group';
+  static String get addGroupFailedNoReason =>
+      _get('添加分组失败', 'Failed to add the group');
+  static String confirmDeleteGroup(String group, String noun) => _locale == 'zh'
+      ? '确定要删除分组「$group」吗？分组内$noun将移出该分组。'
+      : 'Delete the group "$group"? Its $noun will be removed from the group.';
+  static String get customGroupNameTitle =>
+      _get('输入自定义源分组名称', 'Enter the custom source group name');
+  static String get customGroupNameDesc =>
+      _get('关闭替换分组 / 开启添加分组', 'Off: replace group / On: add group');
+  static String get operationFailedNoReason => _get('操作失败', 'Operation failed');
+
+  // ----- 隐私（privacy/） -----
+  static String get privacySpace => _get('隐私空间', 'Private space');
+  static String get privacyEnterPassword =>
+      _get('输入隐私密码以继续', 'Enter the privacy password to continue');
+  static String get privacyPasswordLabel => _get('隐私密码', 'Privacy password');
+  static String get useBiometrics => _get('使用生物识别', 'Use biometrics');
+  static String get exitApp => _get('退出应用', 'Exit app');
+  static String get enterPassword => _get('请输入密码', 'Enter the password');
+  static String get wrongPassword => _get('密码错误', 'Wrong password');
+  static String get wrongPasswordRetry =>
+      _get('密码错误，请重试', 'Wrong password, please try again');
+  static String get privacyPolicyReadFailed =>
+      _get('无法读取隐私设置', 'Unable to read privacy settings');
+  static String get privacyPolicyReadFailedDesc => _get(
+      '为保护私密内容，隐私设置恢复前不会显示应用内容。请重试。',
+      'To protect private content, app content is hidden until the privacy settings load. Please retry.');
+  static String get privacyCredentialReadFailed =>
+      _get('无法读取隐私凭据', 'Unable to read privacy credentials');
+  static String get privacyCredentialReadFailedDesc => _get(
+      '为保护私密内容，凭据恢复前不会显示应用内容。请重试。',
+      'To protect private content, app content is hidden until the credentials load. Please retry.');
+  static String get privacyNotSet =>
+      _get('未设置隐私密码', 'No privacy password set');
+  static String get privacyNotSetDesc => _get(
+      '私密内容需要隐私密码。请先在隐私设置中设置密码后再验证。',
+      'Private content requires a privacy password. Set one in privacy settings before verifying.');
+  static String get verifyPrivacyPassword =>
+      _get('验证隐私密码', 'Verify privacy password');
+  static String get privacyScopeEveryTime => _get(
+      '验证后仅放行当前内容，离开即重新锁定',
+      'Only the current content is unlocked; it locks again when you leave');
+  static String get privacyScopeAppSession => _get(
+      '验证后本次应用内不再重复验证', 'No further verification until the app is closed');
+  static String get privacyScopeUntilBackground => _get(
+      '验证后离开后台超过宽限时间需重新验证',
+      'Verification is required again after being in the background beyond the grace period');
+  static String get privateContent => _get('私密内容', 'Private content');
+  static String get verifyToContinue => _get('验证后继续', 'Verify to continue');
+  static String get verifyAndContinue => _get('验证并继续', 'Verify and continue');
+  static String get verifyToViewContent =>
+      _get('验证后查看内容', 'Verify to view the content');
+  static String get verifyAndViewContent => _get('验证并查看', 'Verify and view');
+  static String get goSetPassword => _get('去设置密码', 'Set a password');
+  static String get verifyToRead => _get('验证后阅读', 'Verify to read');
+  static String get verifyToReadBook => _get('验证后阅读本书', 'Verify to read this book');
+  static String get verifyAndRead => _get('验证并阅读', 'Verify and read');
+
+  // ----- 帮助（help/） -----
+  static String get helpSourceCode => _get('源码', 'Source code');
+  static String get helpToc => _get('目录', 'Contents');
+  static String helpLoadFailed(String error) =>
+      _locale == 'zh' ? '加载帮助失败：$error' : 'Failed to load help: $error';
+  static String cannotOpenLinkWith(String href) =>
+      _locale == 'zh' ? '无法打开链接：$href' : 'Unable to open the link: $href';
+
+  // ----- 侧栏导航（navigation/） -----
+  static String get myPaneEmptyHint =>
+      _get('选择左侧项目', 'Select an item on the left');
+  static String get collapseSidebar => _get('收起侧栏', 'Collapse sidebar');
+  static String get expandSidebar => _get('展开侧栏', 'Expand sidebar');
+  static String get bookshelfGroups => _get('书架分组', 'Book Groups');
+  static String get collapseSearch => _get('收起搜索', 'Collapse search');
+  static String get expandSearch => _get('展开搜索', 'Expand search');
+
+  // ----- 备份 / 恢复（backup_*.dart） -----
+  static String get webdavConfigureFirst =>
+      _get('请先配置 WebDAV', 'Configure WebDAV first');
+  static String get webdavNotConfiguredAbort =>
+      _get('未配置 WebDAV，已取消备份', 'WebDAV is not configured; backup cancelled');
+  static String get backupToLocal => _get('备份至本地', 'Backup to Local');
+  static String get backupToNetwork => _get('备份至网络', 'Backup to Network');
+  static String get backupToLocalAndNetwork =>
+      _get('备份至本地与网络', 'Backup to Local & Network');
+  static String get restoreFromNetwork => _get('网络恢复', 'Restore from Network');
+  static String get restoreLatestLocal => _get('本地最新', 'Latest local');
+  static String get restoreLatestRemote => _get('远端最新', 'Latest remote');
+  static String get webdavNewerBackupConfirm => _get(
+      'WebDAV 备份比本地新，是否恢复？',
+      'The WebDAV backup is newer than the local one. Restore it?');
+  static String get backupContentSubtitle => _get(
+      '勾选后备份时不写入该表；恢复该备份时本机这些表保持原值。',
+      'Checked tables are skipped when backing up; restoring keeps the local tables unchanged.');
+  static String get restoreIgnoreTitle => _get('恢复忽略', 'Restore exclusions');
+  static String get restoreIgnoreSubtitle => _get(
+      '恢复时跳过对应项；备份忽略请单独设置。',
+      'Skipped items are excluded when restoring; backup exclusions are configured separately.');
+  static String get selectRemoteBackup => _get('选择远端备份', 'Select a remote backup');
+
+  // ----- 崩溃日志（crash_log_dialog） -----
+  static String get crashOccurred =>
+      _get('上次运行发生崩溃', 'The app crashed on the last run');
+  static String crashTimeLabel(String time) =>
+      _locale == 'zh' ? '崩溃时间: $time' : 'Crash time: $time';
+  static String get showDetails => _get('查看详情', 'View details');
+  static String get hideDetails => _get('收起详情', 'Hide details');
+
+  // ----- 护眼（eye_protection_config_sheet） -----
+  static String get eyeProtectionIntensity =>
+      _get('护眼强度', 'Eye protection intensity');
+  static String get eyeProtectionCurrentIntensity =>
+      _get('当前强度', 'Current intensity');
+  static String get colorTemperature => _get('色温', 'Color temperature');
+  static String get colorTemperatureCurrent =>
+      _get('当前色温', 'Current color temperature');
+
+  // ----- 视频（video_settings_dialog / video_float_window_button） -----
+  static String get videoPlaybackSettings => _get('播放设置', 'Playback settings');
+  static String get videoAutoPlay => _get('自动播放', 'Auto play');
+  static String get videoDefaultFloatWindow =>
+      _get('默认悬浮窗播放', 'Play in a floating window by default');
+  static String get videoAutoFullscreen => _get('自动全屏', 'Auto fullscreen');
+  static String get videoFullscreenProgressBar =>
+      _get('全屏底栏进度条', 'Fullscreen bottom progress bar');
+  static String get videoLongPressSpeed => _get('长按倍速', 'Long-press speed');
+  static String get videoFloatWindow => _get('悬浮窗', 'Floating window');
+  static String get videoNormalSpeed => _get('倍速', 'Speed');
+  static String videoSpeedTip(String speed) =>
+      _locale == 'zh' ? '$speed倍播放中' : 'Playing at ${speed}x';
+  static String videoLongPressSpeedTip(String speed) =>
+      _locale == 'zh' ? '$speed倍速播放中' : 'Playing at ${speed}x (long press)';
+  static String videoEpisodesTitle(int count) =>
+      _locale == 'zh' ? '选集（$count）' : 'Episodes ($count)';
+
+  // ----- 更新对话框（update_dialog） -----
+  static String get ignoreThisVersion => _get('忽略此版本', 'Ignore this version');
+  static String get versionIgnored => _get('已忽略此版本', 'This version is ignored');
+  static String get backupDownload => _get('备用下载', 'Alternative download');
+  static String get openInBrowser => _get('浏览器打开', 'Open in browser');
+
+  // ----- 打开链接确认（open_url_confirm_dialog） -----
+  static String get openUrlConfirmTitle => _get('跳转确认', 'Confirm navigation');
+  static String get openUrlConfirmContent => _get(
+      '正在请求跳转链接/应用，是否跳转？',
+      'A link or app is requesting to open. Continue?');
+  static String get openUrlAction => _get('跳转', 'Open');
+  static String get cannotOpenLinkShort =>
+      _get('无法打开链接', 'Unable to open the link');
+  static String get openLinkFailed => _get('打开链接失败', 'Failed to open the link');
+
+  // ----- 口令（passphrase_import / source_share_passphrase_dialog） -----
+  static String get passphraseNotShare =>
+      _get('不是分享口令', 'Not a share passphrase');
+  static String get passphraseInvalid => _get('口令无效', 'Invalid passphrase');
+  static String get passphraseExpired => _get('口令已过期', 'Passphrase expired');
+  static String get passphraseLabel => _get('口令', 'Passphrase');
+  static String get passphraseExpiryDays => _get('有效期（天）', 'Valid for (days)');
+  static String get passphraseExpiryInvalid =>
+      _get('请输入有效期天数', 'Enter the number of days');
+  static String passphraseExpiryRange(int maxDays) => _locale == 'zh'
+      ? '有效期需为 0~$maxDays 天'
+      : 'Validity must be between 0 and $maxDays days';
+  static String passphraseExpiryHelper(int maxDays) => _locale == 'zh'
+      ? '0 表示永久有效，最长 $maxDays 天'
+      : '0 means no expiry; maximum $maxDays days';
+  static String get passphraseWarning => _get(
+      '口令包含分享直链，仅发送给可信的人；过期后无法导入。',
+      'The passphrase contains a direct link. Send it only to people you trust; it cannot be imported after it expires.');
+  static String passphrasePrefixMissing(String prefix) => _locale == 'zh'
+      ? '未识别到「$prefix」前缀，请确认已完整复制。'
+      : 'The "$prefix" prefix was not found; make sure the whole passphrase was copied.';
+  static String passphraseMalformed(String prefix) => _locale == 'zh'
+      ? '请先复制分享口令（以「$prefix」开头）。'
+      : 'Copy a share passphrase first (it starts with "$prefix").';
+  static String get passphraseFormatInvalid => _get(
+      '口令格式或分享链接无效，可能复制不完整，请重新复制。',
+      'The passphrase or share link is invalid. The copy may be incomplete; please copy it again.');
+  static String get passphraseExpiredDesc => _get(
+      '该口令已超过分享有效期，请联系分享者重新生成。',
+      'This passphrase has expired. Ask the sender to generate a new one.');
+
+  // ----- 验证码（verification_code_listener） -----
+  static String get disableBookSource => _get('禁用书源', 'Disable book source');
+  static String get deleteBookSource => _get('删除书源', 'Delete book source');
+  static String get captchaImageLoadFailed =>
+      _get('验证码图片加载失败', 'Failed to load the CAPTCHA image');
+  static String get captchaHint => _get('输入验证码', 'Enter the CAPTCHA');
+  static String get enterCaptcha => _get('请输入验证码', 'Please enter the CAPTCHA');
+  static String captchaRequiredFor(String name) =>
+      _locale == 'zh' ? '「$name」需要验证码' : '"$name" requires a CAPTCHA';
+
+  // ----- 登录（classic_login_dialog / login_v2_dialog） -----
+  static String get loginHeader => _get('登录头', 'Login header');
+  static String get viewLoginHeader => _get('查看登录头', 'View login header');
+  static String get deleteLoginHeader => _get('删除登录头', 'Delete login header');
+  static String get clearLoginInfo => _get('清除登录信息', 'Clear login info');
+  static String get loginHeaderDeleted =>
+      _get('登录头已删除', 'Login header deleted');
+  static String get loginInfoCleared => _get('登录信息已清除', 'Login info cleared');
+  static String get loginFailed => _get('登录失败', 'Login failed');
+  static String get loginFormParseFailed =>
+      _get('登录表单解析失败', 'Failed to parse the login form');
+  static String get loginFormNotConfigured =>
+      _get('该书源未配置登录表单', 'This source has no login form configured');
+  static String get loginActionFailed => _get('动作执行失败', 'Action failed');
+  static String get loginErrorOccurred => _get('登录出错', 'Login error');
+
+  // ----- 封面规则（cover_rule_config_dialog） -----
+  static String get coverPreview => _get('封面预览', 'Cover preview');
+  static String get coverRules => _get('封面规则', 'Cover rules');
+  static String get coverSearchUrl => _get('搜索 URL', 'Search URL');
+  static String get coverSearchUrlHint =>
+      _get('支持 {{key}} 模板', 'Supports the {{key}} template');
+  static String get coverExtractRule => _get('封面提取规则', 'Cover extraction rule');
+  static String get coverTestByTitle => _get('按书名测试', 'Test by title');
+  static String get coverTitleHint => _get('输入书名', 'Enter a title');
+  static String get coverTitleRequired => _get('请输入书名', 'Enter a title');
+  static String get coverRulesRequired => _get(
+      '搜索url和cover规则不能为空', 'The search URL and cover rule cannot be empty');
+  static String get coverNoCandidates => _get(
+      '未搜到候选封面（无启用规则或全部失败）',
+      'No candidate covers found (no enabled rules or all failed)');
+  static String get coverUrlCopied => _get('封面 URL 已复制', 'Cover URL copied');
+  static String get loadFailedNoReason => _get('加载失败', 'Failed to load');
+  static String get searchFailedNoReason => _get('搜索失败', 'Search failed');
+  static String get saveFailedNoReason => _get('保存失败', 'Failed to save');
+  static String get deleteFailedNoReason => _get('删除失败', 'Failed to delete');
+
+  // ----- 颜色输入（container_color_dialog） -----
+  static String get colorInputHint =>
+      _get('#AARRGGBB 或 #RRGGBB', '#AARRGGBB or #RRGGBB');
+  static String get colorInputInvalid =>
+      _get('请输入 6/8 位十六进制颜色', 'Enter a 6- or 8-digit hex color');
+
+  // ----- 字典（dict_dialog） -----
+  static String get dictLocalTab => _get('本地', 'Local');
+  static String get dictNotInLocal =>
+      _get('本地词典未收录', 'Not found in the local dictionary');
+  static String get openOnlineDict => _get('打开在线词典', 'Open online dictionary');
+  static String dictQueryInRule(String rule, String word) =>
+      _locale == 'zh' ? '在 $rule 中查询「$word」' : 'Look up "$word" in $rule';
+
+  // ----- 发现 / 搜索筛选（explore_*.dart / search_filter_panel） -----
+  static String get sourceRequiresLogin =>
+      _get('书源需要登录', 'This source requires login');
+  static String get loginToBrowseCategory =>
+      _get('登录后即可浏览该分类内容', 'Log in to browse this category');
+  static String get loadingPleaseWait =>
+      _get('正在加载，请稍候再刷新', 'Loading, please refresh again later');
+  static String get loadingPleaseWaitToJump => _get(
+      '正在加载，请加载完成后再跳页', 'Loading, please wait before jumping to a page');
+  static String get noBooks => _get('暂无书籍', 'No books');
+  static String get noBooksInCategory =>
+      _get('该分类下没有找到书籍', 'No books found in this category');
+  static String get noBooksAfterFilter =>
+      _get('筛选后无匹配书籍', 'No books match the filter');
+  static String filteredNoMatch(String keyword) => _locale == 'zh'
+      ? '已加载的书籍中没有匹配「$keyword」'
+      : 'None of the loaded books match "$keyword"';
+  static String get prevPageLoadFailed => _get(
+      '上一页加载失败，点击重试', 'Failed to load the previous page; tap to retry');
+  static String get pullToLoadPrevPage =>
+      _get('下拉加载上一页', 'Pull down to load the previous page');
+  static String get loadFailedTapToRetry =>
+      _get('加载失败，点击重试', 'Failed to load; tap to retry');
+  static String get exploreKindLoadFailed =>
+      _get('发现分类加载失败', 'Failed to load discovery categories');
+  static String get selectCategory => _get('选择分类', 'Select category');
+  static String get searchCategory => _get('搜索分类', 'Search categories');
+  static String get noMatchingCategory =>
+      _get('没有匹配的分类', 'No matching categories');
+  static String get refreshActionLabel => _get('刷新', 'Refresh');
+  static String pageNumberLabel(String page) =>
+      _locale == 'zh' ? '第 $page 页' : 'Page $page';
+  static String get jumpToPage => _get('跳转到页码', 'Jump to page');
+  static String jumpToPageHint(String maxPage) => _locale == 'zh'
+      ? '输入目标页码（1-$maxPage），跳转后列表从该页开始加载'
+      : 'Enter the target page (1-$maxPage); the list loads from that page';
+  static String get pageNumberHint =>
+      _get('页码（最多 4 位）', 'Page number (up to 4 digits)');
+  static String get searchThisSource => _get('搜索该书源', 'Search this source');
+  static String get backToSourceListLabel =>
+      _get('返回源列表', 'Back to source list');
+  static String get selectSource => _get('选择书源', 'Select source');
+  static String get sourceHasNoCategories =>
+      _get('该源没有可用分类', 'This source has no categories');
+  static String get sourceNoCategoriesDesc => _get(
+      '书源发现规则未解析出可浏览的分类',
+      'The discovery rules did not produce any browsable categories');
+  static String get reparse => _get('重新解析', 'Parse again');
+  static String get categoryMissingUrl => _get('分类缺少地址', 'Category has no URL');
+  static String get categoryMissingUrlDesc => _get(
+      '请选择其他分类或刷新书源发现规则',
+      'Choose another category or refresh the discovery rules');
+  static String get categoryParseFailed =>
+      _get('分类解析失败', 'Failed to parse the category');
+  static String get searchSourceByHint =>
+      _get('搜索书源（名称/地址）', 'Search sources (name/URL)');
+  static String get noMatchingSourcesLabel =>
+      _get('没有匹配的书源', 'No matching sources');
+  static String get decreaseColumns => _get('减少列数', 'Fewer columns');
+  static String get increaseColumns => _get('增加列数', 'More columns');
+  static String columnsCount(int count) =>
+      _locale == 'zh' ? '$count 列' : '$count columns';
+  static String get searchOneSourceSelected =>
+      _get('已选择 1 个书源', '1 source selected');
+  static String get searchNoSourceSelected =>
+      _get('未选择书源（搜索全部）', 'No source selected (search all)');
+
+  // ----- 其他零散组件（调试 / 热力图） -----
+  static String get debugLabel => _get('调试', 'Debug');
+  static String get rerun => _get('重新运行', 'Run again');
+  static String get heatmapLess => _get('少', 'Less');
+  static String get heatmapMoreDuration =>
+      _get('多（格 = 当日阅读时长）', 'More (cell = reading time that day)');
+  static String get heatmapMoreBooks =>
+      _get('多（格 = 当日阅读书籍数）', 'More (cell = books read that day)');
+  static String heatmapSeconds(int seconds) =>
+      _locale == 'zh' ? '$seconds 秒' : '$seconds s';
+  static String heatmapMinutes(int minutes) =>
+      _locale == 'zh' ? '$minutes 分钟' : '$minutes min';
+  static String heatmapHoursMinutes(int hours, int minutes) =>
+      _locale == 'zh' ? '$hours 小时 $minutes 分' : '${hours}h ${minutes}m';
+  static String heatmapDayBooks(int month, int day, int count) =>
+      _locale == 'zh' ? '$month/$day · $count 本' : '$month/$day · $count books';
 }

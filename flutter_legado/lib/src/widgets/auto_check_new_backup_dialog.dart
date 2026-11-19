@@ -11,6 +11,8 @@
 // 按钮由 AlertDialog 的 OverflowBar 自动堆叠，避免横向溢出。
 import 'package:flutter/material.dart';
 
+import '../l10n/app_strings.dart';
+
 /// 显示「恢复」确认框
 ///
 /// 返回 `true`=确定、`false`=取消、`null`=未明确选择（点遮罩/返回键或
@@ -40,12 +42,12 @@ class AutoCheckNewBackupDialog extends StatelessWidget {
       key: const ValueKey('autoCheckNewBackupDialog'),
       actionsAlignment: MainAxisAlignment.end,
       actionsPadding: const EdgeInsets.fromLTRB(12, 0, 16, 12),
-      title: const Text('恢复'),
+      title: Text(AppStrings.restore),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('WebDAV 备份比本地新，是否恢复？'),
+          Text(AppStrings.webdavNewerBackupConfirm),
           const SizedBox(height: 8),
           Text(
             fileName,
@@ -62,7 +64,7 @@ class AutoCheckNewBackupDialog extends StatelessWidget {
         TextButton(
           key: const ValueKey('autoCheckNewBackupCancel'),
           onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         const SizedBox(width: 12),
         ConstrainedBox(
@@ -71,7 +73,7 @@ class AutoCheckNewBackupDialog extends StatelessWidget {
             key: const ValueKey('autoCheckNewBackupConfirm'),
             style: TextButton.styleFrom(foregroundColor: scheme.error),
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('确定'),
+            child: Text(AppStrings.confirm),
           ),
         ),
       ],

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../providers/audio/audio_notifier.dart';
 import '../services/read_aloud_timer_settings.dart';
 
@@ -155,16 +156,16 @@ class _ReadAloudTimerSheetState extends ConsumerState<ReadAloudTimerSheet>
                   Padding(
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Text(
-                      '定时停止',
+                      AppStrings.readAloudTimerTitle,
                       textAlign: TextAlign.center,
                       style: theme.textTheme.titleMedium,
                     ),
                   ),
                   TabBar(
                     controller: _tabController,
-                    tabs: const [
-                      Tab(text: '分钟'),
-                      Tab(text: '章节'),
+                    tabs: [
+                      Tab(text: AppStrings.minutesTab),
+                      Tab(text: AppStrings.chaptersTab),
                     ],
                   ),
                   if (notifier.isSleepTimerActive)
@@ -190,9 +191,9 @@ class _ReadAloudTimerSheetState extends ConsumerState<ReadAloudTimerSheet>
     final theme = Theme.of(context);
     final text = switch (notifier.sleepTimerMode) {
       SleepTimerMode.duration =>
-        '剩余 ${_formatCountdown(notifier.sleepRemainingSeconds)}',
-      SleepTimerMode.chapters => '剩余 ${notifier.chaptersToStopRemaining} 章',
-      SleepTimerMode.finishChapter => '读完本章后停止',
+        AppStrings.readAloudTimerRemaining(_formatCountdown(notifier.sleepRemainingSeconds)),
+      SleepTimerMode.chapters => AppStrings.readAloudTimerChaptersRemaining(notifier.chaptersToStopRemaining),
+      SleepTimerMode.finishChapter => AppStrings.readAloudTimerFinishChapterStop,
       SleepTimerMode.off => '',
     };
     if (text.isEmpty) return const SizedBox.shrink();
@@ -238,7 +239,9 @@ class _ReadAloudTimerSheetState extends ConsumerState<ReadAloudTimerSheet>
           children: [
             for (final preset in kReadAloudTimerMinutePresets)
               ChoiceChip(
-                label: Text(preset == 0 ? '关闭' : '$preset 分钟'),
+                label: Text(preset == 0
+                    ? AppStrings.modeOff
+                    : AppStrings.readAloudTimerMinutes(preset)),
                 selected: value == preset,
                 onSelected: (_) => _selectMinutes(preset),
               ),
@@ -246,7 +249,7 @@ class _ReadAloudTimerSheetState extends ConsumerState<ReadAloudTimerSheet>
         ),
         Row(
           children: [
-            const Text('分钟'),
+            Text(AppStrings.minutesTab),
             Expanded(
               child: Slider(
                 key: const ValueKey('read-aloud-timer-minutes-slider'),
@@ -254,7 +257,9 @@ class _ReadAloudTimerSheetState extends ConsumerState<ReadAloudTimerSheet>
                 min: 0,
                 max: kMaxReadAloudTimerMinutes.toDouble(),
                 divisions: kMaxReadAloudTimerMinutes,
-                label: value == 0 ? '关闭' : '$value 分钟',
+                label: value == 0
+                    ? AppStrings.modeOff
+                    : AppStrings.readAloudTimerMinutes(value),
                 onChanged: (v) => setState(() => _minutes = v),
                 onChangeEnd: (v) {
                   _selectMinutes(v.round());
@@ -264,7 +269,9 @@ class _ReadAloudTimerSheetState extends ConsumerState<ReadAloudTimerSheet>
             SizedBox(
               width: 64,
               child: Text(
-                value == 0 ? '关闭' : '$value 分钟',
+                value == 0
+                    ? AppStrings.modeOff
+                    : AppStrings.readAloudTimerMinutes(value),
                 textAlign: TextAlign.end,
               ),
             ),
@@ -273,8 +280,8 @@ class _ReadAloudTimerSheetState extends ConsumerState<ReadAloudTimerSheet>
         SwitchListTile(
           key: const ValueKey('read-aloud-timer-finish-chapter-switch'),
           contentPadding: EdgeInsets.zero,
-          title: const Text('读完本章再停'),
-          subtitle: const Text('到点后继续读完当前章，再在章末停止'),
+          title: Text(AppStrings.readAloudTimerFinishChapter),
+          subtitle: Text(AppStrings.readAloudTimerFinishChapterDesc),
           value: _finishChapter,
           onChanged: _setFinishChapter,
         ),
@@ -296,7 +303,9 @@ class _ReadAloudTimerSheetState extends ConsumerState<ReadAloudTimerSheet>
           children: [
             for (final preset in kReadAloudTimerChapterPresets)
               ChoiceChip(
-                label: Text(preset == 0 ? '关闭' : '$preset 章'),
+                label: Text(preset == 0
+                    ? AppStrings.modeOff
+                    : AppStrings.readAloudTimerChapters(preset)),
                 selected: value == preset,
                 onSelected: (_) => _selectChapters(preset),
               ),
@@ -304,7 +313,7 @@ class _ReadAloudTimerSheetState extends ConsumerState<ReadAloudTimerSheet>
         ),
         Row(
           children: [
-            const Text('章节'),
+            Text(AppStrings.chaptersTab),
             Expanded(
               child: Slider(
                 key: const ValueKey('read-aloud-timer-chapters-slider'),
@@ -315,7 +324,9 @@ class _ReadAloudTimerSheetState extends ConsumerState<ReadAloudTimerSheet>
                 min: 0,
                 max: kMaxReadAloudTimerChapters.toDouble(),
                 divisions: kMaxReadAloudTimerChapters,
-                label: value == 0 ? '关闭' : '$value 章',
+                label: value == 0
+                    ? AppStrings.modeOff
+                    : AppStrings.readAloudTimerChapters(value),
                 onChanged: (v) => setState(() => _chapters = v),
                 onChangeEnd: (v) {
                   _selectChapters(v.round());
@@ -325,7 +336,9 @@ class _ReadAloudTimerSheetState extends ConsumerState<ReadAloudTimerSheet>
             SizedBox(
               width: 64,
               child: Text(
-                value == 0 ? '关闭' : '$value 章',
+                value == 0
+                    ? AppStrings.modeOff
+                    : AppStrings.readAloudTimerChapters(value),
                 textAlign: TextAlign.end,
               ),
             ),
@@ -334,7 +347,7 @@ class _ReadAloudTimerSheetState extends ConsumerState<ReadAloudTimerSheet>
         Padding(
           padding: const EdgeInsets.only(top: 4),
           child: Text(
-            '章节模式会在读完设定章数后的章末停止，无需「读完本章再停」。',
+            AppStrings.readAloudTimerChapterModeHint,
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -357,18 +370,19 @@ class _ReadAloudTimerSheetState extends ConsumerState<ReadAloudTimerSheet>
       children: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         if (notifier.isSleepTimerActive)
           TextButton(
             key: const ValueKey('read-aloud-timer-stop-button'),
             onPressed: _stop,
-            child: const Text('停止定时'),
+            child: Text(AppStrings.readAloudTimerStop),
           ),
         FilledButton(
           key: const ValueKey('read-aloud-timer-start-button'),
           onPressed: _start,
-          child: Text(isOff ? '关闭定时' : '开始'),
+          child: Text(
+            isOff ? AppStrings.readAloudTimerOff : AppStrings.startAction),
         ),
       ],
     );

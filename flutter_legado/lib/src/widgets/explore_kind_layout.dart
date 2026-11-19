@@ -13,6 +13,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import 'explore_kind_action.dart';
@@ -108,7 +109,7 @@ class ExploreKindLayout extends StatelessWidget {
       context: context,
       barrierDismissible: true,
       builder: (ctx) => AlertDialog(
-        title: const Text('发现分类加载失败'),
+        title: Text(AppStrings.exploreKindLoadFailed),
         content: SelectableText(
           message,
           style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
@@ -118,7 +119,7 @@ class ExploreKindLayout extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('确定'),
+            child: Text(AppStrings.confirm),
           ),
         ],
       ),

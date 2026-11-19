@@ -14,6 +14,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../providers/privacy/privacy_content_notifier.dart';
 import '../../providers/privacy/privacy_notifier.dart';
 import '../../providers/reader/reader_notifier.dart';
@@ -78,7 +79,7 @@ class _PrivateReadGateState extends ConsumerState<PrivateReadGate> {
       context,
       ref,
       bookUrl: bookUrl,
-      title: '验证后阅读',
+      title: AppStrings.verifyToRead,
     );
     if (!mounted) return;
     if (unlocked) return;
@@ -135,9 +136,15 @@ class _PrivateReadGateState extends ConsumerState<PrivateReadGate> {
       key: const ValueKey('privateReadGateLocked'),
       body: SafeArea(
         child: PrivateLockedPage(
-          title: '私密书籍',
-          description: privacyLockedDescription(privacy, fallback: '验证后阅读本书'),
-          actionText: privacyLockedActionText(privacy, fallback: '验证并阅读'),
+          title: AppStrings.privateBookTitle,
+          description: privacyLockedDescription(
+            privacy,
+            fallback: AppStrings.verifyToReadBook,
+          ),
+          actionText: privacyLockedActionText(
+            privacy,
+            fallback: AppStrings.verifyAndRead,
+          ),
           onAction: () => _requestUnlock(bookUrl),
         ),
       ),

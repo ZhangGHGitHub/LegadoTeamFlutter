@@ -5,6 +5,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../providers/providers.dart';
 import '../providers/source/source_notifier.dart';
 
@@ -157,8 +158,14 @@ class _VerificationCodeDialogState
       context: buttonContext,
       position: position,
       items: [
-        const PopupMenuItem(value: 'disable', child: Text('禁用书源')),
-        const PopupMenuItem(value: 'delete', child: Text('删除书源')),
+        PopupMenuItem(
+          value: 'disable',
+          child: Text(AppStrings.disableBookSource),
+        ),
+        PopupMenuItem(
+          value: 'delete',
+          child: Text(AppStrings.deleteBookSource),
+        ),
       ],
     );
     if (action == null || !mounted) return;
@@ -179,8 +186,8 @@ class _VerificationCodeDialogState
     final header = widget.title.isNotEmpty
         ? widget.title
         : (widget.sourceName.isNotEmpty
-            ? '「${widget.sourceName}」需要验证码'
-            : '请输入验证码');
+            ? AppStrings.captchaRequiredFor(widget.sourceName)
+            : AppStrings.enterCaptcha);
     return AlertDialog(
       title: Row(
         children: [
@@ -191,7 +198,7 @@ class _VerificationCodeDialogState
           Builder(
             builder: (btnContext) => IconButton(
               icon: const Icon(Symbols.more_vert_rounded, size: 20),
-              tooltip: '更多选项',
+              tooltip: AppStrings.rssMoreOptions,
               visualDensity: VisualDensity.compact,
               onPressed: () => _showSourceMenu(btnContext),
             ),
@@ -214,7 +221,7 @@ class _VerificationCodeDialogState
                   color: colorScheme.surfaceContainerHighest,
                   alignment: Alignment.center,
                   child: Text(
-                    '验证码图片加载失败',
+                    AppStrings.captchaImageLoadFailed,
                     style: TextStyle(
                       fontSize: 12,
                       color: colorScheme.onSurfaceVariant,
@@ -227,8 +234,8 @@ class _VerificationCodeDialogState
           TextField(
             controller: _controller,
             autofocus: true,
-            decoration: const InputDecoration(
-              hintText: '输入验证码',
+            decoration: InputDecoration(
+              hintText: AppStrings.captchaHint,
             ),
             onSubmitted: (_) => _submit(),
           ),
@@ -237,7 +244,7 @@ class _VerificationCodeDialogState
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, false),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         FilledButton(
           onPressed: _submitting ? null : _submit,
@@ -247,7 +254,7 @@ class _VerificationCodeDialogState
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('确定'),
+              : Text(AppStrings.confirm),
         ),
       ],
     );

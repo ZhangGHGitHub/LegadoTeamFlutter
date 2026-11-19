@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../l10n/app_strings.dart';
 import 'group_manage_dialog.dart';
 
 /// 书源分组管理弹窗（对标原版 `ui/book/source/manage/GroupManageDialog`）
@@ -21,7 +22,7 @@ class BookSourceGroupManageDialog extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return GroupManageDialog<BookSource>(
-      itemNoun: '书源',
+      itemNoun: AppStrings.sources,
       items: sources,
       groupOf: (s) => s.bookSourceGroup,
       copyWithGroup: (s, g) => s.copyWith(bookSourceGroup: g),

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_strings.dart';
+
 /// 自定义源分组对话框（对标原版 dialog_custom_group.xml：
 /// 添加分组开关 + 分组名称输入）
 ///
@@ -35,21 +37,21 @@ class _CustomGroupDialogState extends State<CustomGroupDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('输入自定义源分组名称'),
+      title: Text(AppStrings.customGroupNameTitle),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
-            title: const Text('添加分组'),
-            subtitle: const Text('关闭替换分组 / 开启添加分组'),
+            title: Text(AppStrings.addGroup),
+            subtitle: Text(AppStrings.customGroupNameDesc),
             value: _addGroup,
             onChanged: (v) => setState(() => _addGroup = v),
           ),
           TextField(
             controller: _controller,
-            decoration: const InputDecoration(
-              labelText: '分组名称',
+            decoration: InputDecoration(
+              labelText: AppStrings.groupNameLabel,
             ),
           ),
         ],
@@ -57,14 +59,14 @@ class _CustomGroupDialogState extends State<CustomGroupDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(
             context,
             (_controller.text.trim(), _addGroup),
           ),
-          child: const Text('确定'),
+          child: Text(AppStrings.confirm),
         ),
       ],
     );

@@ -8,6 +8,7 @@
 // 此处防御并发清空/数据竞态）。
 import 'package:flutter/material.dart';
 
+import '../l10n/app_strings.dart';
 import '../services/webdav_backup_candidates.dart';
 import 'ios_widgets.dart';
 
@@ -38,16 +39,16 @@ Future<RemoteBackupCandidate?> showRemoteBackupListSheet({
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                 child: Text(
-                  '选择远端备份',
+                  AppStrings.selectRemoteBackup,
                   style: Theme.of(sheetContext).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
               if (candidates.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 8, 16, 24),
-                  child: Text('未找到远端备份'),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                  child: Text(AppStrings.webdavNoRemoteBackup),
                 )
               else
                 Flexible(

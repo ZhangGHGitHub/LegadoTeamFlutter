@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_strings.dart';
 import 'help_assets.dart';
 import 'help_screen.dart';
 
@@ -7,14 +8,14 @@ import 'help_screen.dart';
 void showHelp(
   BuildContext context,
   String fileName, {
-  String title = '帮助',
+  String? title,
 }) {
   showDialog<void>(
     context: context,
     barrierDismissible: true,
     builder: (_) => HelpScreen(
       assetPath: HelpAssets.mdPath(fileName),
-      title: title,
+      title: title ?? AppStrings.helpLabel,
     ),
   );
 }
@@ -24,9 +25,9 @@ void showStorageHelp(BuildContext context) {
   showDialog<void>(
     context: context,
     barrierDismissible: true,
-    builder: (_) => const HelpScreen(
+    builder: (_) => HelpScreen(
       assetPath: HelpAssets.storageHelp,
-      title: '帮助',
+      title: AppStrings.helpLabel,
     ),
   );
 }

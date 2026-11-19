@@ -16,6 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/explore/explore_main_notifier.dart';
 import '../providers/explore/explore_main_state.dart';
@@ -98,7 +99,7 @@ class _ExploreSourceContentState extends ConsumerState<ExploreSourceContent> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('发现'),
+            Text(AppStrings.discover),
             Text(
               widget.source.bookSourceName,
               maxLines: 1,
@@ -112,7 +113,7 @@ class _ExploreSourceContentState extends ConsumerState<ExploreSourceContent> {
         actions: [
           // 单书源搜索（等价参考版长按书源的「搜索」：带 sourceUrl 进搜索页）
           IconButton(
-            tooltip: '搜索该书源',
+            tooltip: AppStrings.searchThisSource,
             icon: const Icon(Symbols.search_rounded),
             onPressed: () => Navigator.pushNamed(
               context,
@@ -122,7 +123,7 @@ class _ExploreSourceContentState extends ConsumerState<ExploreSourceContent> {
           ),
           // 切回源列表
           IconButton(
-            tooltip: '返回源列表',
+            tooltip: AppStrings.backToSourceListLabel,
             icon: const Icon(Symbols.swap_horiz_rounded),
             onPressed: () => ref
                 .read(exploreMainNotifierProvider.notifier)
@@ -130,7 +131,7 @@ class _ExploreSourceContentState extends ConsumerState<ExploreSourceContent> {
           ),
           // 书源选择 sheet（搜索/分组/布局列数）
           IconButton(
-            tooltip: '选择书源',
+            tooltip: AppStrings.selectSource,
             icon: const Icon(Symbols.more_vert_rounded),
             onPressed: () => showExploreSourceSelectSheet(context),
           ),
@@ -162,7 +163,7 @@ class _ExploreSourceContentState extends ConsumerState<ExploreSourceContent> {
                         ExplorePageControl(args: selectedArgs),
                       ],
                       IconButton(
-                        tooltip: '选择分类',
+                        tooltip: AppStrings.selectCategory,
                         icon: const Icon(
                           Symbols.format_list_bulleted_rounded,
                           size: 20,
@@ -228,20 +229,20 @@ class _ExploreSourceContentState extends ConsumerState<ExploreSourceContent> {
       }
       return EmptyState(
         icon: Symbols.explore_rounded,
-        title: '该源没有可用分类',
-        subtitle: '书源发现规则未解析出可浏览的分类',
+        title: AppStrings.sourceHasNoCategories,
+        subtitle: AppStrings.sourceNoCategoriesDesc,
         action: TextButton(
           onPressed: _retryCategories,
-          child: const Text('重新解析'),
+          child: Text(AppStrings.reparse),
         ),
       );
     }
 
     if (selectedArgs == null) {
-      return const EmptyState(
+      return EmptyState(
         icon: Symbols.explore_rounded,
-        title: '分类缺少地址',
-        subtitle: '请选择其他分类或刷新书源发现规则',
+        title: AppStrings.categoryMissingUrl,
+        subtitle: AppStrings.categoryMissingUrlDesc,
       );
     }
 
@@ -277,7 +278,7 @@ class _ExploreSourceContentState extends ConsumerState<ExploreSourceContent> {
     if (title.startsWith('ERROR:')) {
       return title;
     }
-    return detail.isEmpty ? '分类解析失败' : detail;
+    return detail.isEmpty ? AppStrings.categoryParseFailed : detail;
   }
 }
 

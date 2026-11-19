@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../l10n/app_strings.dart';
 import '../services/source_share_passphrase.dart';
 import '../utils/error_message.dart';
 
@@ -87,12 +88,14 @@ class _SourceSharePassphraseDialogState
   void _regenerate(int? days, {bool notify = true}) {
     void apply() {
       if (days == null) {
-        _error = '请输入有效期天数';
+        _error = AppStrings.passphraseExpiryInvalid;
         _passphrase = null;
         return;
       }
       if (days < 0 || days > SourceSharePassphrase.maxExpiryDays) {
-        _error = '有效期需为 0~${SourceSharePassphrase.maxExpiryDays} 天';
+        _error = AppStrings.passphraseExpiryRange(
+          SourceSharePassphrase.maxExpiryDays,
+        );
         _passphrase = null;
         return;
       }
@@ -125,7 +128,7 @@ class _SourceSharePassphraseDialogState
       await Clipboard.setData(ClipboardData(text: passphrase));
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = '复制失败：${errorMessage(e)}');
+      setState(() => _error = AppStrings.copyFailedWith(errorMessage(e)));
       return;
     }
     if (!mounted) return;
@@ -146,11 +149,11 @@ class _SourceSharePassphraseDialogState
     final cs = theme.colorScheme;
     final passphrase = _passphrase;
     return AlertDialog(
-      title: const Row(
+      title: Row(
         children: [
-          Icon(Symbols.key_rounded, size: 22),
-          SizedBox(width: 8),
-          Text('复制口令'),
+          const Icon(Symbols.key_rounded, size: 22),
+          const SizedBox(width: 8),
+          Text(AppStrings.exportCopyPassphrase),
         ],
       ),
       content: SizedBox(
@@ -165,16 +168,18 @@ class _SourceSharePassphraseDialogState
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 decoration: InputDecoration(
-                  labelText: '有效期（天）',
-                  helperText: '0 表示永久有效，最长 '
-                      '${SourceSharePassphrase.maxExpiryDays} 天',
+                  labelText: AppStrings.passphraseExpiryDays,
+                  helperText: AppStrings.passphraseExpiryHelper(
+                    SourceSharePassphrase.maxExpiryDays,
+                  ),
                   errorText: _error,
                   border: const OutlineInputBorder(),
                 ),
                 onChanged: _onExpiryChanged,
               ),
               const SizedBox(height: 16),
-              Text('口令', style: theme.textTheme.labelLarge),
+              Text(AppStrings.passphraseLabel,
+                  style: theme.textTheme.labelLarge),
               const SizedBox(height: 6),
               Container(
                 width: double.infinity,
@@ -195,7 +200,7 @@ class _SourceSharePassphraseDialogState
               ),
               const SizedBox(height: 8),
               Text(
-                '口令包含分享直链，仅发送给可信的人；过期后无法导入。',
+                AppStrings.passphraseWarning,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: cs.onSurfaceVariant,
                 ),
@@ -211,7 +216,7 @@ class _SourceSharePassphraseDialogState
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      '已复制到剪贴板',
+                      AppStrings.sourceCopied,
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: cs.primary,
                         fontWeight: FontWeight.w600,
@@ -227,7 +232,7 @@ class _SourceSharePassphraseDialogState
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('关闭'),
+          child: Text(AppStrings.dialogClose),
         ),
         FilledButton.icon(
           onPressed: passphrase == null ? null : _copy,
@@ -235,7 +240,11 @@ class _SourceSharePassphraseDialogState
             _copied ? Symbols.check_rounded : Symbols.content_copy_rounded,
             size: 18,
           ),
-          label: Text(_copied ? '已复制' : '复制口令'),
+          label: Text(
+            _copied
+                ? AppStrings.copiedLabel
+                : AppStrings.exportCopyPassphrase,
+          ),
         ),
       ],
     );

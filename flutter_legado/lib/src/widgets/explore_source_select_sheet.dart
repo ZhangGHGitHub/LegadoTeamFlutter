@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/explore/explore_main_notifier.dart';
 import '../providers/explore/explore_main_state.dart';
@@ -73,7 +74,7 @@ class _ExploreSourceSelectSheetState
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Text(
-                '选择书源',
+                AppStrings.selectSource,
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
@@ -87,16 +88,16 @@ class _ExploreSourceSelectSheetState
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final segmented = SegmentedButton<bool>(
-                    segments: const [
+                    segments: [
                       ButtonSegment<bool>(
                         value: false,
-                        icon: Icon(Symbols.view_list_rounded, size: 18),
-                        label: Text('列表'),
+                        icon: const Icon(Symbols.view_list_rounded, size: 18),
+                        label: Text(AppStrings.listLayoutLabel),
                       ),
                       ButtonSegment<bool>(
                         value: true,
-                        icon: Icon(Symbols.grid_view_rounded, size: 18),
-                        label: Text('网格'),
+                        icon: const Icon(Symbols.grid_view_rounded, size: 18),
+                        label: Text(AppStrings.gridLayoutLabel),
                       ),
                     ],
                     selected: {main.gridMode},
@@ -140,13 +141,13 @@ class _ExploreSourceSelectSheetState
               child: TextField(
                 controller: _searchController,
                 decoration: InputDecoration(
-                  hintText: '搜索书源（名称/地址）',
+                  hintText: AppStrings.searchSourceByHint,
                   isDense: true,
                   prefixIcon: const Icon(Symbols.search_rounded, size: 20),
                   suffixIcon: _query.isEmpty
                       ? null
                       : IconButton(
-                          tooltip: '清除',
+                          tooltip: AppStrings.clear,
                           icon: const Icon(Symbols.close_rounded, size: 18),
                           onPressed: () {
                             _searchController.clear();
@@ -166,7 +167,7 @@ class _ExploreSourceSelectSheetState
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 children: [
                   _GroupChip(
-                    label: '全部',
+                    label: AppStrings.allLabel,
                     selected: _group.isEmpty,
                     onTap: () => setState(() => _group = ''),
                   ),
@@ -184,7 +185,7 @@ class _ExploreSourceSelectSheetState
               child: sources.isEmpty
                   ? Center(
                       child: Text(
-                        '没有匹配的书源',
+                        AppStrings.noMatchingSourcesLabel,
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),
@@ -241,7 +242,8 @@ class _ExploreSourceSelectSheetState
   List<BookSource> _filterSources(List<BookSource> sources) {
     final keyword = _query.trim().toLowerCase();
     return sources.where((s) {
-      if (_group.isNotEmpty && (s.groupName ?? '未分类') != _group) {
+      if (_group.isNotEmpty &&
+          (s.groupName ?? AppStrings.uncategorized) != _group) {
         return false;
       }
       if (keyword.isEmpty) return true;
@@ -289,16 +291,17 @@ class _GridCountStepper extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         IconButton(
-          tooltip: '减少列数',
+          tooltip: AppStrings.decreaseColumns,
           visualDensity: VisualDensity.compact,
           onPressed: count <= exploreGridCountMin
               ? null
               : () => onChanged(count - 1),
           icon: const Icon(Symbols.remove_rounded, size: 18),
         ),
-        Text('$count 列', style: theme.textTheme.labelLarge),
+        Text(AppStrings.columnsCount(count),
+            style: theme.textTheme.labelLarge),
         IconButton(
-          tooltip: '增加列数',
+          tooltip: AppStrings.increaseColumns,
           visualDensity: VisualDensity.compact,
           onPressed: count >= exploreGridCountMax
               ? null

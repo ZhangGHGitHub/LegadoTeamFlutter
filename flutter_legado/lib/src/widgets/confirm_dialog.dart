@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_strings.dart';
+
 /// 确认对话框快捷方法
 ///
 /// [LAYOUT_PLAN P4] 走主题默认 dialogTheme（28dp extraLarge），不逐个定制。
@@ -7,8 +9,8 @@ Future<bool> showConfirmDialog(
   BuildContext context, {
   required String title,
   required String content,
-  String confirmText = '确认',
-  String cancelText = '取消',
+  String? confirmText,
+  String? cancelText,
   bool isDestructive = false,
 }) async {
   final result = await showDialog<bool>(
@@ -22,12 +24,12 @@ Future<bool> showConfirmDialog(
       content: Text(content),
       actions: [
         _DialogAction(
-          label: cancelText,
+          label: cancelText ?? AppStrings.cancel,
           onPressed: () => Navigator.of(ctx).pop(false),
         ),
         const SizedBox(width: 12),
         _DialogAction(
-          label: confirmText,
+          label: confirmText ?? AppStrings.confirmTextDefault,
           onPressed: () => Navigator.of(ctx).pop(true),
           isDestructive: isDestructive,
         ),

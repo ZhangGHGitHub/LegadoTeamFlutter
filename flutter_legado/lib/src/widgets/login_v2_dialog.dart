@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import '../l10n/app_strings.dart';
 import '../services/book_api.dart';
 import '../utils/error_message.dart';
 
@@ -169,7 +170,7 @@ class LoginV2DialogState extends State<LoginV2Dialog> {
             .map((v) => v.toString())
             .where((v) => v.isNotEmpty);
         setState(() {
-          _error = msgs.isEmpty ? '登录失败' : msgs.join('\n');
+          _error = msgs.isEmpty ? AppStrings.loginFailed : msgs.join('\n');
           _busy = false;
         });
         return;
@@ -197,7 +198,7 @@ class LoginV2DialogState extends State<LoginV2Dialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text('登录 - ${widget.sourceName}'),
+      title: Text(AppStrings.loginDialogTitle(widget.sourceName)),
       content: SizedBox(
         width: 360,
         child: _busy && _rows.isEmpty
@@ -229,7 +230,7 @@ class LoginV2DialogState extends State<LoginV2Dialog> {
       actions: [
         TextButton(
           onPressed: _busy ? null : () => Navigator.pop(context, false),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
       ],
     );

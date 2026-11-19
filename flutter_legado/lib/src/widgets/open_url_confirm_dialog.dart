@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../l10n/app_strings.dart';
+
 /// 外链跳转确认对话框
 ///
 /// [审计修复 §2.1 第三批] 对齐原版 OpenUrlConfirmDialog（ui/association）：
@@ -21,7 +23,7 @@ Future<bool> showOpenUrlConfirmDialog(
   final result = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('跳转确认'),
+      title: Text(AppStrings.openUrlConfirmTitle),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -39,7 +41,7 @@ Future<bool> showOpenUrlConfirmDialog(
               ),
             ),
           // 对齐原版 message：正在请求跳转链接/应用，是否跳转？
-          const Text('正在请求跳转链接/应用，是否跳转？'),
+          Text(AppStrings.openUrlConfirmContent),
           const SizedBox(height: 8),
           SelectableText(
             url,
@@ -53,11 +55,11 @@ Future<bool> showOpenUrlConfirmDialog(
       actions: [
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(false),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(true),
-          child: const Text('跳转'),
+          child: Text(AppStrings.openUrlAction),
         ),
       ],
     ),
@@ -85,9 +87,13 @@ Future<void> openExternalUrlWithConfirm(
   if (!ok) return;
   try {
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      messenger.showSnackBar(const SnackBar(content: Text('无法打开链接')));
+      messenger.showSnackBar(
+        SnackBar(content: Text(AppStrings.cannotOpenLinkShort)),
+      );
     }
   } catch (_) {
-    messenger.showSnackBar(const SnackBar(content: Text('打开链接失败')));
+    messenger.showSnackBar(
+      SnackBar(content: Text(AppStrings.openLinkFailed)),
+    );
   }
 }

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../services/export_service.dart';
 import '../services/book_api.dart';
@@ -106,7 +107,7 @@ class _ExportDialogState extends State<ExportDialog> {
           children: [
             // 标题
             Text(
-              '导出${widget.book.name}',
+              AppStrings.exportBookTitle(widget.book.name),
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -159,12 +160,12 @@ class _ExportDialogState extends State<ExportDialog> {
               children: [
                 TextButton(
                   onPressed: _status == ExportStatus.exporting ? null : () => Navigator.pop(context),
-                  child: const Text('取消'),
+                  child: Text(AppStrings.cancel),
                 ),
                 const SizedBox(width: 12),
                 ElevatedButton(
                   onPressed: _handleConfirm,
-                  child: const Text('确认'),
+                  child: Text(AppStrings.confirmTextDefault),
                 ),
               ],
             ),
@@ -179,7 +180,7 @@ class _ExportDialogState extends State<ExportDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('导出格式',
+        Text(AppStrings.exportFormat,
             style: TextStyle(fontWeight: FontWeight.w500)),
         const SizedBox(height: 8),
         Wrap(
@@ -206,7 +207,7 @@ class _ExportDialogState extends State<ExportDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('字符编码',
+        Text(AppStrings.exportEncoding,
             style: TextStyle(fontWeight: FontWeight.w500)),
         const SizedBox(height: 8),
         DropdownButton<String>(
@@ -233,11 +234,11 @@ class _ExportDialogState extends State<ExportDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('文件名模板',
+        Text(AppStrings.exportFileNameTemplate,
             style: TextStyle(fontWeight: FontWeight.w500)),
         const SizedBox(height: 4),
         Text(
-          '可用变量：{name} {author}',
+          AppStrings.exportFileNameVars,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
@@ -259,11 +260,11 @@ class _ExportDialogState extends State<ExportDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('章节范围',
+        Text(AppStrings.exportChapterRange,
             style: TextStyle(fontWeight: FontWeight.w500)),
         const SizedBox(height: 4),
         Text(
-          '索引从 0 起；留空表示全部章节',
+          AppStrings.exportChapterRangeHint,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
@@ -275,8 +276,8 @@ class _ExportDialogState extends State<ExportDialog> {
               child: TextField(
                 controller: _startChapterCtrl,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: '起始',
+                decoration: InputDecoration(
+                  labelText: AppStrings.exportRangeStart,
                   isDense: true,
                 ),
               ),
@@ -289,8 +290,8 @@ class _ExportDialogState extends State<ExportDialog> {
               child: TextField(
                 controller: _endChapterCtrl,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: '结束',
+                decoration: InputDecoration(
+                  labelText: AppStrings.exportRangeEnd,
                   isDense: true,
                 ),
               ),
@@ -306,7 +307,7 @@ class _ExportDialogState extends State<ExportDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('导出路径',
+        Text(AppStrings.exportPath,
             style: TextStyle(fontWeight: FontWeight.w500)),
         const SizedBox(height: 8),
         InkWell(
@@ -327,7 +328,7 @@ class _ExportDialogState extends State<ExportDialog> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    _exportPath ?? '点击选择导出目录',
+                    _exportPath ?? AppStrings.exportPickDirectory,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: _exportPath != null
                               ? null
@@ -349,7 +350,7 @@ class _ExportDialogState extends State<ExportDialog> {
   /// 选择导出目录
   Future<void> _pickExportPath() async {
     final dir = await FilePicker.platform.getDirectoryPath(
-      dialogTitle: '选择导出目录',
+      dialogTitle: AppStrings.exportChooseDirectory,
     );
     if (!mounted) return;
     if (dir != null) {
@@ -362,8 +363,8 @@ class _ExportDialogState extends State<ExportDialog> {
   /// TOC 复选框
   Widget _buildTocCheckbox() {
     return CheckboxListTile(
-      title: const Text('包含目录'),
-      subtitle: const Text('导出时包含书籍的目录结构'),
+      title: Text(AppStrings.exportIncludeToc),
+      subtitle: Text(AppStrings.exportIncludeTocDesc),
       value: _includeToc,
       onChanged: (value) {
         setState(() {
@@ -381,8 +382,8 @@ class _ExportDialogState extends State<ExportDialog> {
     }
 
     return CheckboxListTile(
-      title: const Text('上传到 WebDAV'),
-      subtitle: const Text('导出完成后自动上传到远程服务器'),
+      title: Text(AppStrings.exportUploadWebdav),
+      subtitle: Text(AppStrings.exportUploadWebdavDesc),
       value: _enableWebDav,
       onChanged: (value) {
         setState(() {
@@ -406,7 +407,7 @@ class _ExportDialogState extends State<ExportDialog> {
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Text(
-              '获取预览信息失败：${snapshot.error}',
+              AppStrings.exportPreviewFailed('${snapshot.error}'),
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           );
@@ -441,7 +442,7 @@ class _ExportDialogState extends State<ExportDialog> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '章节数：$chapterCount',
+                  AppStrings.exportChapterCount(chapterCount),
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
@@ -459,7 +460,7 @@ class _ExportDialogState extends State<ExportDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('正在导出...',
+        Text(AppStrings.exportInProgress,
             style: TextStyle(fontWeight: FontWeight.w500)),
         const SizedBox(height: 12),
         ClipRRect(
@@ -493,21 +494,21 @@ class _ExportDialogState extends State<ExportDialog> {
   Future<void> _handleConfirm() async {
     // 验证
     if (!widget.exportService.supportedFormats.contains(_selectedFormat)) {
-      _showError('不支持的导出格式');
+      _showError(AppStrings.exportUnsupportedFormat);
       return;
     }
 
     // 非 WebDAV 模式下必须选择导出目录（测试环境跳过校验）
     final isTestMode = Platform.environment.containsKey('FLUTTER_TEST');
     if (!isTestMode && _exportPath == null && !_enableWebDav) {
-      _showError('请先选择导出目录');
+      _showError(AppStrings.exportPickPathFirst);
       return;
     }
 
     setState(() {
       _status = ExportStatus.exploring;
       _progress = 0.0;
-      _progressText = '开始导出...';
+      _progressText = AppStrings.exportStarting;
     });
 
     try {
@@ -528,7 +529,7 @@ class _ExportDialogState extends State<ExportDialog> {
       // 更新进度
       setState(() {
         _progress = 0.8;
-        _progressText = '导出完成，正在写入文件...';
+        _progressText = AppStrings.exportWritingFile;
       });
 
       String? writtenPath;
@@ -546,7 +547,7 @@ class _ExportDialogState extends State<ExportDialog> {
         } catch (e) {
           debugPrint('[ExportDialog] 写入文件失败：$e');
           if (mounted) {
-            _showError('文件写入失败：${errorMessage(e)}');
+            _showError(AppStrings.exportWriteFailed(errorMessage(e)));
           }
           return;
         }
@@ -560,7 +561,7 @@ class _ExportDialogState extends State<ExportDialog> {
 
           if (data != null) {
             setState(() {
-              _progressText = '上传到 WebDAV...';
+              _progressText = AppStrings.exportUploadingToWebdav;
             });
 
             final tmp = File(
@@ -581,20 +582,22 @@ class _ExportDialogState extends State<ExportDialog> {
 
             setState(() {
               _progress = 1.0;
-              _progressText = '导出并上传成功！';
+              _progressText = AppStrings.exportUploadDone;
             });
           }
         } catch (e) {
           debugPrint('[ExportDialog] WebDAV 上传失败：$e');
           setState(() {
             _progress = 1.0;
-            _progressText = '导出成功，但 WebDAV 上传失败';
+            _progressText = AppStrings.exportUploadFailedAfter;
           });
         }
       } else {
         setState(() {
           _progress = 1.0;
-          _progressText = writtenPath != null ? '已保存：$writtenPath' : '导出成功！';
+          _progressText = writtenPath != null
+              ? AppStrings.exportSavedTo(writtenPath)
+              : AppStrings.exportSuccess;
         });
       }
 

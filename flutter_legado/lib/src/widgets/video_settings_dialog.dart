@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../l10n/app_strings.dart';
 import 'app_progress_indicator.dart';
 
 /// 视频播放设置（对标原版 `ui/video/config/SettingsDialog` + `VideoPlay` prefs）
@@ -96,7 +97,7 @@ class _VideoSettingsDialogState extends State<_VideoSettingsDialog> {
     final s = _settings;
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Text('播放设置'),
+      title: Text(AppStrings.videoPlaybackSettings),
       content: _loading || s == null
           // [STAGE-UI-P43UNIFY2 B3] 裸环换接统一封装（默认参数视觉等价）
           ? const SizedBox(
@@ -110,7 +111,7 @@ class _VideoSettingsDialogState extends State<_VideoSettingsDialog> {
                 children: [
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('自动播放'),
+                    title: Text(AppStrings.videoAutoPlay),
                     value: s.autoPlay,
                     onChanged: (v) {
                       setState(() => s.autoPlay = v);
@@ -123,7 +124,7 @@ class _VideoSettingsDialogState extends State<_VideoSettingsDialog> {
                   // VideoPlayerActivity.kt:177-193 的 defaultFloatWindow 转发）
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('默认悬浮窗播放'),
+                    title: Text(AppStrings.videoDefaultFloatWindow),
                     value: s.defaultFloatWindow,
                     onChanged: (v) {
                       setState(() => s.defaultFloatWindow = v);
@@ -133,7 +134,7 @@ class _VideoSettingsDialogState extends State<_VideoSettingsDialog> {
                   if (s.autoPlay)
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('自动全屏'),
+                      title: Text(AppStrings.videoAutoFullscreen),
                       value: s.startFull,
                       onChanged: (v) {
                         setState(() => s.startFull = v);
@@ -142,7 +143,7 @@ class _VideoSettingsDialogState extends State<_VideoSettingsDialog> {
                     ),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('全屏底栏进度条'),
+                    title: Text(AppStrings.videoFullscreenProgressBar),
                     value: s.fullBottomProgressBar,
                     onChanged: (v) {
                       setState(() => s.fullBottomProgressBar = v);
@@ -151,7 +152,7 @@ class _VideoSettingsDialogState extends State<_VideoSettingsDialog> {
                   ),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('长按倍速'),
+                    title: Text(AppStrings.videoLongPressSpeed),
                     subtitle: Text(
                       '${s.pressSpeedFactor.toStringAsFixed(1)}x',
                       style: TextStyle(color: scheme.onSurfaceVariant),
@@ -164,7 +165,7 @@ class _VideoSettingsDialogState extends State<_VideoSettingsDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, _settings),
-          child: const Text('关闭'),
+          child: Text(AppStrings.dialogClose),
         ),
       ],
     );
@@ -176,7 +177,7 @@ class _VideoSettingsDialogState extends State<_VideoSettingsDialog> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
-          title: const Text('长按倍速'),
+          title: Text(AppStrings.videoLongPressSpeed),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -194,15 +195,15 @@ class _VideoSettingsDialogState extends State<_VideoSettingsDialog> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, 30),
-              child: const Text('默认'),
+              child: Text(AppStrings.defaultLabel),
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消'),
+              child: Text(AppStrings.cancel),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, value),
-              child: const Text('确定'),
+              child: Text(AppStrings.confirm),
             ),
           ],
         ),
@@ -272,15 +273,16 @@ const List<double> kVideoSpeedChoices = [
 /// 倍速入口文案（对齐原版 VideoPlayer.kt:409-414：
 /// 1.0 → 「倍速」，其余 → 「X.XX X」）
 String speedEntryLabel(double speed) =>
-    speed == 1.0 ? '倍速' : '${speed}X';
+    speed == 1.0 ? AppStrings.videoNormalSpeed : '${speed}X';
 
 /// 倍速 tip 文案（对齐原版 VideoPlayer.kt:411「X倍播放中」，展示 2 秒；
 /// 长按倍速 tip「X倍速播放中」见 VideoPlayer.kt:112，勿混）
-String speedTipLabel(double speed) => '$speed倍播放中';
+String speedTipLabel(double speed) => AppStrings.videoSpeedTip('$speed');
 
 /// 长按倍速 tip 文案（对齐原版 VideoPlayer.kt:112「X倍速播放中」；
 /// 按住期间显示，松手 touchSurfaceUp 隐藏）
-String longPressSpeedTipLabel(double speed) => '$speed倍速播放中';
+String longPressSpeedTipLabel(double speed) =>
+    AppStrings.videoLongPressSpeedTip('$speed');
 
 /// 选集对话框（对齐原版 ChoiceEpisodeDialog）
 ///
@@ -369,7 +371,7 @@ class _VideoEpisodePanelState extends State<_VideoEpisodePanel> {
             Padding(
               padding: const EdgeInsets.all(8),
               child: Text(
-                '选集（${widget.episodes.length}）',
+                AppStrings.videoEpisodesTitle(widget.episodes.length),
                 style: const TextStyle(
                   color: kVideoDialogTitleColor,
                   fontSize: 14,

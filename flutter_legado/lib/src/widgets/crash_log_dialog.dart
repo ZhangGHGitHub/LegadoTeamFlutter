@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../l10n/app_strings.dart';
 import '../services/crash_log_service.dart';
 
 /// 崩溃日志弹窗组件
@@ -39,7 +40,7 @@ class _CrashLogDialogState extends State<CrashLogDialog> {
         return line.replaceFirst(RegExp(r'^时间:\s*'), '').trim();
       }
     }
-    return '未知时间';
+    return AppStrings.unknownTime;
   }
 
   /// 从日志中提取的错误摘要
@@ -49,7 +50,7 @@ class _CrashLogDialogState extends State<CrashLogDialog> {
         return line.replaceFirst(RegExp(r'^错误:\s*'), '').trim();
       }
     }
-    return '未知错误';
+    return AppStrings.unknownError;
   }
 
   /// 提取堆栈信息部分（"----- 堆栈信息 -----" 之后的内容）
@@ -76,7 +77,7 @@ class _CrashLogDialogState extends State<CrashLogDialog> {
         color: colorScheme.error,
         size: 32,
       ),
-      title: const Text('上次运行发生崩溃'),
+      title: Text(AppStrings.crashOccurred),
       content: SizedBox(
         width: double.maxFinite,
         child: SingleChildScrollView(
@@ -99,7 +100,7 @@ class _CrashLogDialogState extends State<CrashLogDialog> {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      '崩溃时间: $_crashTime',
+                      AppStrings.crashTimeLabel(_crashTime),
                       softWrap: true,
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: colorScheme.onSurfaceVariant,
@@ -140,7 +141,11 @@ class _CrashLogDialogState extends State<CrashLogDialog> {
                           : Symbols.expand_more_rounded,
                       size: 18,
                     ),
-                    label: Text(_showDetails ? '收起详情' : '查看详情'),
+                    label: Text(
+                      _showDetails
+                          ? AppStrings.hideDetails
+                          : AppStrings.showDetails,
+                    ),
                   ),
                 ),
                 if (_showDetails)
@@ -175,7 +180,7 @@ class _CrashLogDialogState extends State<CrashLogDialog> {
             // 用户确认后清除崩溃日志，避免重复提示
             CrashLogService.instance.clearCrashLog();
           },
-          child: const Text('确定'),
+          child: Text(AppStrings.confirm),
         ),
       ],
     );

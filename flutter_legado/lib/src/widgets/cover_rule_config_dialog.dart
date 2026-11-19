@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../bridge/ffi.dart';
+import '../l10n/app_strings.dart';
 
 /// 封面规则配置对话框
 class CoverRuleConfigDialog extends StatefulWidget {
@@ -75,7 +76,8 @@ class _CoverRuleConfigDialogState extends State<CoverRuleConfigDialog> {
       debugPrint('CoverRuleConfig 加载失败: $e');
       if (!mounted) return;
       setState(() {
-        _error = '加载失败: ${_errMsg(e)}';
+        _error = AppStrings.failureWithReason(
+            AppStrings.loadFailedNoReason, _errMsg(e));
         _loading = false;
       });
     }
@@ -85,7 +87,7 @@ class _CoverRuleConfigDialogState extends State<CoverRuleConfigDialog> {
     final searchUrl = _searchUrlController.text.trim();
     final coverRule = _coverRuleController.text.trim();
     if (searchUrl.isEmpty || coverRule.isEmpty) {
-      setState(() => _error = '搜索url和cover规则不能为空');
+      setState(() => _error = AppStrings.coverRulesRequired);
       return;
     }
     setState(() {
@@ -103,7 +105,8 @@ class _CoverRuleConfigDialogState extends State<CoverRuleConfigDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = '保存失败: ${_errMsg(e)}';
+        _error = AppStrings.failureWithReason(
+            AppStrings.saveFailedNoReason, _errMsg(e));
         _saving = false;
       });
     }
@@ -121,7 +124,8 @@ class _CoverRuleConfigDialogState extends State<CoverRuleConfigDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = '删除失败: ${_errMsg(e)}';
+        _error = AppStrings.failureWithReason(
+            AppStrings.deleteFailedNoReason, _errMsg(e));
         _saving = false;
       });
     }
@@ -130,7 +134,7 @@ class _CoverRuleConfigDialogState extends State<CoverRuleConfigDialog> {
   Future<void> _search() async {
     final name = _nameController.text.trim();
     if (name.isEmpty) {
-      setState(() => _error = '请输入书名');
+      setState(() => _error = AppStrings.coverTitleRequired);
       return;
     }
     setState(() {
@@ -148,7 +152,8 @@ class _CoverRuleConfigDialogState extends State<CoverRuleConfigDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = '搜索失败: ${_errMsg(e)}';
+        _error = AppStrings.failureWithReason(
+            AppStrings.searchFailedNoReason, _errMsg(e));
         _results = [];
         _searched = true;
         _searching = false;
@@ -160,22 +165,22 @@ class _CoverRuleConfigDialogState extends State<CoverRuleConfigDialog> {
     showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('封面预览'),
+        title: Text(AppStrings.coverPreview),
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 360),
           child: Image.network(
             url,
             fit: BoxFit.contain,
-            errorBuilder: (_, _, _) => const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('图片加载失败'),
+            errorBuilder: (_, _, _) => Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(AppStrings.imageLoadFailedLabel),
             ),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('关闭'),
+            child: Text(AppStrings.dialogClose),
           ),
         ],
       ),
@@ -186,13 +191,13 @@ class _CoverRuleConfigDialogState extends State<CoverRuleConfigDialog> {
     Clipboard.setData(ClipboardData(text: url));
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('封面 URL 已复制')));
+      ..showSnackBar(SnackBar(content: Text(AppStrings.coverUrlCopied)));
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('封面规则'),
+      title: Text(AppStrings.coverRules),
       content: SizedBox(
         width: double.maxFinite,
         child: _loading
@@ -207,7 +212,7 @@ class _CoverRuleConfigDialogState extends State<CoverRuleConfigDialog> {
                   children: [
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('启用'),
+                      title: Text(AppStrings.sourceEnabledLabel),
                       value: _enable,
                       onChanged: _saving
                           ? null
@@ -215,9 +220,9 @@ class _CoverRuleConfigDialogState extends State<CoverRuleConfigDialog> {
                     ),
                     TextField(
                       controller: _searchUrlController,
-                      decoration: const InputDecoration(
-                        labelText: '搜索 URL',
-                        hintText: '支持 {{key}} 模板',
+                      decoration: InputDecoration(
+                        labelText: AppStrings.coverSearchUrl,
+                        hintText: AppStrings.coverSearchUrlHint,
                       ),
                       minLines: 2,
                       maxLines: 4,
@@ -225,13 +230,15 @@ class _CoverRuleConfigDialogState extends State<CoverRuleConfigDialog> {
                     const SizedBox(height: 12),
                     TextField(
                       controller: _coverRuleController,
-                      decoration: const InputDecoration(labelText: '封面提取规则'),
+                      decoration: InputDecoration(
+                        labelText: AppStrings.coverExtractRule,
+                      ),
                       minLines: 2,
                       maxLines: 6,
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      '按书名测试',
+                      AppStrings.coverTestByTitle,
                       style: Theme.of(context).textTheme.titleSmall,
                     ),
                     const SizedBox(height: 8),
@@ -240,14 +247,16 @@ class _CoverRuleConfigDialogState extends State<CoverRuleConfigDialog> {
                         Expanded(
                           child: TextField(
                             controller: _nameController,
-                            decoration: const InputDecoration(hintText: '输入书名'),
+                            decoration: InputDecoration(
+                              hintText: AppStrings.coverTitleHint,
+                            ),
                             onSubmitted: (_) => _search(),
                           ),
                         ),
                         const SizedBox(width: 8),
                         FilledButton(
                           onPressed: _searching || _saving ? null : _search,
-                          child: const Text('测试'),
+                          child: Text(AppStrings.testAction),
                         ),
                       ],
                     ),
@@ -272,9 +281,9 @@ class _CoverRuleConfigDialogState extends State<CoverRuleConfigDialog> {
                         ),
                       )
                     else if (_searched && _results.isEmpty)
-                      const Text(
-                        '未搜到候选封面（无启用规则或全部失败）',
-                        style: TextStyle(fontSize: 13),
+                      Text(
+                        AppStrings.coverNoCandidates,
+                        style: const TextStyle(fontSize: 13),
                       )
                     else if (_results.isNotEmpty)
                       ConstrainedBox(
@@ -302,7 +311,7 @@ class _CoverRuleConfigDialogState extends State<CoverRuleConfigDialog> {
                                       Symbols.image_rounded,
                                       size: 18,
                                     ),
-                                    tooltip: '预览',
+                                    tooltip: AppStrings.previewAction,
                                     visualDensity: VisualDensity.compact,
                                     onPressed: () => _preview(url),
                                   ),
@@ -311,7 +320,7 @@ class _CoverRuleConfigDialogState extends State<CoverRuleConfigDialog> {
                                       Symbols.content_copy_rounded,
                                       size: 18,
                                     ),
-                                    tooltip: '复制',
+                                    tooltip: AppStrings.copyAction,
                                     visualDensity: VisualDensity.compact,
                                     onPressed: () => _copy(url),
                                   ),
@@ -329,13 +338,13 @@ class _CoverRuleConfigDialogState extends State<CoverRuleConfigDialog> {
         TextButton(
           onPressed: _saving ? null : _delete,
           child: Text(
-            '删除',
+            AppStrings.delete,
             style: TextStyle(color: Theme.of(context).colorScheme.error),
           ),
         ),
         TextButton(
           onPressed: _saving ? null : () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         FilledButton(
           onPressed: _saving ? null : _save,
@@ -345,7 +354,7 @@ class _CoverRuleConfigDialogState extends State<CoverRuleConfigDialog> {
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('确定'),
+              : Text(AppStrings.confirm),
         ),
       ],
     );

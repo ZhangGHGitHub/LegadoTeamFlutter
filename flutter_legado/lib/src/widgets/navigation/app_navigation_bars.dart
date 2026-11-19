@@ -4,6 +4,7 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../models/main_tab.dart';
 import '../../services/bottom_bar_skin_service.dart';
 import '../../services/nav_icon_store.dart';
@@ -442,7 +443,9 @@ class AppRailBar extends StatelessWidget {
           // 展开切换（railExtended 持久化；纯图标档位强制折叠，隐藏切换钮）
           if (showLabel)
             IconButton(
-              tooltip: effectiveExtended ? '收起侧栏' : '展开侧栏',
+              tooltip: effectiveExtended
+                  ? AppStrings.collapseSidebar
+                  : AppStrings.expandSidebar,
               icon: Icon(effectiveExtended
                   ? Symbols.menu_open_rounded
                   : Symbols.menu_rounded),
@@ -450,7 +453,7 @@ class AppRailBar extends StatelessWidget {
             ),
           // 头部搜索钮（对齐参考 Rail header 搜索入口）
           IconButton(
-            tooltip: '搜索',
+            tooltip: AppStrings.search,
             icon: Icon(
               Symbols.search_rounded,
               color: cs.onSurfaceVariant,
@@ -460,7 +463,7 @@ class AppRailBar extends StatelessWidget {
           // 书架分组菜单（对齐参考 BookshelfRailGroupMenu）
           if (groups != null && groups!.isNotEmpty)
             PopupMenuButton<int>(
-              tooltip: '书架分组',
+              tooltip: AppStrings.bookshelfGroups,
               icon: Icon(
                 Symbols.folder_copy_rounded,
                 color: cs.onSurfaceVariant,

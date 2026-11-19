@@ -17,6 +17,7 @@
 //   自动备份/恢复启动导致并发写库；命中忙碌时刷新为禁用态且不关闭 Sheet。
 import 'package:flutter/material.dart';
 
+import '../l10n/app_strings.dart';
 import 'ios_widgets.dart';
 
 /// 备份方式（顺序即参考版展示顺序）
@@ -47,16 +48,16 @@ enum RestoreOption {
 }
 
 /// 忙碌提示（与设置页既有文案一致）
-const String kBackupRestoreBusyHint = '正在备份或恢复，请稍候';
+String get kBackupRestoreBusyHint => AppStrings.webdavBusyHint;
 
 /// WebDAV 未配置提示
-const String kWebDavNotConfiguredHint = '请先配置 WebDAV';
+String get kWebDavNotConfiguredHint => AppStrings.webdavConfigureFirst;
 
 /// WebDAV 未配置时备份请求被明确中止的提示
 ///
 /// 批11 回修 P2-2：长按「备份」行直接走「本地 + 网络」快捷入口，未配置时
 /// 必须明确告知中止，不能再静默只备份本地（用户会误以为网络也已备份）。
-const String kWebDavNotConfiguredAbortHint = '未配置 WebDAV，已取消备份';
+String get kWebDavNotConfiguredAbortHint => AppStrings.webdavNotConfiguredAbort;
 
 /// 备份选项 Sheet
 ///
@@ -74,25 +75,25 @@ Future<BackupOption?> showBackupOptionSheet({
       : kWebDavNotConfiguredHint;
   return _showOptionSheet<BackupOption>(
     context: context,
-    title: '备份',
+    title: AppStrings.backup,
     busy: busy,
     isBusy: isBusy,
     options: [
-      const _OptionEntry(
+      _OptionEntry(
         value: BackupOption.local,
         icon: Icons.phone_android,
-        label: '备份至本地',
+        label: AppStrings.backupToLocal,
       ),
       _OptionEntry(
         value: BackupOption.webDav,
         icon: Icons.cloud_outlined,
-        label: '备份至网络',
+        label: AppStrings.backupToNetwork,
         disabledReason: remoteDisabledReason,
       ),
       _OptionEntry(
         value: BackupOption.localAndWebDav,
         icon: Icons.lan_outlined,
-        label: '备份至本地与网络',
+        label: AppStrings.backupToLocalAndNetwork,
         disabledReason: remoteDisabledReason,
       ),
     ],
@@ -113,30 +114,30 @@ Future<RestoreOption?> showRestoreOptionSheet({
       : kWebDavNotConfiguredHint;
   return _showOptionSheet<RestoreOption>(
     context: context,
-    title: '恢复',
+    title: AppStrings.restore,
     busy: busy,
     isBusy: isBusy,
     options: [
-      const _OptionEntry(
+      _OptionEntry(
         value: RestoreOption.localFile,
         icon: Icons.phone_android,
-        label: '本地恢复',
+        label: AppStrings.webdavRestoreLocal,
       ),
       _OptionEntry(
         value: RestoreOption.remoteFile,
         icon: Icons.cloud_outlined,
-        label: '网络恢复',
+        label: AppStrings.restoreFromNetwork,
         disabledReason: remoteDisabledReason,
       ),
-      const _OptionEntry(
+      _OptionEntry(
         value: RestoreOption.latestLocal,
         icon: Icons.history,
-        label: '本地最新',
+        label: AppStrings.restoreLatestLocal,
       ),
       _OptionEntry(
         value: RestoreOption.latestRemote,
         icon: Icons.cloud_download_outlined,
-        label: '远端最新',
+        label: AppStrings.restoreLatestRemote,
         disabledReason: remoteDisabledReason,
       ),
     ],

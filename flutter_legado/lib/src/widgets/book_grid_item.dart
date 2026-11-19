@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../providers/cover_settings/cover_settings_notifier.dart';
+import '../l10n/app_strings.dart';
 import 'book_cover.dart';
 import 'book_display_tags_row.dart';
 import 'privacy/private_locked_cover.dart';
@@ -391,7 +392,7 @@ class BookGridItem extends StatelessWidget {
         // 读屏只说“已隐藏”，不暴露书名/作者/进度等任何语义
         ? Semantics(
             container: true,
-            label: '已隐藏',
+            label: AppStrings.hiddenLabel,
             child: ExcludeSemantics(child: content),
           )
         : content;

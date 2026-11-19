@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../l10n/app_strings.dart';
+
 /// MD3 Expressive 风格波浪加载指示器（参考 Compose Material3 Expressive
 /// 的 LoadingIndicator 视觉签名：环形半径按正弦波调制 + 呼吸幅度 +
 /// 相位流动；UI_MD3_PLAN.md 参考风格目标）
@@ -19,15 +21,15 @@ class Md3LoadingIndicator extends StatefulWidget {
   /// 波浪颜色（默认 colorScheme.primary）
   final Color? color;
 
-  /// 无障碍语义标签
-  final String semanticsLabel;
+  /// 无障碍语义标签（null = 取 [AppStrings.loadingSemantics]）
+  final String? semanticsLabel;
 
   const Md3LoadingIndicator({
     super.key,
     this.size = 48,
     this.strokeWidth,
     this.color,
-    this.semanticsLabel = '加载中',
+    this.semanticsLabel,
   });
 
   @override
@@ -60,7 +62,7 @@ class _Md3LoadingIndicatorState extends State<Md3LoadingIndicator>
     final strokeWidth = widget.strokeWidth ?? (widget.size / 10).clamp(2.5, 6);
 
     return Semantics(
-      label: widget.semanticsLabel,
+      label: widget.semanticsLabel ?? AppStrings.loadingSemantics,
       child: ExcludeSemantics(
         // [LAYOUT_MOTION_AUDIT M2] 常驻波环加 RepaintBoundary 隔离重绘（耗电）
         child: RepaintBoundary(

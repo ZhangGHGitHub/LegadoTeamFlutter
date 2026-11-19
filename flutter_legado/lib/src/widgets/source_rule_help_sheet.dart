@@ -3,12 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../l10n/app_strings.dart';
 import 'ios_widgets.dart';
 
 /// 规则语法帮助弹层（静态速查）
 ///
 /// 三块内容：阅读 3.0 源规则说明 / @规则语法 / jsLib 与内置变量，
-/// 内容全部为编译期常量，不发起网络请求、不引入新依赖。
+/// 文案经 [AppStrings] 按 locale 取用（代码样例仍为常量），不发起网络
+/// 请求、不引入新依赖。
 /// 弹层壳沿用 `reader_tip_config_sheet.dart` 规范（IosGrabber +
 /// DraggableScrollableSheet + 全量滚动）。
 /// — full-stack-engineer + UI | 2026-09-09
@@ -38,80 +40,80 @@ class SourceRuleHelpSheet extends StatelessWidget {
   }
 
   /// 源规则基础写法（搜索/发现/详情/目录/正文）
-  static const List<_HelpEntry> _sourceRules = [
-    _HelpEntry(
-      '搜索规则',
-      'searchUrl：列表页请求地址，{{key}} 表示关键词、{{page}} 表示页码。',
-    ),
-    _HelpEntry(
-      '发现规则',
-      'exploreUrl：发现页的分类/榜单地址，可用规则生成分类与子列表。',
-    ),
-    _HelpEntry(
-      '详情规则',
-      'bookInfoRule：从详情页解析书名、作者、封面、简介与目录页链接。',
-    ),
-    _HelpEntry(
-      '目录规则',
-      'tocRule：从目录页解析章节名与章节链接列表（含分卷结构）。',
-    ),
-    _HelpEntry(
-      '正文规则',
-      'contentRule：从章节页解析正文内容，可用 ## 做正则替换清洗。',
-    ),
-  ];
+  static List<_HelpEntry> get _sourceRules => [
+        _HelpEntry(
+          AppStrings.sourceSearchRules,
+          AppStrings.sourceRuleSearchDesc,
+        ),
+        _HelpEntry(
+          AppStrings.sourceExploreRules,
+          AppStrings.sourceRuleExploreDesc,
+        ),
+        _HelpEntry(
+          AppStrings.sourceInfoRules,
+          AppStrings.sourceRuleInfoDesc,
+        ),
+        _HelpEntry(
+          AppStrings.sourceTocRules,
+          AppStrings.sourceRuleTocDesc,
+        ),
+        _HelpEntry(
+          AppStrings.sourceContentRules,
+          AppStrings.sourceRuleContentDesc,
+        ),
+      ];
 
   /// @ 前缀规则语法
-  static const List<_HelpEntry> _prefixRules = [
-    _HelpEntry(
-      '@css:',
-      '按 CSS 选择器从 HTML 中取文本或属性。',
-      sample: r'@css:.book-list .title@text',
-    ),
-    _HelpEntry(
-      '@json:',
-      '按 JSONPath 从 JSON 响应中取值。',
-      sample: r'@json:$.data.list[*].name',
-    ),
-    _HelpEntry(
-      '@js:',
-      '交给 JavaScript 处理上一步结果并返回最终值。',
-      sample: r'@js:result.replace(/\s+/g, "")',
-    ),
-    _HelpEntry(
-      '@XPath:',
-      '按 XPath 从 HTML/XML 中取值。',
-      sample: r'@XPath://div[@class="content"]/text()',
-    ),
-  ];
+  static List<_HelpEntry> get _prefixRules => [
+        _HelpEntry(
+          '@css:',
+          AppStrings.sourceRuleCssDesc,
+          sample: r'@css:.book-list .title@text',
+        ),
+        _HelpEntry(
+          '@json:',
+          AppStrings.sourceRuleJsonDesc,
+          sample: r'@json:$.data.list[*].name',
+        ),
+        _HelpEntry(
+          '@js:',
+          AppStrings.sourceRuleJsDesc,
+          sample: r'@js:result.replace(/\s+/g, "")',
+        ),
+        _HelpEntry(
+          '@XPath:',
+          AppStrings.sourceRuleXPathDesc,
+          sample: r'@XPath://div[@class="content"]/text()',
+        ),
+      ];
 
   /// jsLib 与常用内置变量/函数
-  static const List<_HelpEntry> _jsLibEntries = [
-    _HelpEntry(
-      'java.ajax(url)',
-      '发起 HTTP 请求并返回响应文本（自动携带 Cookie 与请求头）。',
-    ),
-    _HelpEntry(
-      'java.base64Decode(str)',
-      '对 Base64 字符串解码并返回原始文本。',
-    ),
-    _HelpEntry(
-      'book',
-      '当前书籍对象，含 bookUrl / name / author / tocUrl 等字段。',
-    ),
-    _HelpEntry(
-      'baseUrl',
-      '当前规则对应的页面地址。',
-    ),
-    _HelpEntry(
-      'chapter',
-      '当前章节对象，含 url / title 等字段。',
-    ),
-    _HelpEntry(
-      'result',
-      '上一步规则的输出结果（链式规则中继续处理时使用）。',
-    ),
-  ];
+  static List<_HelpEntry> get _jsLibEntries => [
+        _HelpEntry(
+          'java.ajax(url)',
+          AppStrings.sourceRuleAjaxDesc,
+        ),
+        _HelpEntry(
+          'java.base64Decode(str)',
+          AppStrings.sourceRuleBase64Desc,
+        ),
+        _HelpEntry(
+          'book',
+          AppStrings.sourceRuleBookDesc,
+        ),
+        _HelpEntry(
+          'baseUrl',
+          AppStrings.sourceRuleBaseUrlDesc,
+        ),
+        _HelpEntry(
+          'chapter',
+          AppStrings.sourceRuleChapterDesc,
+        ),
+        _HelpEntry(
+          'result',
+          AppStrings.sourceRuleResultDesc,
+        ),
+      ];
 
   Future<void> _openWiki(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
@@ -125,7 +127,9 @@ class SourceRuleHelpSheet extends StatelessWidget {
       // 桌面端无可用浏览器时降级为复制链接
     }
     await Clipboard.setData(const ClipboardData(text: wikiUrl));
-    messenger.showSnackBar(const SnackBar(content: Text('已复制链接：$wikiUrl')));
+    messenger.showSnackBar(
+      SnackBar(content: Text(AppStrings.copiedLink(wikiUrl))),
+    );
   }
 
   @override
@@ -141,29 +145,26 @@ class SourceRuleHelpSheet extends StatelessWidget {
           children: [
             const Center(child: IosGrabber()),
             const SizedBox(height: 12),
-            Text('规则语法帮助', style: theme.textTheme.titleMedium),
+            Text(AppStrings.sourceRuleHelpTitle,
+                style: theme.textTheme.titleMedium),
             const SizedBox(height: 4),
             Text(
-              '书源规则速查：各规则含义、@ 前缀语法与 jsLib 常用函数。',
+              AppStrings.sourceRuleHelpSubtitle,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: cs.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 16),
-            _SectionHeader('阅读 3.0 源规则说明'),
-            const _CodeBlock(
-              '搜索: searchUrl   发现: exploreUrl\n'
-              '详情: bookInfoRule   目录: tocRule   正文: contentRule',
-            ),
+            _SectionHeader(AppStrings.sourceRuleSection30),
+            _CodeBlock(AppStrings.sourceRuleCode30),
             const SizedBox(height: 4),
             for (final entry in _sourceRules) _EntryRow(entry: entry),
             const SizedBox(height: 4),
             _LinkRow(url: wikiUrl, onTap: () => _openWiki(context)),
             const Divider(height: 28),
-            _SectionHeader('@规则语法'),
+            _SectionHeader(AppStrings.sourceRulePrefixSection),
             Text(
-              '规则前缀决定解析方式；不加前缀时默认按 HTML 规则解析。'
-              '常用组合：|| 取首个非空、&& 合并、%% 交错、## 正则替换。',
+              AppStrings.sourceRulePrefixDesc,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: cs.onSurfaceVariant,
                 height: 1.5,
@@ -179,10 +180,9 @@ class SourceRuleHelpSheet extends StatelessWidget {
               r'@js:result.trim()',
             ),
             const Divider(height: 28),
-            _SectionHeader('jsLib 与内置变量'),
+            _SectionHeader(AppStrings.sourceRuleJsLibSection),
             Text(
-              'jsLib 中定义的函数可被 search / getChapters / getContent 复用'
-              '（JS 书源即 mainJs 顶层函数）。常用内置对象与函数：',
+              AppStrings.sourceRuleJsLibDesc,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: cs.onSurfaceVariant,
                 height: 1.5,
@@ -254,7 +254,9 @@ class _EntryRow extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           Text(
-            sample == null ? entry.desc : '${entry.desc} 例：$sample',
+            sample == null
+                ? entry.desc
+                : AppStrings.sourceRuleExample(entry.desc, sample),
             style: theme.textTheme.bodySmall?.copyWith(
               color: cs.onSurfaceVariant,
               height: 1.5,

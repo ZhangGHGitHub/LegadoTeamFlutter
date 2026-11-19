@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_strings.dart';
 import 'contained_loading_indicator.dart';
 
 /// [STAGE-UI-P43UNIFY2 B3] 应用级加载指示器统一封装三件套
@@ -50,15 +51,15 @@ class AppCircularProgressIndicator extends StatelessWidget {
   /// 环颜色（默认 null → colorScheme.primary 主题槽）
   final Color? color;
 
-  /// 无障碍语义标签
-  final String semanticsLabel;
+  /// 无障碍语义标签（null = 取 [AppStrings.loadingSemantics]）
+  final String? semanticsLabel;
 
   const AppCircularProgressIndicator({
     super.key,
     this.progress,
     this.strokeWidth = 4.0,
     this.color,
-    this.semanticsLabel = '加载中',
+    this.semanticsLabel,
   });
 
   @override
@@ -69,7 +70,7 @@ class AppCircularProgressIndicator extends StatelessWidget {
     //（reader_comic_loading_theme_test B2 断言依赖）。参考版三件套
     // 「色全部走主题槽，无硬编码」语义等价。
     return Semantics(
-      label: semanticsLabel,
+      label: semanticsLabel ?? AppStrings.loadingSemantics,
       child: ExcludeSemantics(
         child: progress == null
             ? CircularProgressIndicator(
@@ -103,22 +104,22 @@ class AppLinearProgressIndicator extends StatelessWidget {
   /// 条颜色（默认 null → colorScheme.primary 主题槽）
   final Color? color;
 
-  /// 无障碍语义标签
-  final String semanticsLabel;
+  /// 无障碍语义标签（null = 取 [AppStrings.loadingSemantics]）
+  final String? semanticsLabel;
 
   const AppLinearProgressIndicator({
     super.key,
     this.progress,
     this.minHeight,
     this.color,
-    this.semanticsLabel = '加载中',
+    this.semanticsLabel,
   });
 
   @override
   Widget build(BuildContext context) {
     // color 透传（null = 组件默认主题槽 colorScheme.primary），同 circular
     return Semantics(
-      label: semanticsLabel,
+      label: semanticsLabel ?? AppStrings.loadingSemantics,
       child: ExcludeSemantics(
         child: LinearProgressIndicator(
           // 确定性 value 语义 0.0~1.0（SDK 线性指示器 value 即 0~1 比例）
@@ -147,15 +148,15 @@ class AppContainedLoadingIndicator extends StatelessWidget {
   /// 内置环颜色（默认 colorScheme.primary）
   final Color? color;
 
-  /// 无障碍语义标签
-  final String semanticsLabel;
+  /// 无障碍语义标签（null = 取 [AppStrings.loadingSemantics]）
+  final String? semanticsLabel;
 
   const AppContainedLoadingIndicator({
     super.key,
     this.size = 48,
     this.strokeWidth = 3.0,
     this.color,
-    this.semanticsLabel = '加载中',
+    this.semanticsLabel,
   });
 
   @override
@@ -164,7 +165,7 @@ class AppContainedLoadingIndicator extends StatelessWidget {
       size: size,
       strokeWidth: strokeWidth,
       color: color,
-      semanticsLabel: semanticsLabel,
+      semanticsLabel: semanticsLabel ?? AppStrings.loadingSemantics,
     );
   }
 }

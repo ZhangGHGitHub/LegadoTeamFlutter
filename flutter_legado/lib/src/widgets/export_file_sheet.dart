@@ -39,6 +39,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../l10n/app_strings.dart';
 import '../providers/providers.dart';
 import '../services/direct_link_upload_rule_service.dart';
 import '../services/export_file_service.dart';
@@ -77,14 +78,14 @@ class ExportFileResult {
       );
 
   /// 已上传直链 [url]（[summary] 为生效规则的注释）
-  const ExportFileResult.uploaded({
+  ExportFileResult.uploaded({
     required String url,
     required String summary,
   }) : this._(
          outcome: ExportFileOutcome.uploaded,
          url: url,
          summary: summary,
-         message: '上传成功：$url',
+         message: AppStrings.exportUploadSuccessWith(url),
        );
 
   final ExportFileOutcome outcome;
@@ -249,7 +250,9 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
 
   /// 错误面板标题
   String get _errorTitle =>
-      _failedAction == _FailureAction.upload ? '上传失败' : '保存失败';
+      _failedAction == _FailureAction.upload
+          ? AppStrings.exportUploadFailedTitle
+          : AppStrings.exportSaveFailedTitle;
 
   /// 保存失败时是否展示目录树回退入口（P3-5 白名单）
   ///
@@ -379,7 +382,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
     _copyTimer?.cancel();
     setState(() {
       _copied = false;
-      _copyError = '复制失败：${errorMessage(error)}';
+      _copyError = AppStrings.copyFailedWith(errorMessage(error));
     });
   }
 
@@ -574,7 +577,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
                       child: Row(
                         children: [
                           IconButton(
-                            tooltip: '关闭',
+                            tooltip: AppStrings.dialogClose,
                             onPressed: _busy
                                 ? null
                                 : () => Navigator.pop(context),
@@ -582,7 +585,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
                           ),
                           Expanded(
                             child: Text(
-                              widget.subject ?? '选择操作',
+                              widget.subject ?? AppStrings.selectOperation,
                               textAlign: TextAlign.center,
                               style: theme.textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.w600,
@@ -652,7 +655,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
               child: CircularProgressIndicator(strokeWidth: 3),
             ),
             const SizedBox(height: 16),
-            Text(_saving ? '正在保存…' : '正在上传…'),
+            Text(_saving ? AppStrings.exportSaving : AppStrings.exportUploading),
           ],
         ),
       );
@@ -673,22 +676,22 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
       children: [
         _OptionTile(
           icon: Symbols.save_alt_rounded,
-          title: '保存到本地',
+          title: AppStrings.exportSaveToLocal,
           subtitle: !_isAndroid
-              ? '通过系统保存对话框选择保存位置'
+              ? AppStrings.exportSystemSaveDialogDesc
               : savedDirectory == null
-              ? '首次保存需选择保存文件夹，之后沿用'
-              : '保存到「$savedDirectory」',
+              ? AppStrings.exportFirstSaveHint
+              : AppStrings.exportSavedToFolder(savedDirectory),
           onTap: _saveToLocal,
         ),
         const SizedBox(height: 8),
         if (_isAndroid)
           _OptionTile(
             icon: Symbols.drive_file_move_rounded,
-            title: '换个保存位置',
+            title: AppStrings.exportChangeSaveLocation,
             subtitle: savedDirectory == null
-                ? '选择文件保存到哪个文件夹'
-                : '当前：$savedDirectory · 点击重新选择文件夹',
+                ? AppStrings.exportChooseFolderDesc
+                : AppStrings.exportCurrentFolder(savedDirectory),
             onTap: () {
               unawaited(_pickSaveDirectory());
             },
@@ -696,15 +699,15 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
         if (_isAndroid) const SizedBox(height: 8),
         _OptionTile(
           icon: Symbols.cloud_upload_rounded,
-          title: '上传直链',
-          subtitle: '按直链上传规则上传，返回可分享的下载链接',
+          title: AppStrings.exportUploadDirect,
+          subtitle: AppStrings.exportUploadDirectDesc,
           onTap: _upload,
         ),
         const SizedBox(height: 8),
         Align(
           alignment: Alignment.centerLeft,
           child: Text(
-            '导出文件：${widget.fileName}',
+            AppStrings.exportFileLabel(widget.fileName),
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -723,7 +726,9 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
     final tree = _savedTree;
     if (tree == null) return null;
     final display = tree.displayPath?.trim();
-    return (display == null || display.isEmpty) ? '已选文件夹' : display;
+    return (display == null || display.isEmpty)
+        ? AppStrings.exportFolderSelected
+        : display;
   }
 
   /// 上传成功：URL + 规则注释（summary）
@@ -735,7 +740,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
         Icon(Symbols.cloud_done_rounded, size: 40, color: cs.primary),
         const SizedBox(height: 8),
         Text(
-          '上传成功',
+          AppStrings.exportUploadSuccessTitle,
           style: theme.textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.w600,
           ),
@@ -773,8 +778,8 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
           const SizedBox(height: 12),
           _OptionTile(
             icon: Symbols.key_rounded,
-            title: '复制口令',
-            subtitle: '生成可粘贴到阅读「口令导入」的分享口令，可设置有效期',
+            title: AppStrings.exportCopyPassphrase,
+            subtitle: AppStrings.exportCopyPassphraseDesc,
             onTap: _sharePassphrase,
           ),
         ],
@@ -828,7 +833,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
               if (showDetail) ...[
                 const SizedBox(height: 8),
                 Text(
-                  '原始错误：',
+                  AppStrings.originalErrorLabel,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: cs.onErrorContainer.withValues(alpha: 0.7),
                   ),
@@ -862,7 +867,8 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
                 _copied ? Symbols.check_rounded : Symbols.content_copy_rounded,
                 size: 18,
               ),
-              label: Text(_copied ? '已复制' : '复制链接'),
+              label: Text(
+                  _copied ? AppStrings.copiedLabel : AppStrings.copyLinkLabel),
             ),
           ),
           const SizedBox(width: 8),
@@ -875,7 +881,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
                   summary: _uploadedSummary ?? '',
                 ),
               ),
-              child: const Text('完成'),
+              child: Text(AppStrings.doneLabel),
             ),
           ),
         ],
@@ -899,7 +905,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
               child: OutlinedButton.icon(
                 onPressed: _changeLocationAndRetry,
                 icon: const Icon(Symbols.drive_file_move_rounded, size: 18),
-                label: const Text('换个位置'),
+                label: Text(AppStrings.exportChangePosition),
               ),
             ),
             const SizedBox(height: 8),
@@ -910,7 +916,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
               child: TextButton.icon(
                 onPressed: _retryWithLegacyDialog,
                 icon: const Icon(Symbols.save_alt_rounded, size: 18),
-                label: const Text('改用系统另存对话框'),
+                label: Text(AppStrings.exportUseLegacyDialog),
               ),
             ),
             const SizedBox(height: 8),
@@ -927,19 +933,21 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
                         : Symbols.content_copy_rounded,
                     size: 18,
                   ),
-                  label: Text(_copied ? '已复制' : '复制错误'),
+                  label: Text(
+                      _copied ? AppStrings.copiedLabel : AppStrings.copyErrorLabel),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('取消'),
+                  child: Text(AppStrings.cancel),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: FilledButton(onPressed: _retry, child: const Text('重试')),
+                child: FilledButton(
+                    onPressed: _retry, child: Text(AppStrings.retry)),
               ),
             ],
           ),
@@ -950,7 +958,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
       width: double.infinity,
       child: TextButton(
         onPressed: _busy ? null : () => Navigator.pop(context),
-        child: const Text('取消'),
+        child: Text(AppStrings.cancel),
       ),
     );
   }

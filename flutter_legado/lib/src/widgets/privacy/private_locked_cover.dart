@@ -10,6 +10,7 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../../l10n/app_strings.dart';
 import '../book_cover.dart';
 
 /// 锁定封面叠层：深色遮罩 + 点阵 + 居中锁标
@@ -118,7 +119,7 @@ class PrivateLockedCover extends StatelessWidget {
 
     return Semantics(
       container: true,
-      label: '已隐藏',
+      label: AppStrings.hiddenLabel,
       child: ExcludeSemantics(
         child: ClipRRect(
           borderRadius: BorderRadius.circular(borderRadius),
