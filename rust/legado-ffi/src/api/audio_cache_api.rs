@@ -536,7 +536,14 @@ fn is_json_array(s: &str) -> bool {
 /// 空 / JSON 数组多段 → Err（原文案，写入面上抛不降级）。
 ///
 /// **HLS 不再拒绝**（批 2 线 B，契约 §2.48 变更）：`.m3u8`/`.m3u` 走
-/// [`download_hls_and_install`] 合并单文件路径；JSON 数组多段本批仍不支持。
+/// [`download_hls_and_install`] 合并单文件路径。
+///
+/// **多段（JSON 数组）保持拒绝是「有意对齐原版」，不是待办缺口**
+/// （2026-11-20 用户裁决）：原版 `AudioCachePolicy.kt:27-29` 对
+/// `isJsonArray()` 直接 `throw UnsupportedOperationException("暂不支持缓存多段音频")`，
+/// 参考版无此功能。注意区分——**多段播放**原版支持（`AudioPlayService.kt:312`
+/// 走 `ExoPlayerHelper.getMediaSource` 拼接），我方播放侧亦已支持逐段串播
+/// （`audio_segments.dart`），**只有缓存被拒**。后续请勿把此 Err 当作缺口去补。
 fn require_cacheable_play_url(play_url: &str) -> LegadoResult<()> {
     if kotlin_is_blank(play_url) {
         return Err(LegadoError::Ffi("播放链接为空".into()));
