@@ -1,0 +1,5 @@
+{"ts": 1795047453.756, "path": "/auth/master.m3u8", "headers": {"user-agent": "QA-Batch2-HLS", "authorization": "Bearer QA-SECRET-TOKEN", "referer": "http://127.0.0.1:18080/"}}
+{"ts": 1795047453.759, "path": "/auth/audio.m3u8", "headers": {"user-agent": "QA-Batch2-HLS", "authorization": "Bearer QA-SECRET-TOKEN", "referer": "http://127.0.0.1:18080/"}}
+{"ts": 1795047453.761, "path": "/auth/seg0.ts", "headers": {"user-agent": "QA-Batch2-HLS", "authorization": "Bearer QA-SECRET-TOKEN", "referer": "http://127.0.0.1:18080/"}}
+{"ts": 1795047453.764, "path": "/xsite/seg1.ts", "headers": {"user-agent": "QA-Batch2-HLS", "referer": "http://127.0.0.1:18080/"}}
+{"ts": 1795047453.767, "path": "/probe/requests", "headers": {"user-agent": "Dart/3.12 (dart:io)"}}

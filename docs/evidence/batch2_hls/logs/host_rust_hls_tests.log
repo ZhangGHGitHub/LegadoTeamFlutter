@@ -1,0 +1,17 @@
+test api::audio_cache_api::tests::hls_master_prefers_audio_rendition_over_video_variant ... ok
+test api::audio_cache_api::tests::hls_master_source_expired_signature_refetches_variant ... ok
+test api::audio_cache_api::tests::hls_merge_total_size_over_budget_fails_without_residue ... ok
+test api::audio_cache_api::tests::hls_plain_ts_merges_segments_and_writes_marker ... ok
+test api::audio_cache_api::tests::hls_refetch_detects_shifted_segments_same_count ... ok
+test api::audio_cache_api::tests::hls_sample_aes_rejected ... ok
+test api::audio_cache_api::tests::hls_single_segment_playlist_works ... ok
+test api::audio_cache_api::tests::hls_truncated_segment_body_fails ... ok
+test api::audio_cache_api::tests::non_hls_audio_keeps_sniffed_first_chunk ... ok
+
+test result: ok. 99 passed; 0 failed; 0 ignored; 0 measured; 826 filtered out; finished in 0.49s
+
+test api::audio_cache_api::tests::non_hls_audio_keeps_sniffed_first_chunk ... ok
+test api::audio_cache_api::tests::query_hit_requires_marker_and_nonzero_size ... ok
+
+test result: ok. 48 passed; 0 failed; 0 ignored; 0 measured; 877 filtered out; finished in 3.84s
+

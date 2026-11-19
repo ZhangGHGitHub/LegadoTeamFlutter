@@ -1,0 +1,5 @@
+== ffmpeg decode of merged HLS output (device-produced) ==
+Input #0, mpegts, from 'docs/evidence/batch2_hls/media/qa_case4_merged.ts':
+  Duration: 00:00:01.88, start: 1.400000, bitrate: 107 kb/s
+  Stream #0:0[0x100]: Audio: aac (LC) ([15][0][0][0] / 0x000F), 44100 Hz, mono, fltp, 17 kb/s
+decode-to-null exit: 0
