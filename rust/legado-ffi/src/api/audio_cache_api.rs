@@ -43,7 +43,10 @@
 //!   覆盖下载幂等检查→失败清理整段（P1-1 修复，详见该函数文档）；
 //!   `audio_cache_clear_chapter` 亦取此锁（对齐原版
 //!   `removeCachedChapter:92-105` 的 `withLock`），FFI 侧 async 化
-//!   （spawn_blocking）后清理可等比等待在途下载且不阻塞 UI isolate
+//!   （spawn_blocking）后清理可等比等待在途下载且不阻塞 UI isolate。
+//!   **已知行为（P3-5）**：HLS 合并期（分钟级）全程持有该锁，哈希碰撞的两个
+//!   章会互相阻塞——有意保留，取消走 [`audio_cache_cancel`] 而非等锁；详见
+//!   [`chapter_lock`] 文档。
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
@@ -835,6 +838,25 @@ fn java_floor_mod(x: i32, m: i32) -> i32 {
 ///   `removeCachedChapter:92-105` 同样取此锁的 `withLock`；原版为 suspend，
 ///   我方 FFI 经 spawn_blocking 异步化后语义等价：等待在途下载完成再清理，
 ///   不阻塞 UI isolate）。
+///
+/// # 已知行为（P3-5 文档登记）：HLS 合并期长期持锁
+///
+/// HLS 章节的临界区包含**整个合并下载期**（逐段拉取 → 解密 → 拼接到临时文件
+/// → 安装），分钟级而非秒级。由于分片锁按 `(bookUrl, key16)` 哈希到 16 个槽，
+/// 哈希碰撞的两个不同章会在这段时间里互相阻塞。
+///
+/// **这是有意保留的已知行为，不是待修缺陷**：
+/// - 改前（单文件下载）临界区也是「下载全程」，HLS 只是把它从秒级拉长到
+///   〜分钟级，语义未变；
+/// - 重构成「分段加锁 + 合并期只做 rename」风险高（并发两条同章下载会看到
+///   对方在写的 tmp、幂等检查与清理窗口被撕开，正是 P1-1 修复要堵的漏洞），
+///   收益有限；
+/// - **取消不走「等锁」路径**：用户中断由 [`audio_cache_cancel`] 递增取消
+///   代数完成，在途 HLS 下载在**每个流式块 / 每个分片边界**检查代数并立即
+///   中止、清理临时文件。故「章锁被长时间持有」不会让取消失效或让用户干等。
+///
+/// 若后续确需降低碰撞阻塞，正确方向是**提高分片数**或改为按 key 精确映射
+/// （哈希表 + 引用计数），而非把临界区拆成多段。
 fn chapter_lock(book_url: &str, key16: &str) -> &'static Mutex<()> {
     static CHAPTER_LOCKS: OnceLock<[Mutex<()>; CHAPTER_LOCK_SHARDS]> = OnceLock::new();
     let locks = CHAPTER_LOCKS.get_or_init(|| std::array::from_fn(|_| Mutex::new(())));
@@ -1013,6 +1035,9 @@ fn audio_cache_download_with_client(
     // 解析后的请求 URL（playUrl 原串可能带 `,{options}` 模板尾巴，HLS 后缀判定
     // 必须用解析后 URL）
     let request_url = analyze_url.url().to_string();
+    // P3-3：书源声明的超时（`,{"timeout":N}` 毫秒）——主请求与全部 HLS 子请求
+    // （playlist / variant / init / segment / key）共用同一值
+    let request_timeout = analyze_url.timeout().map(Duration::from_millis);
     let request = LegadoRequest {
         url: request_url.clone(),
         method: match analyze_url.method() {
@@ -1026,7 +1051,7 @@ fn audio_cache_download_with_client(
         } else {
             Some(body.to_string())
         },
-        timeout: analyze_url.timeout().map(Duration::from_millis),
+        timeout: request_timeout,
     };
 
     // urlOption followRedirects/retry 语义（对齐 analyze_request::send_with_options：
@@ -1059,13 +1084,43 @@ fn audio_cache_download_with_client(
     // ① 解析后请求 URL 以 `.m3u8`/`.m3u` 结尾（用 `analyze_url.url()` 而非
     //    playUrl 原串——原串可能带 `,{options}` 模板尾巴）；
     // ② 响应 Content-Type 含 `mpegurl` 或最终 URL 为 HLS；
-    // ③ **内容嗅探**：首块以 `#EXTM3U` 开头（无扩展名 m3u8，批 47 真机风险②——
+    // ③ **内容嗅探**：累积首块直到能判定（无扩展名 m3u8，批 47 真机风险②——
     //    部分站点返回 `application/octet-stream`，仅靠 ①② 会误当二进制音频）。
+    //    P3-2：不能只看**首块**——网络层可能把 `#EXTM3U` 切成 `#EX` 先到，
+    //    那样嗅探失败 → 无扩展名 m3u8 被当二进制音频落盘（不可播）。
     let meta_hls = is_hls_url(&request_url) || is_hls_response(content_type.as_deref(), &final_url);
-    let mut first_chunk = next_chunk_checked(&mut response, cancel_snapshot)?;
-    let sniff_hls = first_chunk.as_deref().is_some_and(looks_like_m3u8);
-    if meta_hls || sniff_hls {
-        let mut playlist_bytes = first_chunk.take().unwrap_or_default();
+    // 嗅探缓冲：累积已消费的字节。**判定后必须全部用于后续**（HLS 路径作
+    // playlist 前缀，非 HLS 路径写回文件），一个字节都不能丢。
+    let mut sniffed_head: Vec<u8> = Vec::new();
+    let sniff_hls = if meta_hls {
+        // ①② 已定：无需嗅探，但仍要把首块读进来作 playlist 前缀
+        sniffed_head = next_chunk_checked(&mut response, cancel_snapshot)?.unwrap_or_default();
+        true
+    } else {
+        loop {
+            let verdict = sniff_verdict(&sniffed_head);
+            match verdict {
+                SniffVerdict::Hls => break true,
+                SniffVerdict::NotHls => break false,
+                SniffVerdict::NeedMore => {
+                    // 超过判定上限仍判不出 → 视为非 HLS（首部不是 m3u8 头）
+                    if sniffed_head.len() >= HLS_SNIFF_MAX_BYTES {
+                        break false;
+                    }
+                    match next_chunk_checked(&mut response, cancel_snapshot)? {
+                        Some(chunk) if !chunk.is_empty() => sniffed_head.extend_from_slice(&chunk),
+                        // 空块或流结束：按当前累积字节做终局判定（空块不能
+                        // 让循环原地打转——reqwest 理论上不会返回空块，防御性处理）
+                        Some(_) | None => {
+                            break matches!(sniff_verdict(&sniffed_head), SniffVerdict::Hls)
+                        }
+                    }
+                }
+            }
+        }
+    };
+    if sniff_hls {
+        let mut playlist_bytes = std::mem::take(&mut sniffed_head);
         let rest = read_stream_capped(&mut response, HLS_META_MAX_BYTES, cancel_snapshot)?;
         if playlist_bytes.len() as u64 + rest.len() as u64 > HLS_META_MAX_BYTES {
             return Err(LegadoError::Network(format!(
@@ -1088,14 +1143,19 @@ fn audio_cache_download_with_client(
             &final_url,
             playlist_bytes,
             cancel_snapshot,
+            request_timeout,
         );
     }
 
     // 扩展名三级探测（非 HLS：Content-Type → 最终 URL → playUrl → audio）
     let extension = detect_extension(content_type.as_deref(), &final_url, play_url, false)?;
     let expected_size = response.content_length().filter(|n| *n > 0);
-    // 嗅探已消费的首块必须写回（非 HLS 路径不得丢字节）
-    let sniffed_head = first_chunk.take();
+    // 嗅探阶段累积的全部字节必须写回（非 HLS 路径不得丢字节）
+    let sniffed_head = if sniffed_head.is_empty() {
+        None
+    } else {
+        Some(sniffed_head)
+    };
 
     let revision = random_hex(8);
     let final_name = build_file_name(
@@ -1219,15 +1279,67 @@ fn next_chunk_checked(
     crate::runtime::block_on(response.next_chunk())
 }
 
-/// m3u8 内容嗅探：去掉 UTF-8 BOM 与前导空白后以 `#EXTM3U` 开头
+/// m3u8 内容嗅探的累积判定结果
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SniffVerdict {
+    /// 已能确定是 m3u8（去 BOM/前导空白后以 `#EXTM3U` 开头）
+    Hls,
+    /// 已能确定不是 m3u8（与 `#EXTM3U` 前缀不再匹配）
+    NotHls,
+    /// 累积字节仍是 `#EXTM3U` 的合法前缀，需继续读
+    NeedMore,
+}
+
+/// m3u8 嗅探的最大累积字节数：超过仍无法判定即视为非 HLS
 ///
-/// 用于「无扩展名 + 无正确 Content-Type」的 HLS（批 47 真机风险②：
-/// 部分站点对 `.m3u8` 返回 `application/octet-stream`）。只看首块即可判定——
-/// RFC 8216 要求 `#EXTM3U` 为首行。
-fn looks_like_m3u8(first_chunk: &[u8]) -> bool {
-    let text = String::from_utf8_lossy(first_chunk);
-    let trimmed = text.strip_prefix('\u{feff}').unwrap_or(&text);
-    trimmed.trim_start().starts_with("#EXTM3U")
+/// `#EXTM3U` 只有 7 字节；留足余量给 BOM（3 字节）与前导空白（真实站点偶有
+/// 换行/空格开头），32 字节仍判不出就说明首部不是 m3u8 头。
+const HLS_SNIFF_MAX_BYTES: usize = 32;
+
+/// m3u8 内容嗅探的**单步判定**（对已累积字节求值，不做 IO）
+///
+/// 用于「无扩展名 + 无正确 Content-Type」的 HLS（批 47 真机风险②：部分站点
+/// 对 `.m3u8` 返回 `application/octet-stream`）。**只看首块是不够的**（P3-2）：
+/// 网络层可能把 `#EXTM3U` 切成 3 字节的 `#EX` 先到，按首块判定会失败，于是
+/// 无扩展名的 m3u8 被当二进制音频落盘（静默产出不可播文件）。
+///
+/// 判定口径（RFC 8216 要求 `#EXTM3U` 为首行）：
+/// - 剥 UTF-8 BOM（不足 3 字节且是 BOM 前缀 → 尚不能定）；
+/// - 剥 ASCII 前导空白（真实站点偶有换行开头）；
+/// - 余下字节与 `#EXTM3U` 比较：完整匹配 → [`SniffVerdict::Hls`]；
+///   前缀不匹配 → [`SniffVerdict::NotHls`]；仍为其前缀 → 需继续读。
+fn sniff_verdict(buf: &[u8]) -> SniffVerdict {
+    const BOM: &[u8] = &[0xEF, 0xBB, 0xBF];
+    const MAGIC: &[u8] = b"#EXTM3U";
+
+    let rest = if let Some(stripped) = buf.strip_prefix(BOM) {
+        stripped
+    } else if buf.len() < BOM.len() && BOM.starts_with(buf) {
+        // 仅收到 BOM 的前 1–2 字节：仍可能是 BOM 开头，继续等
+        return SniffVerdict::NeedMore;
+    } else {
+        buf
+    };
+
+    let start = rest
+        .iter()
+        .position(|b| !b.is_ascii_whitespace())
+        .unwrap_or(rest.len());
+    let rest = &rest[start..];
+
+    if rest.len() >= MAGIC.len() {
+        return if rest.starts_with(MAGIC) {
+            SniffVerdict::Hls
+        } else {
+            SniffVerdict::NotHls
+        };
+    }
+    // 非 ASCII 首字节不可能是 `#EXTM3U` 的前缀（MAGIC 全 ASCII）
+    if MAGIC.starts_with(rest) {
+        SniffVerdict::NeedMore
+    } else {
+        SniffVerdict::NotHls
+    }
 }
 
 /// 流式读取响应至多 `max_bytes`（块级取消检查，对齐 `copyCancellable`）。
@@ -1267,6 +1379,10 @@ fn read_stream_capped(
 /// 校验部分响应语义（P2-2，见 [`validate_partial_response`]）。
 /// 非 2xx 返回 `LegadoError::Network`（调用方据此判定是否需要重拉 playlist）。
 ///
+/// **超时（P3-3）**：`timeout` 来自 playUrl 的 `analyze_url.timeout()`，与主
+/// 请求同一口径。旧实现一律传 `None`，于是全部 HLS 子请求吃客户端默认 60s
+/// 总超时——书源显式声明的短超时对分片/密钥/playlist 全部失效。
+///
 /// **完整性（P2-1）**：有 `Content-Length` 时按声明值校验实际字节数；
 /// BYTERANGE 还要求实际字节数等于区间长度——任何截断/超发都报错，
 /// 绝不把残缺字节交给调用方拼接。
@@ -1277,6 +1393,7 @@ fn fetch_bytes_capped(
     byte_range: Option<ByteRange>,
     max_bytes: u64,
     cancel_snapshot: u64,
+    timeout: Option<Duration>,
 ) -> LegadoResult<Vec<u8>> {
     let mut request_headers = headers.clone();
     if let Some(range) = byte_range {
@@ -1291,7 +1408,7 @@ fn fetch_bytes_capped(
         method: Method::Get,
         headers: request_headers,
         body: None,
-        timeout: None,
+        timeout,
     };
     let mut response = crate::runtime::block_on(client.send_stream(&request))?;
     if !response.is_success() {
@@ -1397,6 +1514,7 @@ fn resolve_key(
     headers: &HashMap<String, String>,
     cache: &mut KeyCache,
     cancel_snapshot: u64,
+    timeout: Option<Duration>,
 ) -> LegadoResult<Vec<u8>> {
     if let Some(bytes) = cache.get(&key.uri) {
         return Ok(bytes.clone());
@@ -1408,6 +1526,7 @@ fn resolve_key(
         None,
         HLS_META_MAX_BYTES,
         cancel_snapshot,
+        timeout,
     )?;
     if bytes.len() != 16 {
         return Err(LegadoError::Ffi(format!(
@@ -1447,6 +1566,10 @@ struct HlsFetchCtx<'a> {
     /// 相对资源 URI 的解析基准（= 真正给出分片清单的 playlist URL）
     playlist_base: String,
     cancel_snapshot: u64,
+    /// 子请求超时（P3-3）：取自 playUrl 的 `analyze_url.timeout()`，与主请求
+    /// 同口径。`None` = 沿用客户端默认（60s 总超时）。playlist / variant /
+    /// init / segment / key **全部**继承同一值。
+    timeout: Option<Duration>,
     key_cache: KeyCache,
 }
 
@@ -1507,6 +1630,7 @@ impl HlsFetchCtx<'_> {
             byte_range,
             HLS_SEGMENT_MAX_BYTES,
             self.cancel_snapshot,
+            self.timeout,
         )?;
         if raw.is_empty() {
             return Err(LegadoError::Network(format!(
@@ -1524,6 +1648,7 @@ impl HlsFetchCtx<'_> {
                     &key_headers,
                     &mut self.key_cache,
                     self.cancel_snapshot,
+                    self.timeout,
                 )?;
                 decrypt_segment(&key_bytes, hls_key, raw)?
             }
@@ -1551,6 +1676,7 @@ impl HlsFetchCtx<'_> {
             None,
             HLS_META_MAX_BYTES,
             self.cancel_snapshot,
+            self.timeout,
         )?;
         let text = String::from_utf8_lossy(&bytes);
         parse_playlist(&text, url)
@@ -1582,8 +1708,17 @@ impl HlsFetchCtx<'_> {
 /// **签名过期**：单段（或 init）失败时重拉一次 playlist（token 可能刷新）后
 /// 重试；重拉目标是**媒体分片清单**的实际地址（master 源为其 variant URL，
 /// P1-1），且要求该段位置的分片身份（路径 + BYTERANGE）与重拉前一致（P2-7）。
-/// 仍失败则整章 Err（不产出残缺文件）。
+/// 仍失败则整章 Err（不产出残缺文件）。**只有网络类失败才重试**（P3-4）：
+/// 解密失败等非网络错误原样上抛（保留 `Parser` 错误码 1001）。
+///
+/// **超时（P3-3）**：`timeout` 取自 playUrl 的 `analyze_url.timeout()`，经
+/// [`HlsFetchCtx`] 传给 playlist / variant / init / segment / key **全部**子请求。
+///
 /// **取消**：每个 segment 边界检查取消代数；失败删除临时文件与半成品。
+///
+/// **已知行为（P3-5）**：本函数在调用方持有的章锁内运行，合并期（分钟级）
+/// 全程持锁；用户中断请走 [`audio_cache_cancel`]，不要等待锁。详见
+/// [`chapter_lock`] 文档。
 #[allow(clippy::too_many_arguments)] // 入参为下载安装全链路所需（书/章标识 + 请求上下文 + playlist），拆结构体反而掩盖语义
 fn download_hls_and_install(
     client: &LegadoClient,
@@ -1598,6 +1733,7 @@ fn download_hls_and_install(
     playlist_url: &str,
     playlist_bytes: Vec<u8>,
     cancel_snapshot: u64,
+    timeout: Option<Duration>,
 ) -> LegadoResult<String> {
     let mut ctx = HlsFetchCtx {
         client,
@@ -1607,6 +1743,8 @@ fn download_hls_and_install(
         // 首响应来自 playlist_url；master 选档成功后改写为 variant URL
         playlist_base: playlist_url.to_string(),
         cancel_snapshot,
+        // P3-3：playUrl 的 `,{"timeout":N}` 对全部 HLS 子请求生效
+        timeout,
         key_cache: HashMap::new(),
     };
 
@@ -1697,12 +1835,13 @@ fn download_hls_and_install(
                         // 签名过期同样会让 init 403（P3-4：旧实现 init 在重试循环外，
                         // 一次 403 就让整章直接失败）。仅网络类失败重拉 playlist 重试，
                         // 且 init 尚未写盘（download_part 整段取回后才写）。
-                        let retryable = matches!(err, LegadoError::Network(_));
+                        let retryable = is_retryable_hls_error(&err);
                         if !retryable || attempt >= 1 || cancel_generation_changed(cancel_snapshot)
                         {
-                            return Err(LegadoError::Network(format!(
-                                "HLS 初始化段下载失败: {err}"
-                            )));
+                            // P3-4：非网络错误（解密失败 = Parser 等）**原样上抛**，
+                            // 不得包成 Network——否则上层错误分类（1001 vs 1002）与
+                            // 用户可见文案全错。
+                            return Err(annotate_part_error(err, "初始化段"));
                         }
                         attempt += 1;
                         let refreshed = fetch_refreshed_media(&ctx, &effective_playlist_url)?;
@@ -1749,13 +1888,13 @@ fn download_hls_and_install(
                         // 段字节先整段取回内存再一次性写盘（`download_part`），故网络
                         // 失败时本段尚未追加任何字节，重试不会重复拼接；而磁盘 IO /
                         // 解密 / 取消等失败重试无意义（且写入可能已部分生效）——直接上抛。
-                        let retryable = matches!(err, LegadoError::Network(_));
+                        let retryable = is_retryable_hls_error(&err);
                         // 签名过期（风险①）：本段重拉一次 playlist（token 可能已刷新）
                         if !retryable || attempt >= 1 || cancel_generation_changed(cancel_snapshot)
                         {
-                            return Err(LegadoError::Network(format!(
-                                "HLS {label}下载失败: {err}"
-                            )));
+                            // P3-4：非网络错误**原样上抛**（保留 Parser/Ffi/Io 类型与
+                            // 错误码），仅网络错误才以 Network 归类上抛。
+                            return Err(annotate_part_error(err, &label));
                         }
                         attempt += 1;
                         let refreshed = fetch_refreshed_media(&ctx, &effective_playlist_url)?;
@@ -1837,6 +1976,36 @@ fn download_hls_and_install(
         "extension": extension,
     })
     .to_string())
+}
+
+/// HLS 子请求失败是否值得「重拉 playlist 再重试一次」（P3-4）
+///
+/// 只有**网络类**失败（非 2xx、连接中断、长度与声明不符）才可能由签名过期 /
+/// token 刷新解决。解密失败（`Parser`）、密钥长度非法（`Ffi`）、磁盘 IO、
+/// 取消等重拉 playlist 毫无帮助，必须原样上抛、不重试。
+///
+/// `Timeout` 也**不重试**：超时是耗时问题而非凭据问题，重拉只会让等待翻倍
+/// （且 `Timeout` 有自己的错误码 1009，不应被降格成 `Network`）。
+fn is_retryable_hls_error(err: &LegadoError) -> bool {
+    matches!(err, LegadoError::Network(_))
+}
+
+/// 给 HLS 子请求错误补上「哪一段」的定位信息，**保留原错误类型**（P3-4）
+///
+/// 旧实现无条件 `LegadoError::Network(format!("HLS …: {err}"))`，把解密失败
+/// （`Parser`，code 1001）也变成 `Network`（1002），上层错误分类与用户可见
+/// 文案全错。此处按原变体重建，只前置定位前缀；HLS 分片路径上不会出现的
+/// 变体原样返回——绝不为加前缀而改变错误类型。
+fn annotate_part_error(err: LegadoError, label: &str) -> LegadoError {
+    let prefix = format!("HLS {label}下载失败: ");
+    match err {
+        LegadoError::Parser(m) => LegadoError::Parser(format!("{prefix}{m}")),
+        LegadoError::Network(m) => LegadoError::Network(format!("{prefix}{m}")),
+        LegadoError::Ffi(m) => LegadoError::Ffi(format!("{prefix}{m}")),
+        LegadoError::Timeout(m) => LegadoError::Timeout(format!("{prefix}{m}")),
+        LegadoError::Io(e) => LegadoError::Io(io::Error::new(e.kind(), format!("{prefix}{e}"))),
+        other => other,
+    }
 }
 
 /// 重拉媒体分片清单 playlist（签名过期重试用，P3-4 抽公共）
@@ -4977,6 +5146,388 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 
+    // ─── P3-2：内容嗅探累积首块（首块被切开时仍能判定）─────────────────────
+
+    /// P3-2 单元层：`sniff_verdict` 的前缀判定与「字节不足」三态
+    ///
+    /// 改前：`looks_like_m3u8` 只看传入的那一块 → `#EX` 直接判否（红）。
+    /// 改后：`NeedMore` 让调用方继续累积，凑齐后判是（绿）。
+    #[test]
+    fn sniff_verdict_handles_split_magic_prefix() {
+        // 被切开的 `#EXTM3U`
+        assert_eq!(sniff_verdict(b"#EX"), SniffVerdict::NeedMore);
+        assert_eq!(sniff_verdict(b"#EXTM3"), SniffVerdict::NeedMore);
+        assert_eq!(sniff_verdict(b"#EXTM3U"), SniffVerdict::Hls);
+        assert_eq!(sniff_verdict(b"#EXTM3U\n#EXTINF:4,"), SniffVerdict::Hls);
+        // 明确不是
+        assert_eq!(sniff_verdict(b"\x00\x01\x02"), SniffVerdict::NotHls);
+        assert_eq!(sniff_verdict(b"ID3\x04\x00"), SniffVerdict::NotHls);
+        assert_eq!(sniff_verdict(b"#EXTM3X"), SniffVerdict::NotHls);
+        // BOM / 前导空白
+        assert_eq!(sniff_verdict(b"\xEF"), SniffVerdict::NeedMore);
+        assert_eq!(sniff_verdict(b"\xEF\xBB"), SniffVerdict::NeedMore);
+        assert_eq!(sniff_verdict(b"\xEF\xBB\xBF#EXTM3U"), SniffVerdict::Hls);
+        assert_eq!(sniff_verdict(b"\n\n  #EXTM3U"), SniffVerdict::Hls);
+        assert_eq!(sniff_verdict(b"   "), SniffVerdict::NeedMore);
+        // 空缓冲：还没有任何字节
+        assert_eq!(sniff_verdict(b""), SniffVerdict::NeedMore);
+    }
+
+    /// P3-2 端到端：首块只有 3 字节 `#EX`（`#EXTM3U` 被切开）的无扩展名
+    /// m3u8 仍须被识别为 HLS 并走合并路径
+    ///
+    /// 改前（只看首块）：`#EX` 嗅探失败 → 被当二进制音频落盘，产出不可播文件。
+    #[test]
+    fn hls_detected_when_magic_header_is_split_across_chunks() {
+        use std::io::{Read as _, Write as _};
+        use std::net::TcpListener;
+
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("hls-sniff-split");
+        set_test_root(&root);
+
+        let playlist = media_playlist(&["#EXTINF:10,", "s0.ts", "#EXTINF:10,", "s1.ts"]);
+        let listener = TcpListener::bind("127.0.0.1:0").expect("绑定回环端口");
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut sock) = stream else { continue };
+                let mut head = Vec::new();
+                let mut b = [0u8; 1];
+                while let Ok(1) = sock.read(&mut b) {
+                    head.push(b[0]);
+                    if head.ends_with(b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let target = request_target(&String::from_utf8_lossy(&head));
+                if target.starts_with("/stream?id=split") {
+                    // 先发 3 字节 `#EX`，再发余下 playlist——模拟网络层切包
+                    let body = playlist.as_bytes();
+                    let _ = sock.write_all(
+                        format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                            body.len()
+                        )
+                        .as_bytes(),
+                    );
+                    let _ = sock.write_all(&body[..3]);
+                    let _ = sock.flush();
+                    std::thread::sleep(Duration::from_millis(50));
+                    let _ = sock.write_all(&body[3..]);
+                    let _ = sock.flush();
+                    let _ = sock.shutdown(std::net::Shutdown::Both);
+                    continue;
+                }
+                if target.starts_with("/s0.ts") {
+                    let _ = sock.write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Type: video/mp2t\r\nContent-Length: 2\r\nConnection: close\r\n\r\nS0",
+                    );
+                } else if target.starts_with("/s1.ts") {
+                    let _ = sock.write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Type: video/mp2t\r\nContent-Length: 2\r\nConnection: close\r\n\r\nS1",
+                    );
+                } else {
+                    let _ = sock.write_all(
+                        b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                    );
+                }
+                let _ = sock.flush();
+                let _ = sock.shutdown(std::net::Shutdown::Both);
+            }
+        });
+
+        let book_url = "https://a.com/book/hls-sniff-split";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let play_url = format!("http://127.0.0.1:{port}/stream?id=split");
+        let out = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        )
+        .expect("首块被切开的 m3u8 应经累积嗅探识别为 HLS");
+        let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(json["extension"], "ts", "应走 HLS 合并路径");
+        assert_eq!(
+            fs::read(json["path"].as_str().unwrap()).unwrap(),
+            b"S0S1".to_vec()
+        );
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// P3-2 端到端：首块 3 字节**非** HLS 内容 → 判非 HLS 且累积字节完整写回
+    ///
+    /// 回归保护：累积嗅探不得吞掉前几块（旧实现写回首块，新实现必须写回
+    /// 累积的全部字节）。
+    #[test]
+    fn non_hls_keeps_all_accumulated_sniff_bytes() {
+        use std::io::{Read as _, Write as _};
+        use std::net::TcpListener;
+
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("non-hls-sniff-split");
+        set_test_root(&root);
+
+        // 首 3 字节 `ID3`（MP3 头），后续为任意音频字节
+        let mut body = b"ID3".to_vec();
+        body.extend_from_slice(&[0x5Au8; 500]);
+        let body_srv = body.clone();
+        let listener = TcpListener::bind("127.0.0.1:0").expect("绑定回环端口");
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut sock) = stream else { continue };
+                let mut head = Vec::new();
+                let mut b = [0u8; 1];
+                while let Ok(1) = sock.read(&mut b) {
+                    head.push(b[0]);
+                    if head.ends_with(b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let target = request_target(&String::from_utf8_lossy(&head));
+                if target.starts_with("/plain") {
+                    // 先发 3 字节，再发余下（强制跨块）
+                    let _ = sock.write_all(
+                        format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: audio/mpeg\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                            body_srv.len()
+                        )
+                        .as_bytes(),
+                    );
+                    let _ = sock.write_all(&body_srv[..3]);
+                    let _ = sock.flush();
+                    std::thread::sleep(Duration::from_millis(50));
+                    let _ = sock.write_all(&body_srv[3..]);
+                } else {
+                    let _ = sock.write_all(
+                        b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                    );
+                }
+                let _ = sock.flush();
+                let _ = sock.shutdown(std::net::Shutdown::Both);
+            }
+        });
+
+        let book_url = "https://a.com/book/non-hls-sniff-split";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let play_url = format!("http://127.0.0.1:{port}/plain");
+        let out = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        )
+        .expect("非 HLS 音频应正常缓存");
+        let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(json["extension"], "mp3");
+        assert_eq!(
+            fs::read(json["path"].as_str().unwrap()).unwrap(),
+            body,
+            "嗅探累积的全部字节必须写回，一个字节都不能丢"
+        );
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // ─── P3-3：HLS 子请求继承书源 timeout ──────────────────────────────────
+
+    /// P3-3 端到端：慢响应的分片必须按 playUrl 注入的 timeout 失败，
+    /// 而不是干等客户端默认 60s
+    ///
+    /// 改前：`fetch_bytes_capped` 一律 `timeout: None` → 分片请求吃 60s 默认，
+    /// 书源的 `,{"timeout":N}` 对 HLS 完全失效（红）。改后：沿 `HlsFetchCtx`
+    /// 继承 → 快速超时失败（绿）。
+    #[test]
+    fn hls_segment_request_inherits_source_timeout() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("hls-timeout");
+        set_test_root(&root);
+
+        let playlist = media_playlist(&["#EXTINF:10,", "slow0.ts"]);
+        let (port, _seen) = spawn_router_server(move |head| {
+            let target = request_target(head);
+            if target.starts_with("/playlist.m3u8") {
+                return HttpReply::ok(
+                    "application/vnd.apple.mpegurl",
+                    playlist.clone().into_bytes(),
+                );
+            }
+            if target.starts_with("/slow0.ts") {
+                // 远超注入的 150ms timeout（但远小于 60s 默认）
+                std::thread::sleep(Duration::from_millis(1200));
+                return HttpReply::ok("video/mp2t", b"SLOW".to_vec());
+            }
+            HttpReply::status(404)
+        });
+
+        let book_url = "https://a.com/book/hls-timeout";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        // playUrl 尾部 `,{...}` 声明 150ms 超时
+        let play_url = format!("http://127.0.0.1:{port}/playlist.m3u8,{{\"timeout\":150}}");
+        let started = std::time::Instant::now();
+        let err = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        )
+        .unwrap_err();
+        let elapsed = started.elapsed();
+
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "分片请求必须按注入的 timeout 快速失败，实际耗时 {elapsed:?}"
+        );
+        assert!(
+            matches!(err, LegadoError::Timeout(_)),
+            "超时应归类为 Timeout（1009）而非 Network: {err:?}"
+        );
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // ─── P3-4：非网络错误不得包成 Network ─────────────────────────────────
+
+    /// P3-4 单元层：`annotate_part_error` 保留原错误类型与错误码
+    #[test]
+    fn annotate_part_error_preserves_variant_and_code() {
+        let parser = annotate_part_error(LegadoError::Parser("解密失败".into()), "分片（第 2 段）");
+        assert_eq!(parser.to_error_code(), 1001, "Parser 必须保持 1001");
+        assert!(parser.to_string().contains("分片（第 2 段）"));
+
+        let ffi = annotate_part_error(LegadoError::Ffi("密钥长度非法".into()), "初始化段");
+        assert_eq!(ffi.to_error_code(), 1008);
+
+        let timeout = annotate_part_error(LegadoError::Timeout("超时".into()), "分片（第 1 段）");
+        assert_eq!(timeout.to_error_code(), 1009);
+
+        let network = annotate_part_error(LegadoError::Network("403".into()), "分片（第 1 段）");
+        assert_eq!(network.to_error_code(), 1002);
+
+        // 重试判定：只有 Network 可重试
+        assert!(is_retryable_hls_error(&LegadoError::Network("x".into())));
+        assert!(!is_retryable_hls_error(&LegadoError::Parser("x".into())));
+        assert!(!is_retryable_hls_error(&LegadoError::Ffi("x".into())));
+        assert!(!is_retryable_hls_error(&LegadoError::Timeout("x".into())));
+    }
+
+    /// P3-4 端到端：解密失败 → 错误类型是 Parser（1001）而非 Network（1002），
+    /// 且**不触发**重拉 playlist（服务端只收到 1 次 playlist 请求）
+    ///
+    /// 改前：重试分支无条件 `LegadoError::Network(format!("HLS …下载失败: {err}"))`
+    /// → 解密失败被降格成 Network（红）。改后：原样上抛 Parser，且
+    /// `is_retryable_hls_error` 判否 → 不重拉（绿）。
+    #[test]
+    fn hls_decrypt_failure_surfaces_as_parser_without_refetch() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("hls-decrypt-fail");
+        set_test_root(&root);
+
+        let key = *b"0123456789abcdef";
+        let iv = [0x11u8; 16];
+        let playlist = media_playlist(&[
+            "#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\",IV=0x11111111111111111111111111111111",
+            "#EXTINF:10,",
+            "bad0.ts",
+        ]);
+        // 密文长度非 16 的整数倍 → 确定性 unpad 失败（Parser），不会因
+        // 随机填充恰好合法而偶发通过（避免测试 flaky）
+        let bad_cipher = vec![0xA5u8; 17];
+        let _ = (key, iv); // 密钥内容无关：解密必然失败
+        let playlist_hits = std::sync::Arc::new(AtomicUsize::new(0));
+        let playlist_hits_srv = std::sync::Arc::clone(&playlist_hits);
+        let (port, _seen) = spawn_router_server(move |head| {
+            let target = request_target(head);
+            if target.starts_with("/playlist.m3u8") {
+                playlist_hits_srv.fetch_add(1, Ordering::SeqCst);
+                return HttpReply::ok(
+                    "application/vnd.apple.mpegurl",
+                    playlist.clone().into_bytes(),
+                );
+            }
+            if target.starts_with("/key.bin") {
+                return HttpReply::ok("application/octet-stream", key.to_vec());
+            }
+            if target.starts_with("/bad0.ts") {
+                return HttpReply::ok("video/mp2t", bad_cipher.clone());
+            }
+            HttpReply::status(404)
+        });
+
+        let book_url = "https://a.com/book/hls-decrypt-fail";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let play_url = format!("http://127.0.0.1:{port}/playlist.m3u8");
+        let err = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(err, LegadoError::Parser(_)),
+            "解密失败必须保持 Parser 类型: {err:?}"
+        );
+        assert_eq!(err.to_error_code(), 1001, "错误码必须是 1001 而非 1002");
+        assert_eq!(
+            playlist_hits.load(Ordering::SeqCst),
+            1,
+            "解密失败重拉 playlist 无意义，不得触发重拉"
+        );
+
+        let names: Vec<String> = super::read_dir_entries(&book_dir(book_url))
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert!(names.is_empty(), "失败不得残留文件: {names:?}");
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
     // ─── P2-6：跨域认证头门控（本线核心）──────────────────────────────────
 
     /// P2-6 核心：登录头只发同站资源，跨站 segment 必须收不到 `Authorization`
@@ -5125,6 +5676,7 @@ mod tests {
             extra_headers: &extra_headers,
             playlist_base: "https://www.example.com/media/playlist.m3u8".to_string(),
             cancel_snapshot: 0,
+            timeout: None,
             key_cache: HashMap::new(),
         };
 
@@ -5196,6 +5748,7 @@ mod tests {
             extra_headers: &extra_headers,
             playlist_base: "https://www.example.com/media/playlist.m3u8".to_string(),
             cancel_snapshot: 0,
+            timeout: None,
             key_cache: HashMap::new(),
         };
 

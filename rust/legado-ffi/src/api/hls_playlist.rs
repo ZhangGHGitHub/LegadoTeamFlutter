@@ -13,15 +13,23 @@
 //! | `#EXT-X-STREAM-INF` | master playlist 的 variant（`BANDWIDTH` / `CODECS` / `RESOLUTION` / `AUDIO`） |
 //! | `#EXT-X-MEDIA` | `TYPE=AUDIO` 的独立音频轨（`GROUP-ID` / `NAME` / `URI` / `DEFAULT`） |
 //! | `#EXTINF` | media playlist 的段时长（标题丢弃） |
-//! | `#EXT-X-KEY` | `METHOD=AES-128` 支持；`METHOD=NONE` 表示不加密 |
+//! | `#EXT-X-KEY` | `METHOD=AES-128` + `KEYFORMAT="identity"`（缺省）支持；`METHOD=NONE` 表示不加密；非 identity `KEYFORMAT`（DRM）**跳过** |
 //! | `#EXT-X-MAP` | fMP4 初始化段（**至多一个**；多个视为多 period，显式报错） |
 //! | `#EXT-X-BYTERANGE` | 同文件字节区间（`n[@o]`，缺省 offset 按 §4.3.2.2 续接） |
 //! | `#EXT-X-DISCONTINUITY` | 段边界标记（仅落到 [`Segment::discontinuity`]；**不做** init map 重放） |
 //! | `#EXT-X-MEDIA-SEQUENCE` | IV 缺省时的序列号基准（§5.2） |
 //! | `#EXT-X-ENDLIST` | 点播（非直播）标记；见 [`MediaPlaylist::is_vod`] |
 //!
-//! **显式报错（不静默降级）**：`METHOD=SAMPLE-AES*`（含 SAMPLE-AES-CTR）、
-//! `#EXT-X-I-FRAMES-ONLY`、其它未知加密方法、**多个 `#EXT-X-MAP`**
+//! **`KEYFORMAT` 口径（§4.3.2.4）**：属性缺失等价于 `"identity"`。非 identity
+//! 的 KEY（FairPlay `com.apple.streamingkeydelivery`、Widevine 等）由播放器
+//! DRM 模块处理，服务端合并下载用不到，故**跳过而不报错**——Apple 风格的双
+//! KEY playlist（同一批分片同时声明 DRM 与 identity）可正常用 identity 解密。
+//! 若某段**只有** DRM 密钥可用（无任何 identity 密钥覆盖它）→ 解析期报错，
+//! 绝不把不可解密的密文当明文拼进产物。
+//!
+//! **显式报错（不静默降级）**：identity `KEYFORMAT` 下的 `METHOD=SAMPLE-AES*`
+//! （含 SAMPLE-AES-CTR）、**仅含 DRM 密钥**的分片、
+//! `#EXT-X-I-FRAMES-ONLY`、其它未知加密方法、**多个 `EXT-X-MAP`**
 //! （多 period fMP4——单一 init map 无法覆盖全部分片，静默取最后一个会把
 //! 前段拼到错误 init 上，产物不可播且无报错）、`#EXT-X-BYTERANGE` 长度为 0
 //! （非法 sub-range）、以及**加密的 `EXT-X-MAP` 缺显式 `IV`**（§4.3.2.5
@@ -501,6 +509,17 @@ struct MediaState {
     /// 各 URI 最近一次 sub-range 的结束位置（URI, 末尾 offset），用于 §4.3.2.2
     /// 缺省 offset——按「最近一个**同 URI** 段」续接，而非「上一个任意段」
     last_ranges: Vec<(String, u64)>,
+    /// 当前生效的 DRM 密钥格式（`Some` = 其后的分片在无 identity 密钥时不可解密）
+    ///
+    /// 与 `current_key = None`（明文）语义不同：明文可直接拼，DRM 拼出来是
+    /// 不可播的密文。故「无 identity 密钥 + DRM 生效」的分片在 [`push_segment`]
+    /// 直接报错，绝不静默产出垃圾文件（P3-1）。
+    ///
+    /// **按 KEYFORMAT 分别继承**（RFC 8216 §4.3.2.4）：`EXT-X-KEY` 只被
+    /// 「下一个**同 KEYFORMAT** 的 `EXT-X-KEY`」覆盖。因此 DRM 标签不影响
+    /// 已生效的 identity 密钥——Apple 风格的双 KEY playlist（DRM + identity
+    /// 同时声明给同一批分片）用 identity 即可解密。
+    drm_active: Option<String>,
 }
 
 /// 解析 media playlist
@@ -515,6 +534,7 @@ fn parse_media(text: &str, base_url: &str) -> LegadoResult<MediaPlaylist> {
         pending_byte_range: None,
         pending_discontinuity: false,
         last_ranges: Vec::new(),
+        drm_active: None,
     };
 
     for line in text.lines().map(str::trim) {
@@ -544,9 +564,27 @@ fn parse_media(text: &str, base_url: &str) -> LegadoResult<MediaPlaylist> {
                     .map_err(|_| parse_err(format!("EXTINF 时长非数字: {duration_text}")))?;
                 state.pending_duration = Some(duration);
             }
-            "EXT-X-KEY" => {
-                state.current_key = parse_key(value, base_url)?;
-            }
+            "EXT-X-KEY" => match parse_key(value, base_url)? {
+                KeyDirective::None => {
+                    // METHOD=NONE：显式终止继承（含 DRM 状态）
+                    state.current_key = None;
+                    state.drm_active = None;
+                }
+                KeyDirective::Identity(key) => {
+                    // identity 密钥可用 → 其后分片可解密，DRM 状态不再阻塞
+                    state.current_key = Some(key);
+                    state.drm_active = None;
+                }
+                KeyDirective::SkippedDrm(keyformat) => {
+                    // 非 identity（DRM）密钥：跳过，不改变已生效的 identity 密钥
+                    // （RFC 8216 §4.3.2.4：各 KEYFORMAT 的密钥互不覆盖）。
+                    // 仅当此前没有任何可解密密钥时记录「DRM 生效」——否则分片
+                    // 会被静默当明文拼进产物（P3-1）。
+                    if state.current_key.is_none() {
+                        state.drm_active = Some(keyformat);
+                    }
+                }
+            },
             "EXT-X-MAP" => {
                 if state.init_map.is_some() {
                     // 多 period fMP4：换 init map（通常还换 key）。单一 init_map
@@ -648,6 +686,13 @@ fn ensure_init_map_key_has_iv(map: &InitMap) -> LegadoResult<()> {
 
 /// 把一行分片 URI 落成 [`Segment`]（消费 pending 状态）
 fn push_segment(state: &mut MediaState, uri_line: &str, base_url: &str) -> LegadoResult<()> {
+    // P3-1：DRM（非 identity KEYFORMAT）生效期间的分片无法用服务端密钥解密，
+    // 拼进产物只会得到不可播文件。此处显式报错而非静默当明文拼。
+    if let Some(keyformat) = state.drm_active.as_ref() {
+        return Err(parse_err(format!(
+            "HLS 仅支持 identity KEYFORMAT 的 AES-128 加密，该播放列表仅含 DRM 密钥（{keyformat}）"
+        )));
+    }
     let duration = state
         .pending_duration
         .take()
@@ -708,17 +753,45 @@ fn push_segment(state: &mut MediaState, uri_line: &str, base_url: &str) -> Legad
     Ok(())
 }
 
-/// 解析 `#EXT-X-KEY` 属性，返回该标签之后生效的密钥
-fn parse_key(value: &str, base_url: &str) -> LegadoResult<Option<HlsKey>> {
+/// 一条 `#EXT-X-KEY` 对「当前生效密钥」的影响
+///
+/// 与 [`HlsKey`] 的区别在于要表达**「跳过」**这一第三态：非 identity
+/// `KEYFORMAT`（FairPlay / Widevine 等 DRM）既不产生可用密钥，也**不是错误**
+/// ——它由播放器 DRM 模块处理，服务端合并下载用不到（P3-1）。
+enum KeyDirective {
+    /// `METHOD=NONE`：显式终止继承
+    None,
+    /// 可用的 identity 密钥
+    Identity(HlsKey),
+    /// 非 identity `KEYFORMAT` 的 DRM 密钥：跳过，保持当前生效密钥不变
+    SkippedDrm(String),
+}
+
+/// RFC 8216 §4.3.2.4 的缺省 `KEYFORMAT`：属性缺失等价于 `"identity"`
+const DEFAULT_KEYFORMAT: &str = "identity";
+
+/// 解析 `#EXT-X-KEY` 属性，返回该标签对当前密钥状态的影响
+///
+/// **`KEYFORMAT` 语义（P3-1）**：Apple 风格 playlist 常对同一批分片声明两条
+/// KEY——DRM（`SAMPLE-AES` + `KEYFORMAT="com.apple.streamingkeydelivery"`）
+/// 与 identity（`AES-128` + `KEYFORMAT="identity"`）。旧实现完全不看
+/// `KEYFORMAT`，一律对 `SAMPLE-AES*` 硬 Err，导致**整条 playlist 被拒**，
+/// 即使 identity 的 AES-128 密钥可用。现在：
+/// - 非 identity 的 KEY → [`KeyDirective::SkippedDrm`]（跳过不报错）；
+/// - identity（或缺失，RFC 8216 §4.3.2.4 缺省即 identity）→ 按原方法支持度判定；
+/// - `METHOD=NONE` 仍不报错（显式终止继承）。
+fn parse_key(value: &str, base_url: &str) -> LegadoResult<KeyDirective> {
     let attrs = parse_attributes(value)?;
     let mut method: Option<String> = None;
     let mut uri: Option<String> = None;
     let mut iv: Option<[u8; 16]> = None;
+    let mut keyformat: Option<String> = None;
     for (name, val) in attrs {
         match name.to_ascii_uppercase().as_str() {
             "METHOD" => method = Some(val.trim().to_string()),
             "URI" => uri = Some(val),
             "IV" => iv = Some(parse_iv(&val)?),
+            "KEYFORMAT" => keyformat = Some(val.trim().to_string()),
             _ => {}
         }
     }
@@ -726,12 +799,20 @@ fn parse_key(value: &str, base_url: &str) -> LegadoResult<Option<HlsKey>> {
     let upper = method.to_ascii_uppercase();
 
     if upper == "NONE" {
-        // 显式终止继承
-        return Ok(None);
+        // 显式终止继承（RFC 8216 §4.3.2.4 要求此时不得带其它属性，但真实
+        // playlist 偶有多余属性；按「终止」处理，忽略其余属性）
+        return Ok(KeyDirective::None);
+    }
+    // 非 identity KEYFORMAT = DRM 系（FairPlay/Widevine/PlayReady…）：
+    // 跳过而非报错——否则同一条 playlist 里 identity 的 AES-128 密钥
+    // 会被 DRM 兄弟标签连坐（P3-1 的核心缺陷）
+    let keyformat = keyformat.unwrap_or_else(|| DEFAULT_KEYFORMAT.to_string());
+    if !keyformat.eq_ignore_ascii_case(DEFAULT_KEYFORMAT) {
+        return Ok(KeyDirective::SkippedDrm(keyformat));
     }
     if upper == "AES-128" {
         let uri = uri.ok_or_else(|| parse_err("EXT-X-KEY(METHOD=AES-128) 缺少 URI 属性"))?;
-        return Ok(Some(HlsKey {
+        return Ok(KeyDirective::Identity(HlsKey {
             method,
             uri: absolutize(base_url, &uri),
             iv,
@@ -1880,6 +1961,94 @@ seg1.ts
             media.segments[0].key.as_ref().and_then(|k| k.iv),
             Some(expected)
         );
+    }
+
+    // ---------- media：KEYFORMAT（P3-1）----------
+
+    /// 双 KEY（FairPlay DRM + identity AES-128）→ 用 identity 密钥解密，
+    /// DRM 标签被跳过而不是把整条 playlist 拒掉
+    #[test]
+    fn media_dual_key_uses_identity_and_skips_fairplay() {
+        let text = "\
+#EXTM3U
+#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"skd://key\",KEYFORMAT=\"com.apple.streamingkeydelivery\"
+#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\",KEYFORMAT=\"identity\"
+#EXTINF:4,
+seg0.ts
+#EXTINF:4,
+seg1.ts
+";
+        let media = parse_media_only(text);
+        assert_eq!(media.segments.len(), 2);
+        for segment in &media.segments {
+            let key = segment.key.as_ref().expect("identity 密钥应生效");
+            assert_eq!(key.method, "AES-128");
+            assert_eq!(key.uri, "https://cdn.example.com/media/key.bin");
+        }
+    }
+
+    /// DRM 标签出现在 identity 之后：不覆盖已生效的 identity 密钥
+    /// （RFC 8216 §4.3.2.4 各 KEYFORMAT 独立继承）
+    #[test]
+    fn media_drm_key_after_identity_does_not_override() {
+        let text = "\
+#EXTM3U
+#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\",KEYFORMAT=\"identity\"
+#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"skd://key\",KEYFORMAT=\"com.apple.streamingkeydelivery\"
+#EXTINF:4,
+seg0.ts
+";
+        let media = parse_media_only(text);
+        assert_eq!(
+            media.segments[0].key.as_ref().map(|k| k.uri.as_str()),
+            Some("https://cdn.example.com/media/key.bin")
+        );
+    }
+
+    /// 仅 FairPlay DRM 密钥（无 identity）→ 明确 Err，文案含 DRM 与 keyformat
+    #[test]
+    fn media_only_drm_key_is_error_with_keyformat() {
+        let err = parse_playlist(
+            "#EXTM3U\n#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"skd://key\",KEYFORMAT=\"com.apple.streamingkeydelivery\"\n#EXTINF:4,\nseg.ts\n",
+            BASE,
+        )
+        .expect_err("仅 DRM 密钥必须报错");
+        let message = err.to_string();
+        assert!(message.contains("DRM"), "message={message}");
+        assert!(
+            message.contains("com.apple.streamingkeydelivery"),
+            "文案应含 keyformat: {message}"
+        );
+        assert_eq!(err.to_error_code(), 1001, "应归类为 Parser");
+    }
+
+    /// 无 KEYFORMAT 的 AES-128 照常工作（RFC 8216 缺省 identity，回归保护）
+    #[test]
+    fn media_missing_keyformat_defaults_to_identity() {
+        let media = parse_media_only(
+            "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"k.key\"\n#EXTINF:4,\nseg0.ts\n",
+        );
+        assert_eq!(
+            media.segments[0].key.as_ref().map(|k| k.uri.as_str()),
+            Some("https://cdn.example.com/media/k.key")
+        );
+    }
+
+    /// METHOD=NONE 带非 identity 的残留属性仍终止继承（不报错）
+    #[test]
+    fn media_key_none_terminates_even_with_drm_sibling() {
+        let text = "\
+#EXTM3U
+#EXT-X-KEY:METHOD=AES-128,URI=\"k.key\"
+#EXTINF:4,
+seg0.ts
+#EXT-X-KEY:METHOD=NONE
+#EXTINF:4,
+seg1.ts
+";
+        let media = parse_media_only(text);
+        assert!(media.segments[0].key.is_some());
+        assert!(media.segments[1].key.is_none(), "NONE 应终止继承");
     }
 
     // ---------- media：DISCONTINUITY ----------
