@@ -3089,7 +3089,9 @@ class _PaletteCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              palette.label,
+              // 调色板 label 为引擎数据值（生成器产物 + 传给 Rust 的 themeName），
+              // 界面显示名按 id 走 AppStrings 本地化（L10N 批3）
+              AppStrings.md3PaletteName(palette.id),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(

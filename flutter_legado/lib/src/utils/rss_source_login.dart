@@ -33,6 +33,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../screens/source_login_screen.dart';
@@ -83,7 +84,7 @@ Future<bool> showRssSourceLogin(
 ) async {
   if (!rssSourceHasLogin(source)) {
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      const SnackBar(content: Text('该订阅源未配置登录（loginUrl / loginUi 均为空）')),
+      SnackBar(content: Text(AppStrings.rssLoginNotConfigured)),
     );
     return false;
   }

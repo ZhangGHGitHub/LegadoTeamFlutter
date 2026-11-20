@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../l10n/app_strings.dart';
+
 /// 系统另存结果（D1 / 批26）
 ///
 /// [location] 为实际落盘位置：Android 是 `content://` URI，iOS/桌面是文件
@@ -186,9 +188,9 @@ class MethodChannelFileSaveChannel extends FileSaveChannel {
     } on MissingPluginException {
       // 通道未注册（非本应用 Android 壳/测试宿主）：给出可读原因，
       // 不回退 file_picker（会重新引入崩溃链路）
-      throw const FileSaveException(
+      throw FileSaveException(
         code: 'SAVE_CHANNEL_MISSING',
-        message: '系统保存通道不可用，请更新应用版本后重试',
+        message: AppStrings.saveChannelUnavailable,
       );
     } on PlatformException catch (e) {
       throw FileSaveException(
@@ -207,9 +209,9 @@ class MethodChannelFileSaveChannel extends FileSaveChannel {
       final raw = await _channel.invokeMethod<Object?>('chooseTree');
       return _parseTree(raw);
     } on MissingPluginException {
-      throw const FileSaveException(
+      throw FileSaveException(
         code: 'SAVE_CHANNEL_MISSING',
-        message: '系统保存通道不可用，请更新应用版本后重试',
+        message: AppStrings.saveChannelUnavailable,
       );
     } on PlatformException catch (e) {
       throw FileSaveException(
@@ -307,7 +309,7 @@ class MethodChannelFileSaveChannel extends FileSaveChannel {
   };
 
   static String _friendlyReason(String code) =>
-      errorReasons[code] ?? '保存失败，请重试';
+      errorReasons[code] ?? AppStrings.saveFailedRetry;
 
   /// 提取结构化错误里的技术详情（供失败面板次要行/复制排障）
   static String? _detailOf(Object? details) {

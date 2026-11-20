@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import '../l10n/app_strings.dart';
 import '../utils/error_message.dart';
 
 /// 切换结果：`ok=false` 时 [message] 携带失败原因，供 UI 展示真实错误
@@ -77,9 +78,9 @@ class LauncherIconService {
   /// - 通道未注册：MissingPluginException 信息。
   static Future<LauncherIconResult> setIcon(String icon) async {
     if (!isSupported) {
-      return const LauncherIconResult(
+      return LauncherIconResult(
         ok: false,
-        message: '当前平台不支持运行时换图标',
+        message: AppStrings.launcherIconPlatformUnsupported,
       );
     }
     try {
@@ -87,7 +88,7 @@ class LauncherIconService {
       return const LauncherIconResult(ok: true);
     } on PlatformException catch (e) {
       // 原生侧拒绝（Android API<26 / iOS setAlternateIconName 错误）
-      final msg = e.message ?? '原生侧拒绝切换图标';
+      final msg = e.message ?? AppStrings.launcherIconNativeRejected;
       final d = (e.details is Map) ? e.details as Map : <String, Object?>{};
       debugPrint('[LauncherIcon] PlatformException: ${e.code} $msg details=$d');
       // iOS -54（fNotFoundErr）：最小探针 App（单备选/纯 legacy/iPhone-only/仅公开 API）
@@ -95,9 +96,9 @@ class LauncherIconService {
       // 图标元数据（iconsDictionary 为空），setAlternateIconName 必然失败。
       // 与 App 结构无关、代码层无法修复；给用户一句清楚的话而非原始 OSStatus。
       if (isIos && (d['code'] as num?)?.toInt() == -54) {
-        return const LauncherIconResult(
+        return LauncherIconResult(
           ok: false,
-          message: '当前安装方式不支持切换图标（仅 App Store / 企业签名安装可用）',
+          message: AppStrings.launcherIconInstallUnsupported,
         );
       }
       // iOS 其他失败：附带真机自检，一次回报即可定位（旁载 bundle vs 系统回归）
@@ -112,7 +113,7 @@ class LauncherIconService {
       debugPrint('[LauncherIcon] MissingPluginException: ${e.message}');
       return LauncherIconResult(
         ok: false,
-        message: '原生图标通道未注册：${e.message}',
+        message: AppStrings.launcherIconChannelMissing('${e.message}'),
       );
     } catch (e) {
       debugPrint('[LauncherIcon] set failed: $e');

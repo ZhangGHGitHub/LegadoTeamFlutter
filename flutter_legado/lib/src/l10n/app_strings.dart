@@ -5670,4 +5670,163 @@ class AppStrings {
   static String get sourceLoginUrlTabHint => _get(
       '在浏览器完成登录后，复制 Cookie 并切换到「手动输入」标签页粘贴。',
       'After logging in via the browser, copy the cookie and switch to the "Manual input" tab to paste it.');
+
+  // ----- 分享文本 / 深链导入（deep_link_service） -----
+  static String get shareTooLargeTitle =>
+      _get('分享内容过大', 'Shared content too large');
+  static String shareTooLargeMessage(int mib) => _locale == 'zh'
+      ? '分享内容超过 $mib MiB，无法解析导入，请改用文件导入。'
+      : 'The shared content exceeds $mib MiB and cannot be parsed for import. Use file import instead.';
+  static String get shareJsonTooDeepTitle =>
+      _get('JSON 层级过深', 'JSON nesting too deep');
+  static String shareJsonTooDeepMessage(int depth) => _locale == 'zh'
+      ? '分享的 JSON 嵌套超过 $depth 层，无法安全解析，请确认来源后重试。'
+      : 'The shared JSON is nested deeper than $depth levels and cannot be parsed safely. Check the source and try again.';
+  static String get shareUnsupportedTitle =>
+      _get('不支持的内容', 'Unsupported content');
+  static String get shareUnsupportedMessage => _get(
+      '分享内容不是分享口令、http(s) 链接、legado:// 导入链接或可导入的 JSON。',
+      'The shared content is not a share passphrase, an http(s) link, a legado:// import link, or importable JSON.');
+  static String get unsupportedFileTitle => _get('提醒', 'Notice');
+  static String unsupportedFileContinue(String name) => _locale == 'zh'
+      ? '文件 $name 不受支持，是否继续打开？'
+      : 'Continue to open although $name is not supported?';
+  static String get importAnyway => _get('仍然导入', 'Import anyway');
+  static String importBookFailed(String error) =>
+      _locale == 'zh' ? '导入书籍失败：$error' : 'Failed to import the book: $error';
+  static String get importNotReady =>
+      _get('导入功能未就绪，请稍后重试', 'Import is not ready yet. Please try again later.');
+  static String get importLocalBookTitle =>
+      _get('导入本地书籍', 'Import local book');
+  static String get importLocalBookConfirm =>
+      _get('是否导入该书并加入书架？', 'Import this book and add it to the bookshelf?');
+
+  // ----- 平台桥（platform_bridge_service） -----
+  static String get ttsCacheCleared =>
+      _get('已清除朗读缓存', 'Read-aloud cache cleared');
+  static String invalidLinkWith(String url) =>
+      _locale == 'zh' ? '无效的链接：$url' : 'Invalid link: $url';
+  static String cannotOpenUrlWith(String url) =>
+      _locale == 'zh' ? '无法打开：$url' : 'Unable to open: $url';
+  static String get videoPrivateVerifyBeforePlay => _get(
+      '私密视频需先在应用内验证后再播放',
+      'Verify this private video in the app before playing');
+
+  // ----- 私密闸门页标题（routes） -----
+  static String get privateComicTitle => _get('私密漫画', 'Private comic');
+  static String get privateComicDesc =>
+      _get('验证后继续阅读本漫画', 'Verify to continue reading this comic');
+  static String get privateAudioTitle => _get('私密音频', 'Private audio');
+  static String get privateAudioDesc =>
+      _get('验证后继续收听本书', 'Verify to continue listening to this book');
+  static String get verifyAndListen => _get('验证并收听', 'Verify and listen');
+  static String get privateVideoTitle => _get('私密视频', 'Private video');
+  static String get privateVideoDesc =>
+      _get('验证后继续播放本视频', 'Verify to continue playing this video');
+  static String get verifyAndPlay => _get('验证并播放', 'Verify and play');
+
+  // ----- 书源登录提示（source_login_prompt） -----
+  static String get loginRequiredTitle => _get('需要登录', 'Login required');
+  static String get sourceLoginRequiredHint => _get(
+      '书源需要登录，请先在书源菜单中登录后重试',
+      'This source requires login. Sign in from the source menu and retry.');
+
+  // ----- 桌面图标切换失败原因（launcher_icon_service） -----
+  static String get launcherIconPlatformUnsupported =>
+      _get('当前平台不支持运行时换图标', 'Changing the icon at runtime is not supported on this platform');
+  static String get launcherIconInstallUnsupported => _get(
+      '当前安装方式不支持切换图标（仅 App Store / 企业签名安装可用）',
+      'Changing the icon is not supported for this installation type (only App Store or enterprise-signed installs)');
+  static String launcherIconChannelMissing(String message) => _locale == 'zh'
+      ? '原生图标通道未注册：$message'
+      : 'The native icon channel is not registered: $message';
+  static String get launcherIconNativeRejected =>
+      _get('原生侧拒绝切换图标', 'The native side rejected the icon change');
+
+  // ----- 系统另存通道（file_save_channel） -----
+  static String get saveChannelUnavailable => _get(
+      '系统保存通道不可用，请更新应用版本后重试',
+      'The system save channel is unavailable. Update the app and try again.');
+
+  // ----- RSS 登录（rss_source_login） -----
+  static String get rssLoginNotConfigured => _get(
+      '该订阅源未配置登录（loginUrl / loginUi 均为空）',
+      'This RSS source has no login configured (loginUrl and loginUi are both empty)');
+
+  // ----- 书籍工具（book_open_utils） -----
+  static String webFileAuthorFallback(String name, String author) =>
+      _locale == 'zh' ? '$name 作者：$author' : '$name · $author';
+  static String webFileInvalidDownloadUrl(String url) =>
+      _locale == 'zh' ? '无效的下载地址：$url' : 'Invalid download URL: $url';
+  static String webFileDownloadHttpFailed(int status) => _locale == 'zh'
+      ? '下载失败：HTTP $status'
+      : 'Download failed: HTTP $status';
+  static String get webFileDownloadEmpty =>
+      _get('下载失败：文件为空', 'Download failed: the file is empty');
+
+  // ----- 封面相册导入失败（cover_album_store） -----
+  static String coverAlbumImportItemFailed(String error) =>
+      _locale == 'zh' ? '导入失败：$error' : 'Import failed: $error';
+  static String get coverAlbumNameRequired =>
+      _get('相册名称不能为空', 'The album name cannot be empty');
+  static String get coverAlbumNotFound =>
+      _get('相册不存在或已删除', 'The album does not exist or has been deleted');
+  static String get coverAlbumInvalidId =>
+      _get('相册标识非法', 'Invalid album identifier');
+  static String get coverAlbumAlreadyDeleted =>
+      _get('相册已删除', 'The album has been deleted');
+  static String get coverAlbumImageInvalidId =>
+      _get('图片标识非法', 'Invalid image identifier');
+  static String get coverAlbumDirUnavailable =>
+      _get('封面相册目录不可用', 'The cover album directory is unavailable');
+  static String get coverAlbumImageEmpty =>
+      _get('图片内容为空', 'The image content is empty');
+  static String coverAlbumTooManyImages(int max) => _locale == 'zh'
+      ? '单次最多导入 $max 张图片'
+      : 'You can import at most $max images at a time';
+  static String coverAlbumBatchTooLarge(int mb) => _locale == 'zh'
+      ? '本次选择图片总大小超过 ${mb}MB'
+      : 'The selected images exceed the $mb MB total size limit';
+  static String get coverAlbumSaveImageFailed =>
+      _get('保存图片失败', 'Failed to save the image');
+  static String get coverAlbumPickerUnsupported =>
+      _get('Web 端不支持封面相册', 'Cover albums are not supported on the web');
+  static String get coverAlbumPickerOpenFailed =>
+      _get('无法打开系统图片选择器，请重试', 'Unable to open the system image picker. Try again.');
+  static String get coverAlbumPickerFailed =>
+      _get('选择图片失败，请重试', 'Failed to pick images. Try again.');
+  static String coverAlbumReadImageFailed(String name) => _locale == 'zh'
+      ? '无法读取所选图片：$name'
+      : 'Unable to read the selected image: $name';
+  static String coverAlbumImageUndecodable(String name) => _locale == 'zh'
+      ? '不是可解码的图片：$name'
+      : 'Not a decodable image: $name';
+  static String coverAlbumSaveFailed(String error) =>
+      _locale == 'zh' ? '保存封面相册失败：$error' : 'Failed to save the cover album: $error';
+
+  // ----- 封面相册图片过大（cover_album_image_picker） -----
+  static String coverAlbumImageTooLarge(int mb) => _locale == 'zh'
+      ? '图片过大（上限 ${mb}MB）'
+      : 'The image is too large (limit $mb MB)';
+
+  // ----- 漫画菜单 tooltip（reader_comic/manga_menu） -----
+  static String get autoReadShort => _get('自动', 'Auto');
+  static String get mangaPageSettings => _get('翻页设置', 'Page settings');
+
+  // ----- MD3 调色板显示名（md3_colors 的 label 为引擎数据值，UI 走本映射） -----
+  static String md3PaletteName(String id) => switch (id) {
+        'wh' => _get('黑白', 'Black & White'),
+        'gr' => _get('草野', 'Grassland'),
+        'lemon' => _get('柠檬', 'Lemon'),
+        'koharu' => _get('春', 'Spring'),
+        'yuuka' => _get('千禧年', 'Millennium'),
+        'phoebe' => _get('隐海修会', 'Hidden Sea Order'),
+        'sora' => _get('晴空', 'Clear Sky'),
+        'august' => _get('八月', 'August'),
+        'carlotta' => _get('新浪潮', 'New Wave'),
+        'mujika' => _get('乐队', 'Band'),
+        'elink' => _get('电子书', 'Elink'),
+        'transparent' => _get('透明', 'Transparent'),
+        _ => _get('默认', 'Default'),
+      };
 }

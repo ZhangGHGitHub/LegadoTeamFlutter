@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/pref_keys.dart';
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/privacy/privacy_content_notifier.dart';
 import '../providers/privacy/privacy_notifier.dart';
@@ -347,7 +348,7 @@ class BookOpenUtils {
         context,
         ref,
         bookUrl: book.bookUrl,
-        title: '验证后阅读',
+        title: AppStrings.verifyToRead,
       );
     } catch (e) {
       // 判定链异常不得把用户挡在书外（与内容判定 fail-open 同口径）
@@ -704,7 +705,7 @@ class BookOpenUtils {
     // 原版 fallback：author 空取书名，否则「书名 作者：作者」
     final fallback = book.author.isEmpty
         ? book.name
-        : '${book.name} 作者：${book.author}';
+        : AppStrings.webFileAuthorFallback(book.name, book.author);
     final name = (urlFileName?.trim().isNotEmpty ?? false)
         ? urlFileName!
         : fallback;
@@ -740,7 +741,7 @@ class BookOpenUtils {
   }) async {
     final uri = Uri.tryParse(url);
     if (uri == null || !uri.hasScheme) {
-      throw ArgumentError('无效的下载地址：$url');
+      throw ArgumentError(AppStrings.webFileInvalidDownloadUrl(url));
     }
     final tempDir = await getTemporaryDirectory();
     final dir = Directory('${tempDir.path}/webFileImport');
@@ -757,7 +758,7 @@ class BookOpenUtils {
       headers.forEach((k, v) => request.headers[k] = v);
       final response = await client.send(request);
       if (response.statusCode != 200) {
-        throw StateError('下载失败：HTTP ${response.statusCode}');
+        throw StateError(AppStrings.webFileDownloadHttpFailed(response.statusCode));
       }
       final sink = dest.openWrite();
       try {
@@ -772,7 +773,7 @@ class BookOpenUtils {
     }
     if (!dest.existsSync() || dest.lengthSync() == 0) {
       if (dest.existsSync()) dest.deleteSync();
-      throw StateError('下载失败：文件为空');
+      throw StateError(AppStrings.webFileDownloadEmpty);
     }
     return dest.path;
   }

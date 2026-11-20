@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../../l10n/app_strings.dart';
+
 /// [P4-3 M2] 漫画阅读器菜单组件（实心顶栏 / 悬浮进度行 + 贴底白条三键行）
 ///
 /// **本批视觉基准 = 用户截图描述**（参考版 APK kazusa 3.26.15 漫画菜单）。
@@ -155,26 +157,26 @@ class MangaMenuTopBar extends StatelessWidget {
               children: [
                 _MangaTopBarIcon(
                   icon: Symbols.arrow_back_rounded,
-                  tooltip: '返回',
+                  tooltip: AppStrings.back,
                   onTap: onBack,
                 ),
                 const Spacer(),
                 _MangaTopBarIcon(
                   icon: Symbols.shuffle_rounded,
-                  tooltip: '换源',
+                  tooltip: AppStrings.changeSource,
                   onTap: onChangeSource,
                 ),
                 const SizedBox(width: 8),
                 _MangaTopBarIcon(
                   icon: Symbols.refresh_rounded,
-                  tooltip: '刷新',
+                  tooltip: AppStrings.refreshAction,
                   onTap: onRefresh,
                 ),
                 const SizedBox(width: 8),
                 _MangaTopBarIcon(
                   // 「更多」= 打开页操作底栏（复用既有页操作菜单，真实功能）
                   icon: Symbols.more_vert_rounded,
-                  tooltip: '更多',
+                  tooltip: AppStrings.moreActions,
                   onTap: onMore,
                 ),
               ],
@@ -641,7 +643,7 @@ class MangaMenuBottomBar extends StatelessWidget {
             children: [
               _MangaCircleButton(
                 icon: Symbols.skip_previous_rounded,
-                tooltip: '上一章',
+                tooltip: AppStrings.previousChapter,
                 onTap: onPrevChapter,
               ),
               const SizedBox(width: 8),
@@ -659,7 +661,7 @@ class MangaMenuBottomBar extends StatelessWidget {
               const SizedBox(width: 8),
               _MangaCircleButton(
                 icon: Symbols.skip_next_rounded,
-                tooltip: '下一章',
+                tooltip: AppStrings.nextChapter,
                 onTap: onNextChapter,
               ),
             ],
@@ -680,7 +682,7 @@ class MangaMenuBottomBar extends StatelessWidget {
                 children: [
                   _MangaBottomBarKey(
                     icon: Symbols.list_rounded,
-                    tooltip: '目录',
+                    tooltip: AppStrings.catalog,
                     iconColor: scheme.onSurface,
                     onTap: onOpenCatalog,
                   ),
@@ -690,7 +692,7 @@ class MangaMenuBottomBar extends StatelessWidget {
                     // 着色逻辑不变）
                     icon: Symbols.auto_stories_rounded,
                     // 参考版 L606-610：开 = 「停止」，关 = 「自动」
-                    tooltip: autoReadEnabled ? '停止' : '自动',
+                    tooltip: autoReadEnabled ? AppStrings.stop : AppStrings.autoReadShort,
                     // 状态着色（截图：开启图标变 primary 蓝，关闭 onSurface）
                     iconColor:
                         autoReadEnabled ? scheme.primary : scheme.onSurface,
@@ -700,7 +702,7 @@ class MangaMenuBottomBar extends StatelessWidget {
                   _MangaBottomBarKey(
                     // 设置齿轮（替换 M1 tune 图标），点击 = 翻页设置
                     icon: Symbols.settings_rounded,
-                    tooltip: '翻页设置',
+                    tooltip: AppStrings.mangaPageSettings,
                     iconColor: scheme.onSurface,
                     onTap: onOpenPageSettings,
                   ),

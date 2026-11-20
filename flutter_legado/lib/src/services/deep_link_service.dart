@@ -5,6 +5,7 @@ import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../routes.dart';
 import '../screens/archive_import_dialog.dart';
@@ -217,16 +218,16 @@ class DeepLinkService {
         case SharedTextKind.tooLarge:
           await _showSharedRejected(
             context: nav.context,
-            title: '分享内容过大',
-            message: '分享内容超过 ${maxSharedTextBytes ~/ (1024 * 1024)} MiB，'
-                '无法解析导入，请改用文件导入。',
+            title: AppStrings.shareTooLargeTitle,
+            message: AppStrings.shareTooLargeMessage(
+              maxSharedTextBytes ~/ (1024 * 1024),
+            ),
           );
         case SharedTextKind.tooDeepJson:
           await _showSharedRejected(
             context: nav.context,
-            title: 'JSON 层级过深',
-            message: '分享的 JSON 嵌套超过 $maxJsonDepth 层，无法安全解析，'
-                '请确认来源后重试。',
+            title: AppStrings.shareJsonTooDeepTitle,
+            message: AppStrings.shareJsonTooDeepMessage(maxJsonDepth),
           );
         case SharedTextKind.unsupported:
           await _showSharedUnsupported(nav.context);
@@ -286,9 +287,8 @@ class DeepLinkService {
   Future<void> _showSharedUnsupported(BuildContext context) {
     return _showSharedRejected(
       context: context,
-      title: '不支持的内容',
-      message: '分享内容不是分享口令、http(s) 链接、legado:// 导入链接'
-          '或可导入的 JSON。',
+      title: AppStrings.shareUnsupportedTitle,
+      message: AppStrings.shareUnsupportedMessage,
     );
   }
 
@@ -306,7 +306,7 @@ class DeepLinkService {
         actions: [
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('确定'),
+            child: Text(AppStrings.confirm),
           ),
         ],
       ),
@@ -497,7 +497,7 @@ class DeepLinkService {
       await _dispatchCopiedFile(path, messenger);
     } catch (e) {
       debugPrint('[DeepLink] 外部文件导入失败：$e');
-      messenger.showSnackBar(SnackBar(content: Text('导入书籍失败：${errorMessage(e)}')));
+      messenger.showSnackBar(SnackBar(content: Text(AppStrings.importBookFailed(errorMessage(e)))));
     } finally {
       _lastHandledFile = null;
     }
@@ -598,16 +598,16 @@ class DeepLinkService {
     final confirmed = await showDialog<bool>(
       context: nav.context,
       builder: (ctx) => AlertDialog(
-        title: const Text('提醒'),
-        content: Text('文件 $name 不受支持，是否继续打开？'),
+        title: Text(AppStrings.unsupportedFileTitle),
+        content: Text(AppStrings.unsupportedFileContinue(name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('仍然导入'),
+            child: Text(AppStrings.importAnyway),
           ),
         ],
       ),
@@ -639,7 +639,7 @@ class DeepLinkService {
       return path;
     } catch (e) {
       debugPrint('[DeepLink] 外部文件拷贝失败：$e');
-      messenger.showSnackBar(SnackBar(content: Text('导入书籍失败：${errorMessage(e)}')));
+      messenger.showSnackBar(SnackBar(content: Text(AppStrings.importBookFailed(errorMessage(e)))));
       return null;
     }
   }
@@ -665,7 +665,7 @@ class DeepLinkService {
     final importer = importLocalBook;
     if (importer == null) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('导入功能未就绪，请稍后重试')),
+        SnackBar(content: Text(AppStrings.importNotReady)),
       );
       return;
     }
@@ -685,24 +685,24 @@ class DeepLinkService {
     return showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('导入本地书籍'),
+        title: Text(AppStrings.importLocalBookTitle),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(name, maxLines: 2, overflow: TextOverflow.ellipsis),
             const SizedBox(height: 8),
-            const Text('是否导入该书并加入书架？'),
+            Text(AppStrings.importLocalBookConfirm),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('导入'),
+            child: Text(AppStrings.importLabel),
           ),
         ],
       ),

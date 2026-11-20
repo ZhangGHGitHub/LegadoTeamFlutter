@@ -19,6 +19,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:saf/saf.dart';
 
+import '../l10n/app_strings.dart';
 import 'cover_album_store.dart';
 
 /// 单张选中图片：只持元数据，[readBytes] 按需读取一次
@@ -104,7 +105,7 @@ class CoverAlbumImagePicker {
     int maxBytes = CoverAlbumStore.maxBytes,
   }) async {
     if (kIsWeb) {
-      throw const CoverAlbumImagePickerException('Web 端不支持封面相册');
+      throw CoverAlbumImagePickerException(AppStrings.coverAlbumPickerUnsupported);
     }
     final override = pickOverride;
     final batch = override != null
@@ -120,7 +121,9 @@ class CoverAlbumImagePicker {
     int maxBytes,
   ) {
     if (batch.picks.length > maxCount) {
-      throw CoverAlbumImagePickerException('单次最多导入 $maxCount 张图片');
+      throw CoverAlbumImagePickerException(
+        AppStrings.coverAlbumTooManyImages(maxCount),
+      );
     }
     var total = 0;
     final picks = <CoverAlbumImagePick>[];
@@ -130,7 +133,7 @@ class CoverAlbumImagePicker {
         failures.add(
           CoverAlbumImagePickFailure(
             name: pick.name,
-            message: '图片过大（上限 ${maxBytes ~/ (1024 * 1024)}MB）',
+            message: AppStrings.coverAlbumImageTooLarge(maxBytes ~/ (1024 * 1024)),
           ),
         );
         continue;
@@ -138,7 +141,7 @@ class CoverAlbumImagePicker {
       total += pick.size;
       if (total > maxTotalBytes) {
         throw CoverAlbumImagePickerException(
-          '本次选择图片总大小超过 ${maxTotalBytes ~/ (1024 * 1024)}MB',
+          AppStrings.coverAlbumBatchTooLarge(maxTotalBytes ~/ (1024 * 1024)),
         );
       }
       picks.add(pick);
@@ -169,7 +172,7 @@ class CoverAlbumImagePicker {
       rethrow;
     } catch (e) {
       debugPrint('[CoverAlbumImagePicker] Android SAF 失败: $e');
-      throw const CoverAlbumImagePickerException('无法打开系统图片选择器，请重试');
+      throw CoverAlbumImagePickerException(AppStrings.coverAlbumPickerOpenFailed);
     }
   }
 
@@ -195,7 +198,9 @@ class CoverAlbumImagePicker {
                 if (bytes != null) return bytes;
                 final path = file.path;
                 if (path == null) {
-                  throw CoverAlbumImagePickerException('无法读取所选图片：${file.name}');
+                  throw CoverAlbumImagePickerException(
+                    AppStrings.coverAlbumReadImageFailed(file.name),
+                  );
                 }
                 return File(path).readAsBytes();
               },
@@ -206,7 +211,7 @@ class CoverAlbumImagePicker {
       rethrow;
     } catch (e) {
       debugPrint('[CoverAlbumImagePicker] file_picker 失败: $e');
-      throw const CoverAlbumImagePickerException('选择图片失败，请重试');
+      throw CoverAlbumImagePickerException(AppStrings.coverAlbumPickerFailed);
     }
   }
 }

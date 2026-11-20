@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/privacy/privacy_content_notifier.dart';
 import '../providers/privacy/privacy_notifier.dart';
@@ -232,12 +233,12 @@ class PlatformBridgeService {
         final text = (payload['text'] ?? '').toString();
         if (text.isNotEmpty) {
           await Clipboard.setData(ClipboardData(text: text));
-          _showSnackBar('已复制');
+          _showSnackBar(AppStrings.copiedLabel);
         }
         return '';
       case 'clearTtsCache':
         // TTS 缓存目录由 RustApi 初始化；此处仅提示（对齐 toast 成功）
-        _showSnackBar('已清除朗读缓存');
+        _showSnackBar(AppStrings.ttsCacheCleared);
         return '';
       case 'toast':
         // java.toast 可见提示（对齐原版 appCtx.toastOnUi；登录表单
@@ -507,7 +508,7 @@ class PlatformBridgeService {
     if (loadFailure != null) {
       debugPrint('[PlatformBridge] webView 加载失败：$loadFailure'
           '（url=$url html=${html.isNotEmpty ? '<html>' : '<空>'}）');
-      _showSnackBar('页面加载失败：$loadFailure');
+      _showSnackBar(AppStrings.pageLoadFailedWithReason(loadFailure));
       return WebViewEvalOutcome('[ERROR] WebView 加载失败：$loadFailure', '');
     }
     if (isRule && resultJson.isNotEmpty) {
@@ -956,7 +957,7 @@ class PlatformBridgeService {
     }
     final uri = Uri.tryParse(url);
     if (uri == null) {
-      _showSnackBar('无效的链接：$url');
+      _showSnackBar(AppStrings.invalidLinkWith(url));
       return;
     }
     launchUrl(uri, mode: LaunchMode.externalApplication).then((ok) {
@@ -1013,14 +1014,14 @@ class PlatformBridgeService {
     }
     final uri = Uri.tryParse(url);
     if (uri == null) {
-      _showSnackBar('无效的链接：$url');
+      _showSnackBar(AppStrings.invalidLinkWith(url));
       return;
     }
     launchUrl(uri).then((ok) {
-      if (!ok) _showSnackBar('无法打开：$url');
+      if (!ok) _showSnackBar(AppStrings.cannotOpenUrlWith(url));
     }).catchError((Object e) {
       debugPrint('[PlatformBridge] openUrl 失败：$e');
-      _showSnackBar('无法打开：$url');
+      _showSnackBar(AppStrings.cannotOpenUrlWith(url));
     });
     if (mimeType.isNotEmpty) {
       debugPrint('[PlatformBridge] openUrl mimeType=$mimeType（平台 Intent 降级为通用打开）');
@@ -1122,13 +1123,13 @@ class PlatformBridgeService {
       return;
     }
     if (!await _allowOpenVideoPlayer(bookUrl)) {
-      _showSnackBar('私密视频需先在应用内验证后再播放');
+      _showSnackBar(AppStrings.videoPrivateVerifyBeforePlay);
       return;
     }
     if (isFloat && videoFloatPlatformSupported) {
       final target = resolveVideoPlayTarget(content: url, chapterUrl: url);
       if (!target.isMpd && target.url.isNotEmpty) {
-        final displayTitle = title.isNotEmpty ? title : '视频播放';
+        final displayTitle = title.isNotEmpty ? title : AppStrings.videoPlayTitle;
         final ok =
             await VideoFloatWindowBridge.instance.show(VideoFloatWindowState(
           url: target.url,
@@ -1143,19 +1144,19 @@ class PlatformBridgeService {
         final reason = VideoFloatWindowBridge.instance.lastShowError;
         if (reason == 'no_overlay_permission') {
           await VideoFloatWindowBridge.instance.requestOverlayPermission();
-          _showSnackBar('请允许「显示在其他应用上层」后重试');
+          _showSnackBar(AppStrings.videoOverlayPermissionHint);
         } else if (reason == 'background_start_rejected') {
           // 原版此类失败仅日志记录、无用户文案，此处用中性描述
-          _showSnackBar('请回到应用内后重试');
+          _showSnackBar(AppStrings.videoReturnToAppHint);
         } else {
-          _showSnackBar('悬浮窗启动失败，请重试');
+          _showSnackBar(AppStrings.videoFloatStartFailed);
         }
         return;
       }
     }
     navigator.pushNamed(AppRoutes.video, arguments: <String, String>{
       'videoUrl': url,
-      'title': title.isNotEmpty ? title : '视频播放',
+      'title': title.isNotEmpty ? title : AppStrings.videoPlayTitle,
     });
   }
 

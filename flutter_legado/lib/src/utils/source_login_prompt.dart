@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../bridge/ffi.dart' show BridgeError;
+import '../l10n/app_strings.dart';
 import '../models/book_source.dart';
 import '../screens/source_login_screen.dart';
 
@@ -20,7 +21,7 @@ String sourceLoginRequiredMessage(Object? error) {
   }
   final s = error?.toString() ?? '';
   if (s.contains('书源需要登录')) return s;
-  return '书源需要登录，请先在书源菜单中登录后重试';
+  return AppStrings.sourceLoginRequiredHint;
 }
 
 /// 弹出登录提示并可选跳转 [SourceLoginScreen]（对齐原版 LoginSourceException 引导）。
@@ -35,16 +36,16 @@ Future<void> promptSourceLoginIfNeeded(
   final go = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('需要登录'),
+      title: Text(AppStrings.loginRequiredTitle),
       content: Text(sourceLoginRequiredMessage(error)),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx, false),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         TextButton(
           onPressed: () => Navigator.pop(ctx, true),
-          child: const Text('去登录'),
+          child: Text(AppStrings.goLogin),
         ),
       ],
     ),

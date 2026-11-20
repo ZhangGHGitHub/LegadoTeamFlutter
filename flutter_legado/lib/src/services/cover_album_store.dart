@@ -34,6 +34,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/pref_keys.dart';
+import '../l10n/app_strings.dart';
 import '../utils/error_message.dart';
 
 /// 相册内的一张封面图（索引只保存 [fileName]，[path] 为运行时绝对路径）
@@ -385,7 +386,7 @@ class CoverAlbumStore {
     if (!_loaded) await ensureLoaded();
     final trimmed = name.trim();
     if (trimmed.isEmpty) {
-      throw const CoverAlbumException('相册名称不能为空');
+      throw CoverAlbumException(AppStrings.coverAlbumNameRequired);
     }
     final root = _requireRoot();
     final id = _generateAlbumId();
@@ -410,11 +411,11 @@ class CoverAlbumStore {
     if (!_loaded) await ensureLoaded();
     final trimmed = name.trim();
     if (trimmed.isEmpty) {
-      throw const CoverAlbumException('相册名称不能为空');
+      throw CoverAlbumException(AppStrings.coverAlbumNameRequired);
     }
     final index = _albums.indexWhere((album) => album.id == albumId);
     if (index < 0) {
-      throw const CoverAlbumException('相册不存在或已删除');
+      throw CoverAlbumException(AppStrings.coverAlbumNotFound);
     }
     final root = _requireRoot();
     final next = List<CoverAlbum>.of(_albums);
@@ -430,11 +431,11 @@ class CoverAlbumStore {
     _ensureNotWeb();
     if (!_loaded) await ensureLoaded();
     if (!_albumIdPattern.hasMatch(albumId)) {
-      throw const CoverAlbumException('相册标识非法');
+      throw CoverAlbumException(AppStrings.coverAlbumInvalidId);
     }
     final index = _albums.indexWhere((album) => album.id == albumId);
     if (index < 0) {
-      throw const CoverAlbumException('相册不存在或已删除');
+      throw CoverAlbumException(AppStrings.coverAlbumNotFound);
     }
     final root = _requireRoot();
     final next = <CoverAlbum>[
@@ -462,7 +463,7 @@ class CoverAlbumStore {
     _validateBatch(inputs);
     final index = _albums.indexWhere((album) => album.id == albumId);
     if (index < 0) {
-      throw const CoverAlbumException('相册不存在或已删除');
+      throw CoverAlbumException(AppStrings.coverAlbumNotFound);
     }
     final root = _requireRoot();
     final album = _albums[index];
@@ -478,7 +479,7 @@ class CoverAlbumStore {
     final latestIndex = _albums.indexWhere((item) => item.id == albumId);
     if (latestIndex < 0) {
       _deleteUnreferencedFiles(result.imported);
-      throw const CoverAlbumException('相册已删除');
+      throw CoverAlbumException(AppStrings.coverAlbumAlreadyDeleted);
     }
     if (result.imported.isNotEmpty) {
       final latest = _albums[latestIndex];
@@ -516,10 +517,10 @@ class CoverAlbumStore {
     if (!_loaded) await ensureLoaded();
     final index = _albums.indexWhere((album) => album.id == albumId);
     if (index < 0) {
-      throw const CoverAlbumException('相册不存在或已删除');
+      throw CoverAlbumException(AppStrings.coverAlbumNotFound);
     }
     if (!_isSafeFileName(fileName)) {
-      throw const CoverAlbumException('图片标识非法');
+      throw CoverAlbumException(AppStrings.coverAlbumImageInvalidId);
     }
     final album = _albums[index];
     final images = isDark ? album.darkImages : album.lightImages;
@@ -552,14 +553,14 @@ class CoverAlbumStore {
 
   void _validateBatch(List<CoverAlbumImageInput> inputs) {
     if (inputs.length > maxBatchCount) {
-      throw CoverAlbumException('单次最多导入 $maxBatchCount 张图片');
+      throw CoverAlbumException(AppStrings.coverAlbumTooManyImages(maxBatchCount));
     }
     var total = 0;
     for (final input in inputs) {
       total += input.bytes.length;
       if (total > maxBatchBytes) {
         throw CoverAlbumException(
-          '本次选择图片总大小超过 ${maxBatchBytes ~/ (1024 * 1024)}MB',
+          AppStrings.coverAlbumBatchTooLarge(maxBatchBytes ~/ (1024 * 1024)),
         );
       }
     }
@@ -639,7 +640,7 @@ class CoverAlbumStore {
   String _requireRoot() {
     final root = _rootPath;
     if (root == null) {
-      throw const CoverAlbumException('封面相册目录不可用');
+      throw CoverAlbumException(AppStrings.coverAlbumDirUnavailable);
     }
     return root;
   }
@@ -942,7 +943,7 @@ class CoverAlbumStore {
         failures.add(
           CoverAlbumImportFailure(
             displayName: input.displayName,
-            message: '导入失败：${errorMessage(e)}',
+            message: AppStrings.coverAlbumImportItemFailed(errorMessage(e)),
           ),
         );
       }
@@ -969,13 +970,17 @@ class CoverAlbumStore {
 
   Future<void> _validateInput(CoverAlbumImageInput input) async {
     if (input.bytes.isEmpty) {
-      throw const CoverAlbumException('图片内容为空');
+      throw CoverAlbumException(AppStrings.coverAlbumImageEmpty);
     }
     if (input.bytes.length > maxBytes) {
-      throw CoverAlbumException('图片过大（上限 ${maxBytes ~/ (1024 * 1024)}MB）');
+      throw CoverAlbumException(
+        AppStrings.coverAlbumImageTooLarge(maxBytes ~/ (1024 * 1024)),
+      );
     }
     if (!await _isDecodable(input.bytes)) {
-      throw CoverAlbumException('不是可解码的图片：${_baseName(input.displayName)}');
+      throw CoverAlbumException(
+        AppStrings.coverAlbumImageUndecodable(_baseName(input.displayName)),
+      );
     }
   }
 
@@ -1046,7 +1051,7 @@ class CoverAlbumStore {
       _deleteFileQuietlySync(tmp);
       // rename 竞态：另一写入方已落正式文件 → 视为成功
       if (!File(targetPath).existsSync()) {
-        throw const CoverAlbumException('保存图片失败');
+        throw CoverAlbumException(AppStrings.coverAlbumSaveImageFailed);
       }
     }
   }
@@ -1094,7 +1099,7 @@ class CoverAlbumStore {
       // 失败时不留下半成品 tmp（成功路径已 rename 为正式索引）
       final pending = temp;
       if (pending != null) _deleteFileQuietlySync(pending);
-      throw CoverAlbumException('保存封面相册失败：${errorMessage(e)}');
+      throw CoverAlbumException(AppStrings.coverAlbumSaveFailed(errorMessage(e)));
     }
   }
 

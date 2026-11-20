@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'l10n/app_strings.dart';
 import 'models/models.dart';
 import 'screens/about_screen.dart';
 import 'screens/ai_chat_screen.dart';
@@ -185,9 +186,9 @@ class AppRoutes {
       // [A3] 漫画阅读器私密闸门：未授权时不组合阅读器（不取目录/不联网）
       return PrivateBookGate(
         bookUrl: bookUrl,
-        title: '私密漫画',
-        description: '验证后继续阅读本漫画',
-        actionText: '验证并阅读',
+        title: AppStrings.privateComicTitle,
+        description: AppStrings.privateComicDesc,
+        actionText: AppStrings.verifyAndRead,
         child: ReaderComicScreen(bookUrl: bookUrl),
       );
     },
@@ -266,9 +267,9 @@ class AppRoutes {
       return PrivateBookGate(
         bookUrl: bookUrl,
         book: book,
-        title: '私密音频',
-        description: '验证后继续收听本书',
-        actionText: '验证并收听',
+        title: AppStrings.privateAudioTitle,
+        description: AppStrings.privateAudioDesc,
+        actionText: AppStrings.verifyAndListen,
         child: book != null
             ? AudioScreen(book: book)
             : bookUrl.isEmpty && bookName.isEmpty
@@ -485,9 +486,9 @@ class AppRoutes {
           // 直链回全屏（book == null）没有书籍身份：不做私密判定
           bookUrl: args.book?.bookUrl ?? '',
           book: args.book,
-          title: '私密视频',
-          description: '验证后继续播放本视频',
-          actionText: '验证并播放',
+          title: AppStrings.privateVideoTitle,
+          description: AppStrings.privateVideoDesc,
+          actionText: AppStrings.verifyAndPlay,
           child: VideoScreen(
             videoUrl: args.videoUrl,
             title: args.title,
@@ -506,12 +507,12 @@ class AppRoutes {
         // 直链播放无书籍身份：无法判定私密，闸门按空 URL 放行
         return PrivateBookGate(
           bookUrl: '',
-          title: '私密视频',
-          description: '验证后继续播放本视频',
-          actionText: '验证并播放',
+          title: AppStrings.privateVideoTitle,
+          description: AppStrings.privateVideoDesc,
+          actionText: AppStrings.verifyAndPlay,
           child: VideoScreen(
             videoUrl: args['videoUrl'] ?? '',
-            title: args['title'] ?? '视频播放',
+            title: args['title'] ?? AppStrings.videoPlayTitle,
           ),
         );
       }
@@ -521,9 +522,9 @@ class AppRoutes {
         return PrivateBookGate(
           bookUrl: args.bookUrl,
           book: args,
-          title: '私密视频',
-          description: '验证后继续播放本视频',
-          actionText: '验证并播放',
+          title: AppStrings.privateVideoTitle,
+          description: AppStrings.privateVideoDesc,
+          actionText: AppStrings.verifyAndPlay,
           child: VideoScreen(videoUrl: '', title: args.name, book: args),
         );
       }
