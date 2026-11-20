@@ -1,9 +1,10 @@
 //! 书源管理处理器
 
 use axum::extract::{Path, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
 use axum::Json;
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
 
@@ -82,12 +83,180 @@ fn normalize_concurrent_rate(rate: Option<String>) -> Option<String> {
     rate.filter(|r| !r.trim().is_empty())
 }
 
-/// GET /api/sources — 获取全部书源
-pub async fn list_sources(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
-    let db = state.db.lock().await;
-    let repo = BookSourceRepository::new(db.connection());
-    let sources = repo.find_all()?;
-    Ok(Json(json!({ "sources": sources, "total": sources.len() })))
+/// GET /api/sources 的列表项（对齐原版 `BookSourcePart` 数据库视图语义）
+///
+/// **为什么需要它**：`GET /api/sources` 免令牌（`routes.rs:67-68`）。原版列表
+/// 走 `book_sources_part` 视图（`BookSourcePart.kt:11-32`），只暴露元数据 +
+/// `hasLoginUrl`/`hasExploreUrl`/`hasJs` 三个布尔；完整实体本身不含登录态
+/// （原版登录态存 `CacheManager`）。我方把登录态存在 `BookSource.variable`
+/// 列，若直接序列化完整实体会让免令牌端点泄漏全部书源凭据。
+///
+/// 因此本 DTO **逐字段显式构造**：`variable`、全部 `rule*`、`jsLib`、`header`、
+/// `loginUrl`/`loginUi`/`mainJs`/`exploreUrl` 原文、`bookSourceComment`、
+/// `variableComment`、`bookUrlPattern`、`exploreScreen`、`searchUrl`、
+/// `concurrentRate`、`enabledCookieJar`、`loginCheckJs`、`coverDecodeJs`、
+/// `customButton` 一律不出现在响应里（新增实体字段也不会被意外带出）。
+///
+/// 检验状态五项对齐原版视图的 `left join book_source_check_states` +
+/// `coalesce`：缺行时 `NEEDS_CHECK` / 空串 / 0。
+#[derive(Debug, Clone, Serialize)]
+pub struct SourceSummary {
+    #[serde(rename = "bookSourceUrl")]
+    pub book_source_url: String,
+    #[serde(rename = "bookSourceName")]
+    pub book_source_name: String,
+    #[serde(rename = "bookSourceGroup", skip_serializing_if = "Option::is_none")]
+    pub book_source_group: Option<String>,
+    #[serde(rename = "customOrder")]
+    pub custom_order: i32,
+    pub enabled: bool,
+    #[serde(rename = "enabledExplore")]
+    pub enabled_explore: bool,
+    /// 是否有登录地址或 JS 表单登录（判定见 [`has_login_url`]）
+    #[serde(rename = "hasLoginUrl")]
+    pub has_login_url: bool,
+    #[serde(rename = "lastUpdateTime")]
+    pub last_update_time: i64,
+    #[serde(rename = "respondTime")]
+    pub respond_time: i64,
+    pub weight: i32,
+    /// 是否有发现 url（`exploreUrl` 原文不外泄）
+    #[serde(rename = "hasExploreUrl")]
+    pub has_explore_url: bool,
+    #[serde(rename = "eventListener")]
+    pub event_listener: bool,
+    #[serde(rename = "bookSourceType")]
+    pub book_source_type: i32,
+    /// 是否为纯 JS 单文件源（`mainJs` 非空）
+    #[serde(rename = "hasJs")]
+    pub has_js: bool,
+    /// 检验状态（缺状态行时 `NEEDS_CHECK`，对齐视图 `coalesce`）
+    #[serde(rename = "checkStatus")]
+    pub check_status: String,
+    /// 检验任务令牌（缺行 → 空串）
+    #[serde(rename = "checkRevision")]
+    pub check_revision: String,
+    /// 书源规则内容版本（缺行 → 空串）
+    #[serde(rename = "sourceRevision")]
+    pub source_revision: String,
+    /// 检验完成时间（缺行 → 0）
+    #[serde(rename = "checkedAt")]
+    pub checked_at: i64,
+    /// 检验失败详情（缺行 → 空串）
+    #[serde(rename = "checkDetail")]
+    pub check_detail: String,
+}
+
+impl SourceSummary {
+    /// 由完整实体 + 检验状态（可能缺行）构造列表项
+    fn from_source(
+        source: &BookSource,
+        check_state: Option<&legado_core::models::BookSourceCheckState>,
+    ) -> Self {
+        Self {
+            book_source_url: source.book_source_url.clone(),
+            book_source_name: source.book_source_name.clone(),
+            book_source_group: source.book_source_group.clone(),
+            custom_order: source.custom_order,
+            enabled: source.enabled,
+            enabled_explore: source.enabled_explore,
+            has_login_url: has_login_url(source),
+            last_update_time: source.last_update_time,
+            respond_time: source.respond_time,
+            weight: source.weight,
+            has_explore_url: is_non_blank(source.explore_url.as_deref()),
+            event_listener: source.event_listener,
+            book_source_type: source.book_source_type,
+            has_js: is_non_blank(source.main_js.as_deref()),
+            check_status: check_state.map(|s| s.status.clone()).unwrap_or_else(|| {
+                legado_core::models::book_source_check_status::NEEDS_CHECK.to_string()
+            }),
+            check_revision: check_state.map(|s| s.revision.clone()).unwrap_or_default(),
+            source_revision: check_state
+                .map(|s| s.source_revision.clone())
+                .unwrap_or_default(),
+            checked_at: check_state.map(|s| s.checked_at).unwrap_or(0),
+            check_detail: check_state.map(|s| s.detail.clone()).unwrap_or_default(),
+        }
+    }
+}
+
+/// 非 null 且去空白后非空（对齐视图 `x is not null and trim(x) <> ''`）
+fn is_non_blank(value: Option<&str>) -> bool {
+    value.is_some_and(|s| !s.trim().is_empty())
+}
+
+/// 是否有登录配置——逐字对齐原版视图表达式
+///
+/// 原版 `BookSourcePart.kt:13-16`：
+/// ```sql
+/// (loginUrl is not null and trim(loginUrl) <> ''
+///  or (mainJs is not null and trim(mainJs) <> ''
+///      and loginUi is not null
+///      and replace(replace(replace(replace(loginUi, ' ', ''), char(9), ''), char(10), ''), char(13), '') not in ('', '[]')))
+/// ```
+///
+/// 即「有登录地址」**或**「JS 单文件源且带非空登录表单」。
+///
+/// 登记差异：SQLite 的 `trim()` 只去空格，本实现用 Rust `trim()` 同时把
+/// 制表符/换行等视为空白——更严格（仅影响「值全为空白字符」的畸形书源，
+/// 视为未配置登录），不会误报「有登录」。
+fn has_login_url(source: &BookSource) -> bool {
+    if is_non_blank(source.login_url.as_deref()) {
+        return true;
+    }
+    if !is_non_blank(source.main_js.as_deref()) {
+        return false;
+    }
+    let Some(login_ui) = source.login_ui.as_deref() else {
+        return false;
+    };
+    // 对齐 replace(loginUi, ' ', '') / char(9) / char(10) / char(13) 四连替换
+    let compact: String = login_ui
+        .chars()
+        .filter(|c| !matches!(c, ' ' | '\t' | '\n' | '\r'))
+        .collect();
+    !compact.is_empty() && compact != "[]"
+}
+
+/// GET /api/sources — 获取全部书源（**摘要视图**，免令牌）
+///
+/// 响应只含 [`SourceSummary`] 字段（对齐原版 `book_sources_part` 视图）：
+/// `variable`（登录态）与全部规则/脚本/请求头原文不出现在响应里。
+/// 需要完整书源的调用方应走受令牌保护的 `GET /getBookSourcesForManagement`。
+///
+/// 响应追加 `Cache-Control: no-store`（书源清单含管理元数据，不应被中间层
+/// 或浏览器缓存），白名单登记见 [`crate::web_assets::with_api_headers`]。
+pub async fn list_sources(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let summaries = {
+        let db = state.db.lock().await;
+        let repo = BookSourceRepository::new(db.connection());
+        let state_repo = legado_db::BookSourceCheckStateRepository::new(db.connection());
+        let sources = repo.find_all()?;
+        // 状态行缺行（存量源尚未播种）按视图 coalesce 默认值处理
+        let states: std::collections::HashMap<String, legado_core::models::BookSourceCheckState> =
+            state_repo
+                .find_all()?
+                .into_iter()
+                .map(|s| (s.book_source_url.clone(), s))
+                .collect();
+        sources
+            .iter()
+            .map(|source| SourceSummary::from_source(source, states.get(&source.book_source_url)))
+            .collect::<Vec<_>>()
+    };
+
+    let body = json!({ "total": summaries.len(), "sources": summaries });
+    let mut resp = Json(body).into_response();
+    crate::web_assets::with_api_headers(
+        &mut resp,
+        "/api/sources",
+        crate::legacy::origin_of(&headers).as_deref(),
+    );
+    Ok(resp)
 }
 
 /// POST /api/sources — 创建书源
@@ -341,6 +510,14 @@ mod tests {
         serde_json::from_slice(&bytes).unwrap()
     }
 
+    /// 读取响应体原文（泄漏断言用：需要逐字节检查不出现敏感串）
+    async fn response_text(resp: axum::response::Response) -> String {
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        String::from_utf8(bytes.to_vec()).unwrap()
+    }
+
     /// 读库内书源
     async fn find_source(state: &Arc<AppState>, url: &str) -> Option<BookSource> {
         let db = state.db.lock().await;
@@ -396,6 +573,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(resp.status(), StatusCode::OK);
+        // 空库仍须保持 {sources: [], total: 0} 契约形状（R05 摘要视图改造后）
+        let body = response_json(resp).await;
+        assert_eq!(body["total"], 0, "{body}");
+        assert_eq!(body["sources"].as_array().map(Vec::len), Some(0), "{body}");
     }
 
     #[tokio::test]
@@ -1163,6 +1344,370 @@ mod tests {
         assert_eq!(found.book_source_name, "旧名", "未出现字段保持原值");
         assert_eq!(found.book_source_group, None, "显式 null 应清空分组");
         assert_eq!(found.search_url, None, "显式 null 应清空 searchUrl");
+    }
+
+    // ── R05：GET /api/sources 免令牌读取面必须裁剪为摘要视图 ──────────────
+    //
+    // 原版参照 `BookSourcePart.kt:11-32` 的 `book_sources_part` 数据库视图：
+    // 列表面只暴露元数据 + `hasLoginUrl`/`hasExploreUrl`/`hasJs` 布尔，
+    // 规则/jsLib/header/loginUrl 原文/variable 一律不出现。我方把登录态存
+    // 在实体 `variable` 列（原版存 CacheManager），若不裁剪，同一免令牌端点
+    // 的泄漏面比原版更大。
+
+    /// R05 核心：`variable`（登录态）与全部规则/脚本/请求头原文不得出现在
+    /// 免令牌的 `GET /api/sources` 响应体中；`hasLoginUrl` 反映登录配置存在。
+    #[tokio::test]
+    async fn test_list_sources_does_not_leak_variable_or_rule_content() {
+        let state = make_test_state();
+        let url = "https://rest-r05-leak.example";
+        seed_source(
+            &state,
+            BookSource {
+                book_source_url: url.to_string(),
+                book_source_name: "R05 源".to_string(),
+                book_source_group: Some("R05 分组".to_string()),
+                // 登录态：绝不能被免令牌端点带出
+                variable: "user=secret-token".to_string(),
+                login_url: Some("https://login.example/signin".to_string()),
+                login_ui: Some("[{\"name\":\"user\"}]".to_string()),
+                main_js: Some("main-js-body-secret".to_string()),
+                js_lib: Some("js-lib-body-secret".to_string()),
+                header: Some("{\"X-Secret\":\"header-secret\"}".to_string()),
+                explore_url: Some("https://explore.example/list".to_string()),
+                book_source_comment: Some("comment-secret".to_string()),
+                variable_comment: Some("variable-comment-secret".to_string()),
+                search_url: Some("https://search.example/s?q={key}".to_string()),
+                rule_search: Some(SearchRule {
+                    book_list: Some("class.result-secret".to_string()),
+                    ..SearchRule::default()
+                }),
+                rule_content: Some(ContentRule {
+                    content: Some("class.content-secret".to_string()),
+                    ..ContentRule::default()
+                }),
+                ..BookSource::default()
+            },
+        )
+        .await;
+
+        let app = create_router(Arc::clone(&state));
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/sources")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let raw = response_text(resp).await;
+
+        // 逐串断言：敏感内容一律不得出现在响应原文中
+        for forbidden in [
+            "variable",
+            "secret-token",
+            "loginUrl",
+            "loginUi",
+            "mainJs",
+            "main-js-body-secret",
+            "jsLib",
+            "js-lib-body-secret",
+            "header-secret",
+            "exploreUrl",
+            "explore.example/list",
+            "bookSourceComment",
+            "comment-secret",
+            "variableComment",
+            "variable-comment-secret",
+            "searchUrl",
+            "search.example/s",
+            "ruleSearch",
+            "class.result-secret",
+            "ruleContent",
+            "class.content-secret",
+        ] {
+            assert!(
+                !raw.contains(forbidden),
+                "免令牌列表面不得包含 {forbidden}；响应原文：{raw}"
+            );
+        }
+
+        // hasLoginUrl 必须反映登录配置存在（loginUrl 非空）
+        let body: Value = serde_json::from_str(&raw).unwrap();
+        let item = &body["sources"][0];
+        assert_eq!(item["bookSourceUrl"], url);
+        assert_eq!(item["hasLoginUrl"], true, "{body}");
+        assert_eq!(item["hasJs"], true, "mainJs 非空 → hasJs=true：{body}");
+        assert_eq!(item["hasExploreUrl"], true, "{body}");
+
+        // 键集精确等于 BookSourcePart 视图口径：将来实体新增字段也不会被
+        // 意外带出（白名单式 DTO 的结构性保证 + 本断言双保险）
+        let mut keys: Vec<&str> = item
+            .as_object()
+            .expect("列表项应为对象")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            vec![
+                "bookSourceGroup",
+                "bookSourceName",
+                "bookSourceType",
+                "bookSourceUrl",
+                "checkDetail",
+                "checkRevision",
+                "checkStatus",
+                "checkedAt",
+                "customOrder",
+                "enabled",
+                "enabledExplore",
+                "eventListener",
+                "hasExploreUrl",
+                "hasJs",
+                "hasLoginUrl",
+                "lastUpdateTime",
+                "respondTime",
+                "sourceRevision",
+                "weight",
+            ],
+            "列表面键集必须与 BookSourcePart 视图一致：{item}"
+        );
+    }
+
+    /// R05 回归：裁剪后仍返回全部书源条数与基础元数据字段
+    #[tokio::test]
+    async fn test_list_sources_returns_all_rows_with_basic_fields() {
+        let state = make_test_state();
+        for (url, name, group, enabled) in [
+            ("https://rest-r05-a.example", "A 源", Some("分组1"), true),
+            ("https://rest-r05-b.example", "B 源", None, false),
+        ] {
+            seed_source(
+                &state,
+                BookSource {
+                    book_source_url: url.to_string(),
+                    book_source_name: name.to_string(),
+                    book_source_group: group.map(str::to_string),
+                    enabled,
+                    book_source_type: 1,
+                    ..BookSource::default()
+                },
+            )
+            .await;
+        }
+
+        let app = create_router(Arc::clone(&state));
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/sources")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = response_json(resp).await;
+
+        assert_eq!(body["total"], 2, "{body}");
+        let sources = body["sources"].as_array().expect("sources 应为数组");
+        assert_eq!(sources.len(), 2);
+
+        let first = sources
+            .iter()
+            .find(|s| s["bookSourceUrl"] == "https://rest-r05-a.example")
+            .expect("A 源应在列表中");
+        assert_eq!(first["bookSourceName"], "A 源");
+        assert_eq!(first["bookSourceGroup"], "分组1");
+        assert_eq!(first["enabled"], true);
+        assert_eq!(first["bookSourceType"], 1);
+        // 基础字段键齐备（对齐 BookSourcePart 语义）
+        for key in [
+            "bookSourceUrl",
+            "bookSourceName",
+            "customOrder",
+            "enabled",
+            "enabledExplore",
+            "hasLoginUrl",
+            "lastUpdateTime",
+            "respondTime",
+            "weight",
+            "hasExploreUrl",
+            "eventListener",
+            "bookSourceType",
+            "hasJs",
+        ] {
+            assert!(first.get(key).is_some(), "摘要视图缺字段 {key}：{first}");
+        }
+    }
+
+    /// R05：免令牌读取面必须带 `Cache-Control: no-store`（防中间层/浏览器
+    /// 缓存书源清单）。经**生产入口**（挂令牌守卫中间件）验证，确认守卫层
+    /// 不会剥掉 handler 写入的头，且 GET 仍在令牌面外。
+    #[tokio::test]
+    async fn test_list_sources_has_no_store_header() {
+        let state = make_test_state();
+        seed_config(&state, "config:jsSourceApiToken", "secret").await;
+        seed_source(
+            &state,
+            BookSource {
+                book_source_url: "https://rest-r05-cache.example".to_string(),
+                book_source_name: "缓存源".to_string(),
+                ..BookSource::default()
+            },
+        )
+        .await;
+
+        let app =
+            attach_source_write_token_guard(create_router(Arc::clone(&state)), Arc::clone(&state));
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/sources")
+                    .header("Origin", "http://localhost:8080")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // 已配置令牌但 GET 仍免令牌（不在 PROTECTED_SOURCE_WRITE_ROUTES）
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers()
+                .get(axum::http::header::CACHE_CONTROL)
+                .and_then(|v| v.to_str().ok()),
+            Some("no-store"),
+            "GET /api/sources 必须返回 Cache-Control: no-store"
+        );
+        // 顺带确认公共 Web 头仍生效（Origin 回显）
+        assert_eq!(
+            resp.headers()
+                .get(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .and_then(|v| v.to_str().ok()),
+            Some("http://localhost:8080")
+        );
+        let body = response_json(resp).await;
+        assert_eq!(body["total"], 1, "{body}");
+    }
+
+    /// R05：裁剪只作用于列表面——`PUT /api/sources/{id}` 字段级修改后，
+    /// 库内 `variable`/规则/`jsLib` 等未暴露字段完整保留（完整路径不受影响）
+    #[tokio::test]
+    async fn test_update_source_keeps_hidden_fields_after_summary_list() {
+        let state = make_test_state();
+        let key = "rest-r05-put-keep";
+        seed_source(
+            &state,
+            BookSource {
+                book_source_url: key.to_string(),
+                book_source_name: "旧名".to_string(),
+                variable: "user=keep-token".to_string(),
+                js_lib: Some("keep-js-lib".to_string()),
+                header: Some("{\"X-Keep\":\"1\"}".to_string()),
+                login_url: Some("https://login.example/keep".to_string()),
+                rule_search: Some(SearchRule {
+                    book_list: Some("class.keep".to_string()),
+                    ..SearchRule::default()
+                }),
+                ..BookSource::default()
+            },
+        )
+        .await;
+
+        let app = create_router(Arc::clone(&state));
+        let resp = app
+            .oneshot(json_request(
+                Method::PUT,
+                &format!("/api/sources/{key}"),
+                &json!({ "book_source_name": "新名" }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let found = find_source(&state, key).await.expect("行仍存在");
+        assert_eq!(found.book_source_name, "新名");
+        assert_eq!(
+            found.variable, "user=keep-token",
+            "登录态不得被列表面裁剪波及"
+        );
+        assert_eq!(found.js_lib.as_deref(), Some("keep-js-lib"));
+        assert_eq!(found.header.as_deref(), Some("{\"X-Keep\":\"1\"}"));
+        assert_eq!(
+            found.login_url.as_deref(),
+            Some("https://login.example/keep")
+        );
+        assert_eq!(
+            found
+                .rule_search
+                .as_ref()
+                .and_then(|r| r.book_list.as_deref()),
+            Some("class.keep")
+        );
+    }
+
+    // ── R05：hasLoginUrl 判定（逐字对齐原版视图表达式） ──────────────────
+
+    /// 原版视图表达式：
+    /// `loginUrl is not null and trim(loginUrl) <> ''
+    ///  or (mainJs is not null and trim(mainJs) <> ''
+    ///      and loginUi is not null
+    ///      and 去空白后 not in ('', '[]'))`
+    #[test]
+    fn test_has_login_url_matches_view_expression() {
+        // loginUrl 非空 → true（即使无 mainJs）
+        assert!(has_login_url(&BookSource {
+            login_url: Some("https://login.example".to_string()),
+            ..BookSource::default()
+        }));
+        // loginUrl 纯空白 → 不算
+        assert!(!has_login_url(&BookSource {
+            login_url: Some("   ".to_string()),
+            ..BookSource::default()
+        }));
+        // 无 loginUrl、无 mainJs → false
+        assert!(!has_login_url(&BookSource {
+            login_ui: Some("[{\"name\":\"user\"}]".to_string()),
+            ..BookSource::default()
+        }));
+        // mainJs 有值但 loginUi 缺省 → false
+        assert!(!has_login_url(&BookSource {
+            main_js: Some("main-js".to_string()),
+            ..BookSource::default()
+        }));
+        // mainJs + loginUi 空串 → false
+        assert!(!has_login_url(&BookSource {
+            main_js: Some("main-js".to_string()),
+            login_ui: Some(String::new()),
+            ..BookSource::default()
+        }));
+        // mainJs + loginUi = "[]" → false（原版 not in ('', '[]')）
+        assert!(!has_login_url(&BookSource {
+            main_js: Some("main-js".to_string()),
+            login_ui: Some("[]".to_string()),
+            ..BookSource::default()
+        }));
+        // "[]" 夹空白/制表/换行 → 去空白后仍是 "[]" → false
+        assert!(!has_login_url(&BookSource {
+            main_js: Some("main-js".to_string()),
+            login_ui: Some(" [ ] \n\t".to_string()),
+            ..BookSource::default()
+        }));
+        // mainJs + 真实 loginUi → true
+        assert!(has_login_url(&BookSource {
+            main_js: Some("main-js".to_string()),
+            login_ui: Some("[{\"name\":\"user\"}]".to_string()),
+            ..BookSource::default()
+        }));
+        // mainJs 纯空白 + 有 loginUi → false（mainJs 分支不成立、loginUrl 缺省）
+        assert!(!has_login_url(&BookSource {
+            main_js: Some("  ".to_string()),
+            login_ui: Some("[{\"name\":\"user\"}]".to_string()),
+            ..BookSource::default()
+        }));
     }
 
     // ── P1-1：令牌前置守卫（生产入口同构） ──────────────────────────────

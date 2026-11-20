@@ -119,6 +119,9 @@ pub fn with_web_headers(resp: &mut Response, header_path: &str, origin: Option<&
 /// `PROTECTED_HTTP_LOG_READ_ROUTES`（getHttpLogs/getHttpLog +
 /// getBookSourcesForManagement/getBookSourceCheckStates，审查批 P1-2 补齐
 /// 后两条）与 `/getJsSourceApiTokenRequired` 追加 `Cache-Control: no-store`。
+///
+/// R05 追加 `/api/sources`（自研 REST 书源列表，免令牌摘要视图）：列表含
+/// 书源分组/启停/登录能力等管理元数据，不应被中间层或浏览器缓存。
 pub fn with_api_headers(resp: &mut Response, header_path: &str, origin: Option<&str>) {
     with_web_headers(resp, header_path, origin);
     resp.headers_mut().insert(
@@ -132,6 +135,7 @@ pub fn with_api_headers(resp: &mut Response, header_path: &str, origin: Option<&
             | "/getJsSourceApiTokenRequired"
             | "/getBookSourcesForManagement"
             | "/getBookSourceCheckStates"
+            | "/api/sources"
     ) {
         resp.headers_mut()
             .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
@@ -286,5 +290,49 @@ mod tests {
         assert_eq!(normalized_asset_key("/a%2Db.js"), "a-b.js");
         assert_eq!(normalized_asset_key("/../etc/passwd"), "../etc/passwd");
         assert!(lookup(&normalized_asset_key("/../etc/passwd")).is_none());
+    }
+
+    /// R05：`/api/sources`（免令牌书源列表）必须在 no-store 白名单内；
+    /// 其余自研 `/api/*` 路径保持原行为（不引入全局 no-store 噪声）
+    #[test]
+    fn test_api_sources_is_no_store_whitelisted() {
+        let mut resp = Response::new(Body::empty());
+        with_api_headers(&mut resp, "/api/sources", None);
+        assert_eq!(
+            resp.headers()
+                .get(header::CACHE_CONTROL)
+                .and_then(|v| v.to_str().ok()),
+            Some("no-store"),
+            "GET /api/sources 必须命中 no-store 白名单"
+        );
+
+        // 既有白名单条目不受影响
+        for path in [
+            "/getHttpLogs",
+            "/getHttpLog",
+            "/getJsSourceApiTokenRequired",
+            "/getBookSourcesForManagement",
+            "/getBookSourceCheckStates",
+        ] {
+            let mut resp = Response::new(Body::empty());
+            with_api_headers(&mut resp, path, None);
+            assert_eq!(
+                resp.headers()
+                    .get(header::CACHE_CONTROL)
+                    .and_then(|v| v.to_str().ok()),
+                Some("no-store"),
+                "{path} 应仍在白名单内"
+            );
+        }
+
+        // 非白名单路径不加 no-store（避免把静态资产/其他端点一起禁缓存）
+        for path in ["/api/books", "/api/health", "/getBookshelf"] {
+            let mut resp = Response::new(Body::empty());
+            with_api_headers(&mut resp, path, None);
+            assert!(
+                resp.headers().get(header::CACHE_CONTROL).is_none(),
+                "{path} 不应被加 no-store"
+            );
+        }
     }
 }
