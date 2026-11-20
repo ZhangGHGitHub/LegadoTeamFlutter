@@ -230,7 +230,7 @@ flutter pub run build_runner build --delete-conflicting-outputs
 | UI 框架 | Flutter 3.x |
 | 状态管理 | Provider |
 | 数据模型 | freezed + json_serializable |
-| FFI 桥接 | flutter_rust_bridge 2.12.0 |
+| FFI 桥接 | flutter_rust_bridge 2.11.1 |
 | 路由 | Navigator 1.0（命名路由） |
 | 原生通道 | MethodChannel (platform_channel.dart) |
 
