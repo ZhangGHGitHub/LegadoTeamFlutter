@@ -1,0 +1,19 @@
+=== cargo test -p legado-js --lib host_api::platform (parallel, 8 runs) ===
+run1: test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 328 filtered out; finished in 0.00s
+run2: test result: FAILED. 12 passed; 1 failed; 0 ignored; 0 measured; 328 filtered out; finished in 0.00s
+run3: test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 328 filtered out; finished in 0.00s
+run4: test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 328 filtered out; finished in 0.00s
+run5: test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 328 filtered out; finished in 0.00s
+run6: test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 328 filtered out; finished in 0.00s
+run7: test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 328 filtered out; finished in 0.00s
+run8: test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 328 filtered out; finished in 0.00s
+
+=== cargo test -p legado-js --lib host_api::platform -- --test-threads=1 (8 runs) ===
+single1: test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 328 filtered out; finished in 0.00s
+single2: test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 328 filtered out; finished in 0.00s
+single3: test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 328 filtered out; finished in 0.00s
+single4: test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 328 filtered out; finished in 0.00s
+single5: test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 328 filtered out; finished in 0.00s
+single6: test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 328 filtered out; finished in 0.00s
+single7: test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 328 filtered out; finished in 0.00s
+single8: test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 328 filtered out; finished in 0.00s

@@ -1,0 +1,9 @@
+run=44081986404 workflow=iOS Build conclusion=success created=2026-11-17T12:19:00Z updated=2026-11-17T12:53:43Z duration=34m39s
+job build=success (12:19:04 -> 12:53:43)
+Build Rust FFI (iOS device)=success; Build Rust FFI (iOS simulator)=success
+CocoaPods install=success; Build iOS (device, no codesign)=success (flutter ios took 331891ms, exit 0)
+Verify Rust PDE symbols: device=success, simulator=success (OK=1)
+Run launcher icon integration test (iOS simulator)=success: 1 test passed
+Run search-read e2e (iOS simulator)=success: 1 test passed
+Boot simulator and launch app=success; Collect simulator logs=success; Upload smoke evidence=success
+Signing steps skipped as designed (no secrets -> unsigned fallback, step 28 success)

@@ -1,0 +1,919 @@
+ffi-smoke	Set up job	﻿2026-11-16T10:10:04.8223115Z Current runner version: '2.338.2'
+ffi-smoke	Set up job	2026-11-16T10:10:04.8280545Z ##[group]Runner Image Provisioner
+ffi-smoke	Set up job	2026-11-16T10:10:04.8281404Z Hosted Compute Agent
+ffi-smoke	Set up job	2026-11-16T10:10:04.8281931Z Version: 20261103.629
+ffi-smoke	Set up job	2026-11-16T10:10:04.8282528Z Commit: 15dbd9ccb5dbf34fae002b6ed1a2670f52df37bc
+ffi-smoke	Set up job	2026-11-16T10:10:04.8283245Z Build Date: 2026-11-03T17:26:59Z
+ffi-smoke	Set up job	2026-11-16T10:10:04.8283850Z Worker ID: {340ce19c-9275-442b-a77a-74f8de8c9829}
+ffi-smoke	Set up job	2026-11-16T10:10:04.8284521Z Region: westcentralus
+ffi-smoke	Set up job	2026-11-16T10:10:04.8285079Z Cloud: Azure
+ffi-smoke	Set up job	2026-11-16T10:10:04.8285553Z ##[endgroup]
+ffi-smoke	Set up job	2026-11-16T10:10:04.8287026Z ##[group]Operating System
+ffi-smoke	Set up job	2026-11-16T10:10:04.8287632Z Microsoft Windows Server 2025
+ffi-smoke	Set up job	2026-11-16T10:10:04.8288244Z 10.0.26100
+ffi-smoke	Set up job	2026-11-16T10:10:04.8288707Z Datacenter
+ffi-smoke	Set up job	2026-11-16T10:10:04.8289168Z ##[endgroup]
+ffi-smoke	Set up job	2026-11-16T10:10:04.8289652Z ##[group]Runner Image
+ffi-smoke	Set up job	2026-11-16T10:10:04.8290190Z Image: windows-2025-vs2026
+ffi-smoke	Set up job	2026-11-16T10:10:04.8290733Z Version: 20261103.298.1
+ffi-smoke	Set up job	2026-11-16T10:10:04.8291808Z Included Software: https://github.com/actions/runner-images/blob/win25-vs2026/20261103.298/images/windows/Windows2025-VS2026-Readme.md
+ffi-smoke	Set up job	2026-11-16T10:10:04.8293763Z Image Release: https://github.com/actions/runner-images/releases/tag/win25-vs2026%2F20261103.298
+ffi-smoke	Set up job	2026-11-16T10:10:04.8294680Z ##[endgroup]
+ffi-smoke	Set up job	2026-11-16T10:10:04.8296457Z ##[group]GITHUB_TOKEN Permissions
+ffi-smoke	Set up job	2026-11-16T10:10:04.8298531Z Contents: read
+ffi-smoke	Set up job	2026-11-16T10:10:04.8299218Z Metadata: read
+ffi-smoke	Set up job	2026-11-16T10:10:04.8299780Z Packages: read
+ffi-smoke	Set up job	2026-11-16T10:10:04.8300576Z ##[endgroup]
+ffi-smoke	Set up job	2026-11-16T10:10:04.8302717Z Secret source: Actions
+ffi-smoke	Set up job	2026-11-16T10:10:04.8303533Z Cache mode: write
+ffi-smoke	Set up job	2026-11-16T10:10:04.8304270Z Prepare workflow directory
+ffi-smoke	Set up job	2026-11-16T10:10:04.8702759Z Prepare all required actions
+ffi-smoke	Set up job	2026-11-16T10:10:04.8752284Z Getting action download info
+ffi-smoke	Set up job	2026-11-16T10:10:05.1411056Z Download action repository 'actions/checkout@v7' (SHA:3d3c42e5aac5ba805825da76410c181273ba90b1)
+ffi-smoke	Set up job	2026-11-16T10:10:05.2763706Z Download action repository 'dtolnay/rust-toolchain@stable' (SHA:39008827e6b4319a349e9a42dfc90579dd25f1ca)
+ffi-smoke	Set up job	2026-11-16T10:10:05.4656720Z Download action repository 'Swatinem/rust-cache@v2' (SHA:d1527c8f67ef9af357290475d4af4b0fab8f12e0)
+ffi-smoke	Set up job	2026-11-16T10:10:05.9807554Z Download action repository 'subosito/flutter-action@v2' (SHA:1a449444c387b1966244ae4d4f8c696479add0b2)
+ffi-smoke	Set up job	2026-11-16T10:10:06.4794172Z Getting action download info
+ffi-smoke	Set up job	2026-11-16T10:10:06.5827723Z Download action repository 'actions/cache@v5' (SHA:caa296126883cff596d87d8935842f9db880ef25)
+ffi-smoke	Set up job	2026-11-16T10:10:06.7621476Z Complete job name: ffi-smoke
+ffi-smoke	Run actions/checkout@v7	﻿2026-11-16T10:10:06.9355848Z ##[group]Run actions/checkout@v7
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:06.9357284Z with:
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:06.9357850Z   repository: ZhangGHGitHub/LegadoTeamFlutter
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:06.9362162Z   token: ***
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:06.9362566Z   ssh-strict: true
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:06.9362956Z   ssh-user: git
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:06.9363356Z   persist-credentials: true
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:06.9363797Z   clean: true
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:06.9364195Z   sparse-checkout-cone-mode: true
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:06.9364710Z   fetch-depth: 1
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:06.9365106Z   fetch-tags: false
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:06.9365530Z   show-progress: true
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:06.9365950Z   lfs: false
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:06.9366325Z   submodules: false
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:06.9366728Z   set-safe-directory: true
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:06.9367200Z   allow-unsafe-pr-checkout: false
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:06.9368046Z ##[endgroup]
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:07.0921474Z Syncing repository: ZhangGHGitHub/LegadoTeamFlutter
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:07.0924136Z ##[group]Getting Git version info
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:07.0925196Z Working directory is 'D:\a\LegadoTeamFlutter\LegadoTeamFlutter'
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:07.1981982Z [command]"C:\Program Files\Git\bin\git.exe" version
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:07.5627462Z git version 2.56.0.windows.4
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:07.5678588Z ##[endgroup]
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:07.5698675Z Temporarily overriding HOME='D:\a\_temp\9135a5e1-29b5-46ca-82e7-6b183febda04' before making global git config changes
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:07.5700606Z Adding repository directory to the temporary git global config as a safe directory
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:07.5710583Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\LegadoTeamFlutter\LegadoTeamFlutter
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:07.6413266Z Deleting the contents of 'D:\a\LegadoTeamFlutter\LegadoTeamFlutter'
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:07.6418361Z ##[group]Determining repository object format
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:07.6420465Z ##[endgroup]
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:07.6422140Z ##[group]Initializing the repository
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:07.6429737Z [command]"C:\Program Files\Git\bin\git.exe" init D:\a\LegadoTeamFlutter\LegadoTeamFlutter
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:07.7339816Z Initialized empty Git repository in D:/a/LegadoTeamFlutter/LegadoTeamFlutter/.git/
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:07.7391726Z [command]"C:\Program Files\Git\bin\git.exe" remote add origin https://github.com/ZhangGHGitHub/LegadoTeamFlutter
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:07.8233266Z ##[endgroup]
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:07.8235135Z ##[group]Disabling automatic garbage collection
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:07.8241947Z [command]"C:\Program Files\Git\bin\git.exe" config --local gc.auto 0
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:07.8632048Z ##[endgroup]
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:07.8633899Z ##[group]Setting up auth
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:07.8635239Z Removing SSH command configuration
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:07.8641540Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:07.9077003Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:09.4746242Z Removing HTTP extra header
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:09.4758218Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:09.5160032Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:10.0987092Z Removing includeIf entries pointing to credentials config files
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:10.0997986Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:10.1383588Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:10.7100415Z [command]"C:\Program Files\Git\bin\git.exe" config --file D:\a\_temp\git-credentials-b8838937-81ec-4968-b08a-7a7384916e5e.config http.https://github.com/.extraheader "AUTHORIZATION: basic ***"
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:10.7516820Z [command]"C:\Program Files\Git\bin\git.exe" config --local includeIf.gitdir:D:/a/LegadoTeamFlutter/LegadoTeamFlutter/.git.path D:\a\_temp\git-credentials-b8838937-81ec-4968-b08a-7a7384916e5e.config
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:10.8012102Z [command]"C:\Program Files\Git\bin\git.exe" config --local includeIf.gitdir:D:/a/LegadoTeamFlutter/LegadoTeamFlutter/.git/worktrees/*.path D:\a\_temp\git-credentials-b8838937-81ec-4968-b08a-7a7384916e5e.config
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:10.8648949Z [command]"C:\Program Files\Git\bin\git.exe" config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-b8838937-81ec-4968-b08a-7a7384916e5e.config
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:10.9202720Z [command]"C:\Program Files\Git\bin\git.exe" config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-b8838937-81ec-4968-b08a-7a7384916e5e.config
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:10.9745230Z ##[endgroup]
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:10.9757854Z ##[group]Fetching the repository
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:10.9765568Z [command]"C:\Program Files\Git\bin\git.exe" -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +142c87564d660f9d0171443a6ebb1f61051fef2b:refs/remotes/origin/master
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:50.7654745Z From https://github.com/ZhangGHGitHub/LegadoTeamFlutter
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:50.7657158Z  * [new ref]         142c87564d660f9d0171443a6ebb1f61051fef2b -> origin/master
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:50.7735067Z [command]"C:\Program Files\Git\bin\git.exe" branch --list --remote origin/master
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:50.8127075Z   origin/master
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:50.8177734Z [command]"C:\Program Files\Git\bin\git.exe" rev-parse refs/remotes/origin/master
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:50.8528654Z 142c87564d660f9d0171443a6ebb1f61051fef2b
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:50.8569238Z ##[endgroup]
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:50.8569857Z ##[group]Determining the checkout info
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:50.8570915Z ##[endgroup]
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:50.8580563Z [command]"C:\Program Files\Git\bin\git.exe" sparse-checkout disable
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:50.9038483Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all extensions.worktreeConfig
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:50.9474741Z ##[group]Checking out the ref
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:50.9485589Z [command]"C:\Program Files\Git\bin\git.exe" checkout --progress --force -B master refs/remotes/origin/master
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:52.1087396Z Updating files:  12% (1764/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:52.2072395Z Updating files:  13% (1865/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:52.3694981Z Updating files:  14% (2009/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:52.4394670Z Updating files:  15% (2152/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:52.6229140Z Updating files:  16% (2296/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:52.6592656Z Updating files:  17% (2439/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:52.7794838Z Updating files:  18% (2582/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:52.8862751Z Updating files:  19% (2726/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:52.9485572Z Updating files:  20% (2869/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:53.0145469Z Updating files:  21% (3013/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:53.1503485Z Updating files:  21% (3058/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:53.3442326Z Updating files:  22% (3156/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:53.5222902Z Updating files:  23% (3300/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:53.7675081Z Updating files:  24% (3443/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:54.0211171Z Updating files:  25% (3586/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:54.0289784Z Updating files:  26% (3730/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:54.2895436Z Updating files:  26% (3732/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:54.4692032Z Updating files:  27% (3873/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:54.7234520Z Updating files:  28% (4017/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:55.0226569Z Updating files:  29% (4160/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:55.0444623Z Updating files:  30% (4304/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:55.2247777Z Updating files:  30% (4316/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:55.3522616Z Updating files:  31% (4447/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:55.5128859Z Updating files:  32% (4591/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:55.6987947Z Updating files:  33% (4734/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:55.9112043Z Updating files:  34% (4877/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:56.0445817Z Updating files:  35% (5021/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:56.1446656Z Updating files:  35% (5098/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:56.3201283Z Updating files:  36% (5164/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:56.5797750Z Updating files:  37% (5308/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:56.7702059Z Updating files:  38% (5451/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:56.9475079Z Updating files:  39% (5595/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:57.0437933Z Updating files:  40% (5738/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:57.0836138Z Updating files:  40% (5851/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:57.2544252Z Updating files:  41% (5882/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:57.3806387Z Updating files:  42% (6025/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:57.4612798Z Updating files:  43% (6168/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:57.5377149Z Updating files:  44% (6312/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:57.7038626Z Updating files:  45% (6455/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:57.8647425Z Updating files:  46% (6599/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:58.0453133Z Updating files:  47% (6742/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:58.0528952Z Updating files:  47% (6881/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:58.2433335Z Updating files:  48% (6886/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:58.4099986Z Updating files:  49% (7029/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:58.5503422Z Updating files:  50% (7172/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:58.6951849Z Updating files:  51% (7316/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:58.8323535Z Updating files:  52% (7459/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:59.0120857Z Updating files:  53% (7603/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:59.0543714Z Updating files:  54% (7746/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:59.1972144Z Updating files:  54% (7779/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:59.3536698Z Updating files:  55% (7890/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:59.4669552Z Updating files:  56% (8033/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:59.5168308Z Updating files:  57% (8177/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:10:59.7663005Z Updating files:  58% (8320/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:00.0094018Z Updating files:  59% (8463/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:00.0542247Z Updating files:  60% (8607/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:00.2225326Z Updating files:  60% (8645/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:00.3943961Z Updating files:  61% (8750/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:00.4300131Z Updating files:  62% (8894/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:00.5490869Z Updating files:  63% (9037/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:00.7515937Z Updating files:  64% (9181/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:01.0676638Z Updating files:  65% (9324/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:01.1124156Z Updating files:  65% (9449/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:01.4172596Z Updating files:  66% (9468/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:01.5901023Z Updating files:  67% (9611/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:01.7445587Z Updating files:  68% (9754/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:01.8802873Z Updating files:  69% (9898/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:02.0062103Z Updating files:  70% (10041/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:02.0676084Z Updating files:  71% (10185/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:02.0824321Z Updating files:  71% (10306/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:02.1430121Z Updating files:  72% (10328/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:02.2012671Z Updating files:  73% (10472/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:02.2333287Z Updating files:  74% (10615/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:02.2654029Z Updating files:  75% (10758/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:02.2973881Z Updating files:  76% (10902/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:02.3292097Z Updating files:  77% (11045/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:02.3604320Z Updating files:  78% (11189/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:02.4165634Z Updating files:  79% (11332/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:02.5895744Z Updating files:  80% (11476/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:02.7083259Z Updating files:  81% (11619/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:02.7898265Z Updating files:  82% (11763/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:02.9145020Z Updating files:  83% (11906/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:02.9860497Z Updating files:  84% (12049/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:03.0303345Z Updating files:  85% (12193/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:03.0696552Z Updating files:  86% (12336/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:03.0699196Z Updating files:  86% (12479/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:03.1170985Z Updating files:  87% (12480/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:03.1714311Z Updating files:  88% (12623/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:03.2123617Z Updating files:  89% (12767/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:03.2548103Z Updating files:  90% (12910/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:03.2939210Z Updating files:  91% (13054/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:03.3327919Z Updating files:  92% (13197/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:03.3740679Z Updating files:  93% (13340/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:03.4165509Z Updating files:  94% (13484/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:03.4692981Z Updating files:  95% (13627/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:03.5263406Z Updating files:  96% (13771/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:03.5779651Z Updating files:  97% (13914/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:03.6552992Z Updating files:  98% (14058/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:03.7205129Z Updating files:  99% (14201/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:03.7206003Z Updating files: 100% (14344/14344)
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:03.7206439Z Updating files: 100% (14344/14344), done.
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:03.7508827Z Reset branch 'master'
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:03.7527160Z branch 'master' set up to track 'origin/master'.
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:03.9219762Z ##[endgroup]
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:03.9231930Z [command]"C:\Program Files\Git\bin\git.exe" log -1 --format=%H
+ffi-smoke	Run actions/checkout@v7	2026-11-16T10:11:03.9610847Z 142c87564d660f9d0171443a6ebb1f61051fef2b
+ffi-smoke	Run dtolnay/rust-toolchain@stable	﻿2026-11-16T10:11:04.0200599Z ##[group]Run dtolnay/rust-toolchain@stable
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0200977Z with:
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0201169Z   toolchain: stable
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0201369Z ##[endgroup]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0282613Z ##[start-action display=Parse toolchain version;id=__dtolnay_rust-toolchain.parse]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0473067Z ##[group]Run if [[ -z $toolchain ]]; then
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0473452Z ^[[36;1mif [[ -z $toolchain ]]; then^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0473996Z ^[[36;1m  # GitHub does not enforce `required: true` inputs itself. https://github.com/actions/runner/issues/1070^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0474548Z ^[[36;1m  echo "'toolchain' is a required input" >&2^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0474829Z ^[[36;1m  exit 1^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0475141Z ^[[36;1melif [[ $toolchain =~ ^stable' '[0-9]+' '(year|month|week|day)s?' 'ago$ ]]; then^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0475563Z ^[[36;1m  if [[ Windows == macOS ]]; then^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0476088Z ^[[36;1m    echo "toolchain=1.$((($(date -v-$(sed 's/stable \([0-9]*\) \(.\).*/\1\2/' <<< $toolchain) +%s)/60/60/24-16569)/7/6))" >> $GITHUB_OUTPUT^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0476668Z ^[[36;1m  else^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0477066Z ^[[36;1m    echo "toolchain=1.$((($(date --date "${toolchain#stable }" +%s)/60/60/24-16569)/7/6))" >> $GITHUB_OUTPUT^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0477515Z ^[[36;1m  fi^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0477805Z ^[[36;1melif [[ $toolchain =~ ^stable' 'minus' '[0-9]+' 'releases?$ ]]; then^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0478336Z ^[[36;1m  echo "toolchain=1.$((($(date +%s)/60/60/24-16569)/7/6-${toolchain//[^0-9]/}))" >> $GITHUB_OUTPUT^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0478805Z ^[[36;1melif [[ $toolchain =~ ^1\.[0-9]+$ ]]; then^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0479319Z ^[[36;1m  echo "toolchain=1.$((i=${toolchain#1.}, c=($(date +%s)/60/60/24-16569)/7/6, i+9*i*(10*i<=c)+90*i*(100*i<=c)))" >> $GITHUB_OUTPUT^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0479802Z ^[[36;1melse^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0479981Z ^[[36;1m  delimiter=EOF^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0480269Z ^[[36;1m  while [[ $toolchain == *$delimiter* ]]; do delimiter+=_; done^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0480768Z ^[[36;1m  printf 'toolchain<<%s\n%s\n%s\n' "$delimiter" "$toolchain" "$delimiter" >> $GITHUB_OUTPUT^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0481200Z ^[[36;1mfi^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0503238Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0503653Z env:
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0503832Z   toolchain: stable
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.0504023Z ##[endgroup]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.2436803Z ##[end-action id=__dtolnay_rust-toolchain.parse;outcome=success;conclusion=success;duration_ms=215]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.2441762Z ##[start-action display=Set $CARGO_HOME;id=__dtolnay_rust-toolchain.__run]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.2647740Z ##[group]Run echo CARGO_HOME=${CARGO_HOME:-"$USERPROFILE\.cargo"} >> $GITHUB_ENV
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.2648276Z ^[[36;1mecho CARGO_HOME=${CARGO_HOME:-"$USERPROFILE\.cargo"} >> $GITHUB_ENV^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.2665689Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.2666090Z ##[endgroup]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3121798Z ##[end-action id=__dtolnay_rust-toolchain.__run;outcome=success;conclusion=success;duration_ms=65]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3124227Z ##[start-action display=Install rustup if needed;id=__dtolnay_rust-toolchain.__run_2]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3135801Z ##[end-action id=__dtolnay_rust-toolchain.__run_2;outcome=skipped;conclusion=skipped;duration_ms=0]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3137968Z ##[start-action display=Install rustup if needed on windows;id=__dtolnay_rust-toolchain.__run_3]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3292821Z ##[group]Run if ! command -v rustup &>/dev/null; then
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3293228Z ^[[36;1mif ! command -v rustup &>/dev/null; then^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3294010Z ^[[36;1m  curl --proto '=https' --tlsv1.2 --retry 10 --retry-connrefused --location --silent --show-error --fail https://win.rustup.rs/x86_64 --output 'D:\a\_temp\rustup-init.exe'^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3294868Z ^[[36;1m  'D:\a\_temp\rustup-init.exe' --default-toolchain none --no-modify-path -y^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3295290Z ^[[36;1m  echo "$CARGO_HOME\bin" >> $GITHUB_PATH^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3297783Z ^[[36;1mfi^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3314609Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3315010Z env:
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3315203Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3316192Z ##[endgroup]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3826640Z ##[end-action id=__dtolnay_rust-toolchain.__run_3;outcome=success;conclusion=success;duration_ms=68]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3842379Z ##[start-action display=rustup toolchain install stable;id=__dtolnay_rust-toolchain.__run_4]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3994220Z ##[group]Run set -f  # split targets and components on commas and whitespace, without glob expansion
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3994935Z ^[[36;1mset -f  # split targets and components on commas and whitespace, without glob expansion^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3995354Z ^[[36;1mflags=()^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3995614Z ^[[36;1mfor t in ${targets//,/ }; do flags+=(--target "$t"); done^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3996026Z ^[[36;1mfor c in ${components//,/ }; do flags+=(--component "$c"); done^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3996513Z ^[[36;1mif [[ $toolchain == nightly && -n $components ]]; then flags+=(--allow-downgrade); fi^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3996917Z ^[[36;1mlog=$(mktemp)^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3997140Z ^[[36;1mtrap 'rm -f "$log"' EXIT^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3997372Z ^[[36;1mfor attempt in 1 2 3 4 5; do^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3997927Z ^[[36;1m  if rustup toolchain install "$toolchain" "${flags[@]}" --profile minimal --no-self-update --force-non-host 2>&1 | tee "$log"; then^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3998483Z ^[[36;1m    break^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3998660Z ^[[36;1m  else^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3998832Z ^[[36;1m    status=$?^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3999129Z ^[[36;1m  fi^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3999446Z ^[[36;1m  if [[ $attempt == 5 ]] || ! grep -Fq 'checksum failed for ' "$log" \^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.3999997Z ^[[36;1m      || ! grep -Fq 'this is likely due to an ongoing update of the official release server' "$log"; then^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.4000458Z ^[[36;1m    exit "$status"^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.4000657Z ^[[36;1m  fi^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.4000988Z ^[[36;1m  echo "Retrying rustup toolchain install in 30 seconds (retry $attempt of 4)" >&2^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.4001393Z ^[[36;1m  sleep 30^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.4001585Z ^[[36;1mdone^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.4019327Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.4019726Z env:
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.4019926Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.4020183Z   toolchain: stable
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.4020385Z   targets: 
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.4020551Z   components: 
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.4020734Z   RUSTUP_PERMIT_COPY_RENAME: 1
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:04.4020964Z ##[endgroup]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:08.7034816Z info: syncing channel updates for stable-x86_64-pc-windows-msvc
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:09.3998306Z info: latest update on 2026-11-12 for version 1.100.0 (0ef1bc386 2026-11-09)
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:09.4315360Z info: removing previous version of component rustfmt
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:09.4632080Z info: removing previous version of component clippy
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:09.4790439Z info: removing previous version of component rust-std for target x86_64-pc-windows-gnu
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:09.6395317Z info: removing previous version of component rust-std for target i686-pc-windows-msvc
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:09.7643756Z info: removing previous version of component cargo
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:09.8750692Z info: removing previous version of component rust-std
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:09.9864087Z info: removing previous version of component rustc
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:10.0812961Z info: downloading 7 components
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.2618391Z 
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.2941016Z   stable-x86_64-pc-windows-msvc updated - rustc 1.100.0 (0ef1bc386 2026-11-09) (from rustc 1.99.1 (58cf8f9c3 2026-10-13))
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.2941905Z 
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.3287555Z ##[end-action id=__dtolnay_rust-toolchain.__run_4;outcome=success;conclusion=success;duration_ms=18944]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.3294114Z ##[start-action display=rustup default stable;id=__dtolnay_rust-toolchain.__run_5]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.3433902Z ##[group]Run rustup default "$toolchain" --force-non-host
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.3434289Z ^[[36;1mrustup default "$toolchain" --force-non-host^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.3449677Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.3450073Z env:
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.3450259Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.3450517Z   toolchain: stable
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.3450693Z ##[endgroup]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.4183429Z info: using existing install for stable-x86_64-pc-windows-msvc
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.4260605Z info: default toolchain set to stable-x86_64-pc-windows-msvc
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.4260952Z 
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.4468971Z   stable-x86_64-pc-windows-msvc unchanged - rustc 1.100.0 (0ef1bc386 2026-11-09)
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.4469643Z 
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.4550608Z ##[end-action id=__dtolnay_rust-toolchain.__run_5;outcome=success;conclusion=success;duration_ms=125]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.4554209Z ##[start-action display=Create cachekey;id=__dtolnay_rust-toolchain.rustc-version]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.4692618Z ##[group]Run DATE=$(rustc +"$toolchain" --version --verbose | sed -ne 's/^commit-date: \(20[0-9][0-9]\)-\([01][0-9]\)-\([0-3][0-9]\)$/\1\2\3/p')
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.4693502Z ^[[36;1mDATE=$(rustc +"$toolchain" --version --verbose | sed -ne 's/^commit-date: \(20[0-9][0-9]\)-\([01][0-9]\)-\([0-3][0-9]\)$/\1\2\3/p')^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.4694179Z ^[[36;1mHASH=$(rustc +"$toolchain" --version --verbose | sed -ne 's/^commit-hash: //p')^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.4694680Z ^[[36;1mecho "cachekey=$(echo $DATE$HASH | head -c12)" >> $GITHUB_OUTPUT^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.4710699Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.4711095Z env:
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.4711283Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.4711534Z   toolchain: stable
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:23.4711729Z ##[endgroup]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.3233279Z ##[end-action id=__dtolnay_rust-toolchain.rustc-version;outcome=success;conclusion=success;duration_ms=867]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.3235848Z ##[start-action display=Disable incremental compilation;id=__dtolnay_rust-toolchain.__run_6]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.3391968Z ##[group]Run if [ -z "${CARGO_INCREMENTAL+set}" ]; then
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.3392355Z ^[[36;1mif [ -z "${CARGO_INCREMENTAL+set}" ]; then^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.3392658Z ^[[36;1m  echo CARGO_INCREMENTAL=0 >> $GITHUB_ENV^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.3392919Z ^[[36;1mfi^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.3409027Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.3409428Z env:
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.3409617Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.3409870Z ##[endgroup]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.3825564Z ##[end-action id=__dtolnay_rust-toolchain.__run_6;outcome=success;conclusion=success;duration_ms=58]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.3828640Z ##[start-action display=Enable colors in Cargo output;id=__dtolnay_rust-toolchain.__run_7]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.3993938Z ##[group]Run if [ -z "${CARGO_TERM_COLOR+set}" ]; then
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.3994320Z ^[[36;1mif [ -z "${CARGO_TERM_COLOR+set}" ]; then^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.3994635Z ^[[36;1m  echo CARGO_TERM_COLOR=always >> $GITHUB_ENV^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.3994927Z ^[[36;1mfi^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.4011305Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.4011698Z env:
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.4011890Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.4012148Z   CARGO_INCREMENTAL: 0
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.4012342Z ##[endgroup]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.4421132Z ##[end-action id=__dtolnay_rust-toolchain.__run_7;outcome=success;conclusion=success;duration_ms=59]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.4425225Z ##[start-action display=Enable Cargo sparse registry;id=__dtolnay_rust-toolchain.__run_8]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.4569841Z ##[group]Run # implemented in 1.66, stabilized in 1.68, made default in 1.70
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.4570549Z ^[[36;1m# implemented in 1.66, stabilized in 1.68, made default in 1.70^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.4571196Z ^[[36;1mif [ -z "${CARGO_REGISTRIES_CRATES_IO_PROTOCOL+set}" -o -f "D:\a\_temp"/.implicit_cargo_registries_crates_io_protocol ]; then^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.4572008Z ^[[36;1m  if rustc +"$toolchain" --version --verbose | grep -q '^release: 1\.6[89]\.'; then^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.4572524Z ^[[36;1m    touch "D:\a\_temp"/.implicit_cargo_registries_crates_io_protocol || true^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.4573001Z ^[[36;1m    echo CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse >> $GITHUB_ENV^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.4573523Z ^[[36;1m  elif rustc +"$toolchain" --version --verbose | grep -q '^release: 1\.6[67]\.'; then^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.4574063Z ^[[36;1m    touch "D:\a\_temp"/.implicit_cargo_registries_crates_io_protocol || true^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.4574525Z ^[[36;1m    echo CARGO_REGISTRIES_CRATES_IO_PROTOCOL=git >> $GITHUB_ENV^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.4574865Z ^[[36;1m  fi^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.4575029Z ^[[36;1mfi^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.4590307Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.4590713Z env:
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.4590905Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.4591184Z   CARGO_INCREMENTAL: 0
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.4591380Z   CARGO_TERM_COLOR: always
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.4591578Z   toolchain: stable
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.4591752Z ##[endgroup]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.6628622Z ##[end-action id=__dtolnay_rust-toolchain.__run_8;outcome=success;conclusion=success;duration_ms=220]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.6632611Z ##[start-action display=Work around spurious network errors in curl 8.0;id=__dtolnay_rust-toolchain.__run_9]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.6766604Z ##[group]Run # https://rust-lang.zulipchat.com/#narrow/stream/246057-t-cargo/topic/timeout.20investigation
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.6767371Z ^[[36;1m# https://rust-lang.zulipchat.com/#narrow/stream/246057-t-cargo/topic/timeout.20investigation^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.6768040Z ^[[36;1mif rustc +"$toolchain" --version --verbose | grep -q '^release: 1\.7[01]\.'; then^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.6768588Z ^[[36;1m  echo CARGO_HTTP_MULTIPLEXING=false >> $GITHUB_ENV^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.6768885Z ^[[36;1mfi^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.6785063Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.6785486Z env:
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.6785677Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.6785932Z   CARGO_INCREMENTAL: 0
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.6786135Z   CARGO_TERM_COLOR: always
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.6786338Z   toolchain: stable
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.6786529Z ##[endgroup]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.7887342Z ##[end-action id=__dtolnay_rust-toolchain.__run_9;outcome=success;conclusion=success;duration_ms=125]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.7893077Z ##[start-action display=rustc +stable --version --verbose;id=__dtolnay_rust-toolchain.__run_10]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.8035136Z ##[group]Run rustc +"$toolchain" --version --verbose
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.8035526Z ^[[36;1mrustc +"$toolchain" --version --verbose^[[0m
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.8050292Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.8050690Z env:
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.8050876Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.8051533Z   CARGO_INCREMENTAL: 0
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.8051784Z   CARGO_TERM_COLOR: always
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.8051986Z   toolchain: stable
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.8052160Z ##[endgroup]
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.8984210Z rustc 1.100.0 (0ef1bc386 2026-11-09)
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.8984749Z binary: rustc
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.8985096Z commit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.8985585Z commit-date: 2026-11-09
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.8985953Z host: x86_64-pc-windows-msvc
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.8986286Z release: 1.100.0
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.8988801Z LLVM version: 23.1.5
+ffi-smoke	Run dtolnay/rust-toolchain@stable	2026-11-16T10:11:24.9122754Z ##[end-action id=__dtolnay_rust-toolchain.__run_10;outcome=success;conclusion=success;duration_ms=122]
+ffi-smoke	Run Swatinem/rust-cache@v2	﻿2026-11-16T10:11:24.9360796Z ##[group]Run Swatinem/rust-cache@v2
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:24.9361120Z with:
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:24.9361297Z   workspaces: rust
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:24.9361493Z   prefix-key: v0-rust
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:24.9361692Z   add-job-id-key: true
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:24.9362117Z   add-rust-environment-hash-key: true
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:24.9362363Z   cache-targets: true
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:24.9362555Z   cache-all-crates: false
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:24.9362774Z   cache-workspace-crates: false
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:24.9362993Z   save-if: true
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:24.9363171Z   cache-provider: github
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:24.9363368Z   cache-bin: true
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:24.9363542Z   lookup-only: false
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:24.9363720Z   cmd-format: {0}
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:24.9363883Z env:
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:24.9364059Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:24.9364310Z   CARGO_INCREMENTAL: 0
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:24.9364499Z   CARGO_TERM_COLOR: always
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:24.9364696Z ##[endgroup]
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1740113Z ##[group]Cache Configuration
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1741643Z Cache Provider:
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1741959Z     github
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1742223Z Workspaces:
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1742570Z     D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1743053Z Cache Paths:
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1743401Z     C:\Users\runneradmin\.cargo\bin
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1743841Z     C:\Users\runneradmin\.cargo\.crates.toml
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1744314Z     C:\Users\runneradmin\.cargo\.crates2.json
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1745052Z     C:\Users\runneradmin\.cargo\registry
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1745485Z     C:\Users\runneradmin\.cargo\git
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1745972Z     D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\target
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1746759Z Restore Key:
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1747317Z     v0-rust-ffi-smoke-Windows_NT-x64-ea627442
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1747860Z Cache Key:
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1748579Z     v0-rust-ffi-smoke-Windows_NT-x64-ea627442-b163ef60
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1749060Z .. Prefix:
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1749382Z   - v0-rust-ffi-smoke-Windows_NT-x64
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1749867Z .. Environment considered:
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1750224Z   - Rust Versions:
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1750733Z     - 1.100.0 x86_64-pc-windows-msvc 0ef1bc386059596dada8fb65b50425aab2ea637a
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1751420Z   - CARGO_HOME
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1751733Z   - CARGO_INCREMENTAL
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1752055Z   - CARGO_TERM_COLOR
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1752384Z .. Lockfiles considered:
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1752907Z   - D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\.cargo\config.toml
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1753647Z   - D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\Cargo.lock
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1754396Z   - D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-book\Cargo.toml
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1755242Z   - D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-core\Cargo.toml
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1756070Z   - D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-db\Cargo.toml
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1756885Z   - D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-fetcher\Cargo.toml
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1757709Z   - D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-ffi\Cargo.toml
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1758458Z   - D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-js\Cargo.toml
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1759276Z   - D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-net\Cargo.toml
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1760159Z   - D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-parser\Cargo.toml
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1761069Z   - D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-server\Cargo.toml
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1761945Z   - D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\rust-toolchain.toml
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1762912Z ##[endgroup]
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1763107Z 
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.1763248Z ... Restoring cache ...
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:36.5183248Z Cache hit for restore-key: v0-rust-ffi-smoke-Windows_NT-x64-ea627442-6f73fa33
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:37.7433556Z Received 58720256 of 561246562 (10.5%), 55.3 MBs/sec
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:38.7524895Z Received 209715200 of 561246562 (37.4%), 99.0 MBs/sec
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:39.7568787Z Received 356515840 of 561246562 (63.5%), 112.4 MBs/sec
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:40.7684919Z Received 486539264 of 561246562 (86.7%), 115.1 MBs/sec
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:41.5808503Z Received 561246562 of 561246562 (100.0%), 110.5 MBs/sec
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:41.5810877Z Cache Size: ~535 MB (561246562 B)
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:41.5812812Z [command]"C:\Program Files\Git\usr\bin\tar.exe" -xf D:/a/_temp/fb0546a8-de44-4bf4-848b-cde90b3795f7/cache.tzst -P -C D:/a/LegadoTeamFlutter/LegadoTeamFlutter --force-local --use-compress-program "zstd -d"
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:55.7217701Z Cache restored successfully
+ffi-smoke	Run Swatinem/rust-cache@v2	2026-11-16T10:11:55.7608890Z Restored from cache key "v0-rust-ffi-smoke-Windows_NT-x64-ea627442-6f73fa33" full match: false.
+ffi-smoke	Run subosito/flutter-action@v2	﻿2026-11-16T10:11:56.0494997Z ##[group]Run subosito/flutter-action@v2
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.0495447Z with:
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.0495674Z   channel: stable
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.0495920Z   architecture: X64
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.0496163Z   cache: false
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.0496403Z   pub-cache-path: default
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.0496676Z   dry-run: false
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.0497000Z   git-source: https://github.com/flutter/flutter.git
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.0497371Z env:
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.0497604Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.0497950Z   CARGO_INCREMENTAL: 0
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.0498205Z   CARGO_TERM_COLOR: always
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.0498477Z   CACHE_ON_FAILURE: false
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.0498723Z ##[endgroup]
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.0504763Z ##[start-action display=Make yq tool available on Windows runners;id=__subosito_flutter-action.__run]
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.0513378Z ##[end-action id=__subosito_flutter-action.__run;outcome=skipped;conclusion=skipped;duration_ms=0]
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.0515821Z ##[start-action display=Make setup script executable;id=__subosito_flutter-action.__run_2]
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.0648951Z ##[group]Run chmod +x "$GITHUB_ACTION_PATH/setup.sh"
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.0649333Z ^[[36;1mchmod +x "$GITHUB_ACTION_PATH/setup.sh"^[[0m
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.0664826Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.0665234Z env:
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.0665428Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.0665706Z   CARGO_INCREMENTAL: 0
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.0665912Z   CARGO_TERM_COLOR: always
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.0666133Z   CACHE_ON_FAILURE: false
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.0666338Z ##[endgroup]
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.1398588Z ##[end-action id=__subosito_flutter-action.__run_2;outcome=success;conclusion=success;duration_ms=88]
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.1400918Z ##[start-action display=Set action inputs;id=__subosito_flutter-action.flutter-action]
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.1543504Z ##[group]Run $GITHUB_ACTION_PATH/setup.sh -p \
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.1544144Z ^[[36;1m$GITHUB_ACTION_PATH/setup.sh -p \^[[0m
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.1544429Z ^[[36;1m  -n '' \^[[0m
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.1544620Z ^[[36;1m  -f '' \^[[0m
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.1544811Z ^[[36;1m  -a 'X64' \^[[0m
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.1545008Z ^[[36;1m  -k '' \^[[0m
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.1545183Z ^[[36;1m  -c '' \^[[0m
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.1545360Z ^[[36;1m  -l '' \^[[0m
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.1545545Z ^[[36;1m  -d 'default' \^[[0m
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.1545847Z ^[[36;1m  -g 'https://github.com/flutter/flutter.git' \^[[0m
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.1546157Z ^[[36;1m  stable^[[0m
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.1562895Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.1563294Z env:
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.1563619Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.1564239Z   CARGO_INCREMENTAL: 0
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.1564464Z   CARGO_TERM_COLOR: always
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.1564691Z   CACHE_ON_FAILURE: false
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:56.1564895Z ##[endgroup]
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:59.6396654Z ##[end-action id=__subosito_flutter-action.flutter-action;outcome=success;conclusion=success;duration_ms=3499]
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:59.6399012Z ##[start-action display=Cache Flutter;id=__subosito_flutter-action.cache-flutter]
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:59.6403541Z ##[end-action id=__subosito_flutter-action.cache-flutter;outcome=skipped;conclusion=skipped;duration_ms=0]
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:59.6406815Z ##[start-action display=Cache pub dependencies;id=__subosito_flutter-action.cache-pub]
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:59.6412479Z ##[end-action id=__subosito_flutter-action.cache-pub;outcome=skipped;conclusion=skipped;duration_ms=0]
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:59.6414235Z ##[start-action display=Run setup script;id=__subosito_flutter-action.__run_3]
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:59.6567120Z ##[group]Run $GITHUB_ACTION_PATH/setup.sh \
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:59.6567475Z ^[[36;1m$GITHUB_ACTION_PATH/setup.sh \^[[0m
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:59.6567738Z ^[[36;1m  -n '3.50.0' \^[[0m
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:59.6567950Z ^[[36;1m  -a 'x64' \^[[0m
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:59.6568245Z ^[[36;1m  -c 'C:\hostedtoolcache\windows\flutter\stable-3.50.0-x64' \^[[0m
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:59.6570731Z ^[[36;1m  -d 'C:\Users\runneradmin\AppData\Local\Pub\Cache' \^[[0m
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:59.6571069Z ^[[36;1m  stable^[[0m
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:59.6586562Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:59.6586970Z env:
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:59.6587166Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:59.6587438Z   CARGO_INCREMENTAL: 0
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:59.6587645Z   CARGO_TERM_COLOR: always
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:59.6587881Z   CACHE_ON_FAILURE: false
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:11:59.6588085Z ##[endgroup]
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:12:02.5131274Z   % Total    % Received % Xferd  Average Speed  Time    Time    Time   Current
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:12:02.5132023Z                                  Dload  Upload  Total   Spent   Left   Speed
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:12:02.5132284Z 
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:12:03.5139149Z   0      0   0      0   0      0      0      0                              0
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:12:04.5141006Z  22  1.73G  22 407.6M   0      0 389.7M      0   00:04   00:01   00:03 407.3M
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:12:05.5167058Z  51  1.73G  51 926.5M   0      0 452.8M      0   00:03   00:02   00:01 463.0M
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:12:06.1224016Z  82  1.73G  82  1.43G   0      0 481.5M      0   00:03   00:03         488.7M
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:12:06.1224591Z 100  1.73G 100  1.73G   0      0 487.6M      0   00:03   00:03         488.7M
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:12:06.1225015Z 100  1.73G 100  1.73G   0      0 487.5M      0   00:03   00:03         488.7M
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:12:06.1225453Z 100  1.73G 100  1.73G   0      0 487.5M      0   00:03   00:03         488.7M
+ffi-smoke	Run subosito/flutter-action@v2	2026-11-16T10:13:36.6234748Z ##[end-action id=__subosito_flutter-action.__run_3;outcome=success;conclusion=success;duration_ms=96981]
+ffi-smoke	构建 legado-ffi DLL (quickjs)	﻿2026-11-16T10:13:36.6425669Z ##[group]Run cargo build -p legado-ffi --features quickjs
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:36.6426183Z ^[[36;1mcargo build -p legado-ffi --features quickjs^[[0m
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:36.7559341Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:36.7559731Z env:
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:36.7559942Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:36.7560209Z   CARGO_INCREMENTAL: 0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:36.7560430Z   CARGO_TERM_COLOR: always
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:36.7560652Z   CACHE_ON_FAILURE: false
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:36.7560992Z   FLUTTER_ROOT: C:\hostedtoolcache\windows\flutter\stable-3.50.0-x64/flutter
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:36.7561425Z   PUB_CACHE: C:\Users\runneradmin\AppData\Local\Pub\Cache
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:36.7561726Z ##[endgroup]
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:38.0206120Z ^[[1m^[[92m    Updating^[[0m crates.io index
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:39.3577975Z ^[[1m^[[92m Downloading^[[0m crates ...
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:57.2644325Z ^[[1m^[[92m  Downloaded^[[0m block-padding v0.4.2
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:57.2733525Z ^[[1m^[[92m  Downloaded^[[0m cbc v0.2.1
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:57.2881388Z ^[[1m^[[92m  Downloaded^[[0m cssparser v0.38.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:57.3098050Z ^[[1m^[[92m  Downloaded^[[0m cssparser-macros v0.7.1
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:57.3164383Z ^[[1m^[[92m  Downloaded^[[0m derive_more v2.1.1
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:57.4883751Z ^[[1m^[[92m  Downloaded^[[0m derive_more-impl v2.1.1
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:58.4252952Z ^[[1m^[[92m  Downloaded^[[0m ecb v0.2.1
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:58.4425718Z ^[[1m^[[92m  Downloaded^[[0m ego-tree v0.11.1
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:58.4634455Z ^[[1m^[[92m  Downloaded^[[0m fastrand v2.5.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:58.4777955Z ^[[1m^[[92m  Downloaded^[[0m html5ever v0.40.1
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:58.5174340Z ^[[1m^[[92m  Downloaded^[[0m lopdf v0.47.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:58.6409779Z ^[[1m^[[92m  Downloaded^[[0m lru v0.18.5
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:58.6516577Z ^[[1m^[[92m  Downloaded^[[0m markup5ever v0.40.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:58.6628107Z ^[[1m^[[92m  Downloaded^[[0m md-5 v0.11.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:58.6781584Z ^[[1m^[[92m  Downloaded^[[0m phf v0.14.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:58.6924706Z ^[[1m^[[92m  Downloaded^[[0m phf_codegen v0.14.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:58.7013909Z ^[[1m^[[92m  Downloaded^[[0m phf_shared v0.14.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:58.7124646Z ^[[1m^[[92m  Downloaded^[[0m phf_generator v0.14.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:58.7232674Z ^[[1m^[[92m  Downloaded^[[0m phf_macros v0.14.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:58.7328518Z ^[[1m^[[92m  Downloaded^[[0m rustc_version v0.4.1
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:58.7451765Z ^[[1m^[[92m  Downloaded^[[0m scraper v0.29.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:58.7661895Z ^[[1m^[[92m  Downloaded^[[0m semver v1.0.28
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:58.7922147Z ^[[1m^[[92m  Downloaded^[[0m selectors v0.41.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:58.8084959Z ^[[1m^[[92m  Downloaded^[[0m servo_arc v0.5.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:58.8231991Z ^[[1m^[[92m  Downloaded^[[0m string_cache v0.11.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:58.8401045Z ^[[1m^[[92m  Downloaded^[[0m string_cache_codegen v0.11.2
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:58.8479271Z ^[[1m^[[92m  Downloaded^[[0m tendril v0.5.1
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:58.8652225Z ^[[1m^[[92m  Downloaded^[[0m web_atoms v0.3.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:58.8749955Z ^[[1m^[[92m  Downloaded^[[0m weezl v0.2.1
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:59.4020615Z ^[[1m^[[92m   Compiling^[[0m syn v3.0.3
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:59.4069311Z ^[[1m^[[92m   Compiling^[[0m phf_shared v0.14.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:59.4085469Z ^[[1m^[[92m   Compiling^[[0m fastrand v2.5.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:59.4189184Z ^[[1m^[[92m   Compiling^[[0m block-padding v0.4.2
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:59.5714418Z ^[[1m^[[92m   Compiling^[[0m inout v0.2.6
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:59.6276651Z ^[[1m^[[92m   Compiling^[[0m brotli-decompressor v5.0.3
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:59.7336346Z ^[[1m^[[92m   Compiling^[[0m phf_generator v0.14.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:59.8708935Z ^[[1m^[[92m   Compiling^[[0m string_cache_codegen v0.11.2
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:13:59.9884977Z ^[[1m^[[92m   Compiling^[[0m phf_macros v0.14.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:00.5371617Z ^[[1m^[[92m   Compiling^[[0m phf_codegen v0.14.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:00.7113053Z ^[[1m^[[92m   Compiling^[[0m cipher v0.5.2
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:01.0112352Z ^[[1m^[[92m   Compiling^[[0m web_atoms v0.3.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:01.5944097Z ^[[1m^[[92m   Compiling^[[0m string_cache v0.11.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:01.8543057Z ^[[1m^[[92m   Compiling^[[0m brotli v8.0.4
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:03.0187876Z ^[[1m^[[92m   Compiling^[[0m phf v0.14.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:03.2469715Z ^[[1m^[[92m   Compiling^[[0m lru v0.18.5
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:03.4903296Z ^[[1m^[[92m   Compiling^[[0m aes v0.9.4
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:04.3565476Z ^[[1m^[[92m   Compiling^[[0m tendril v0.5.1
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:04.7802110Z ^[[1m^[[92m   Compiling^[[0m derive_more-impl v2.1.1
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:06.3573863Z ^[[1m^[[92m   Compiling^[[0m compression-codecs v0.4.38
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:07.1564883Z ^[[1m^[[92m   Compiling^[[0m markup5ever v0.40.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:07.1593005Z ^[[1m^[[92m   Compiling^[[0m async-compression v0.4.43
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:07.3121600Z ^[[1m^[[92m   Compiling^[[0m thiserror-impl v2.0.21
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:07.5719029Z ^[[1m^[[92m   Compiling^[[0m serde_derive v1.0.229
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:07.7756249Z ^[[1m^[[92m   Compiling^[[0m cssparser-macros v0.7.1
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:08.3225010Z ^[[1m^[[92m   Compiling^[[0m cssparser v0.38.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:09.4887220Z ^[[1m^[[92m   Compiling^[[0m thiserror v2.0.21
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:09.5656849Z ^[[1m^[[92m   Compiling^[[0m derive_more v2.1.1
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:09.6134705Z ^[[1m^[[92m   Compiling^[[0m servo_arc v0.5.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:09.6973653Z ^[[1m^[[92m   Compiling^[[0m rustc-hash v2.1.3
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:09.7505105Z ^[[1m^[[92m   Compiling^[[0m tower-http v0.6.11
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:09.8103620Z ^[[1m^[[92m   Compiling^[[0m selectors v0.41.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:09.8149809Z ^[[1m^[[92m   Compiling^[[0m zip v9.5.1
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:11.7202495Z ^[[1m^[[92m   Compiling^[[0m html5ever v0.40.1
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:12.1713147Z ^[[1m^[[92m   Compiling^[[0m ego-tree v0.11.1
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:12.5776843Z ^[[1m^[[92m   Compiling^[[0m jsonpath-rust v0.7.5
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:12.9407407Z ^[[1m^[[92m   Compiling^[[0m serde v1.0.229
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:13.2833945Z ^[[1m^[[92m   Compiling^[[0m scraper v0.29.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:13.9391640Z ^[[1m^[[92m   Compiling^[[0m legado-core v0.2.0 (D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-core)
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:16.5619699Z ^[[1m^[[92m   Compiling^[[0m serde_urlencoded v0.7.1
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:16.9228588Z ^[[1m^[[92m   Compiling^[[0m cookie_store v0.22.1
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:17.0943655Z ^[[1m^[[92m   Compiling^[[0m async-trait v0.1.91
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:17.8590161Z ^[[1m^[[92m   Compiling^[[0m reqwest v0.12.28
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:18.4627530Z ^[[1m^[[92m   Compiling^[[0m tungstenite v0.29.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:18.8535927Z ^[[1m^[[92m   Compiling^[[0m rar v0.4.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:20.4000311Z ^[[1m^[[92m   Compiling^[[0m cbc v0.2.1
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:20.5359719Z ^[[1m^[[92m   Compiling^[[0m ecb v0.2.1
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:20.6442762Z ^[[1m^[[92m   Compiling^[[0m md-5 v0.11.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:20.7838176Z ^[[1m^[[92m   Compiling^[[0m legado-book v0.2.0 (D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-book)
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:20.9136912Z ^[[1m^[[92m   Compiling^[[0m weezl v0.2.1
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:21.0642365Z ^[[1m^[[92m   Compiling^[[0m tokio-tungstenite v0.29.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:21.4935694Z ^[[1m^[[92m   Compiling^[[0m lopdf v0.47.0
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:21.8839686Z ^[[1m^[[92m   Compiling^[[0m legado-server v0.2.0 (D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-server)
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:22.3986046Z ^[[1m^[[92m   Compiling^[[0m axum v0.8.9
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:30.7746975Z ^[[1m^[[92m   Compiling^[[0m legado-net v0.2.0 (D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-net)
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:31.5721457Z ^[[1m^[[92m   Compiling^[[0m legado-parser v0.2.0 (D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-parser)
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:37.3495654Z ^[[1m^[[92m   Compiling^[[0m legado-js v0.2.0 (D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-js)
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:41.6124238Z ^[[1m^[[92m   Compiling^[[0m legado-db v0.2.0 (D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-db)
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:14:44.8491857Z ^[[1m^[[92m   Compiling^[[0m legado-fetcher v0.2.0 (D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-fetcher)
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:15:16.3654057Z ^[[1m^[[92m   Compiling^[[0m legado-ffi v0.2.0 (D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-ffi)
+ffi-smoke	构建 legado-ffi DLL (quickjs)	2026-11-16T10:15:49.4532676Z ^[[1m^[[92m    Finished^[[0m `dev` profile [unoptimized + debuginfo] target(s) in 2m 11s
+ffi-smoke	Flutter pub get	﻿2026-11-16T10:15:49.7793285Z ##[group]Run flutter pub get
+ffi-smoke	Flutter pub get	2026-11-16T10:15:49.7793637Z ^[[36;1mflutter pub get^[[0m
+ffi-smoke	Flutter pub get	2026-11-16T10:15:49.7864990Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+ffi-smoke	Flutter pub get	2026-11-16T10:15:49.7865351Z env:
+ffi-smoke	Flutter pub get	2026-11-16T10:15:49.7865553Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+ffi-smoke	Flutter pub get	2026-11-16T10:15:49.7865817Z   CARGO_INCREMENTAL: 0
+ffi-smoke	Flutter pub get	2026-11-16T10:15:49.7866016Z   CARGO_TERM_COLOR: always
+ffi-smoke	Flutter pub get	2026-11-16T10:15:49.7866238Z   CACHE_ON_FAILURE: false
+ffi-smoke	Flutter pub get	2026-11-16T10:15:49.7866565Z   FLUTTER_ROOT: C:\hostedtoolcache\windows\flutter\stable-3.50.0-x64/flutter
+ffi-smoke	Flutter pub get	2026-11-16T10:15:49.7867480Z   PUB_CACHE: C:\Users\runneradmin\AppData\Local\Pub\Cache
+ffi-smoke	Flutter pub get	2026-11-16T10:15:49.7867807Z ##[endgroup]
+ffi-smoke	Flutter pub get	2026-11-16T10:16:05.2554925Z Resolving dependencies...
+ffi-smoke	Flutter pub get	2026-11-16T10:16:07.0268043Z Downloading packages...
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4143825Z   _fe_analyzer_shared 67.0.0 (111.0.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4144573Z   analyzer 6.4.1 (14.7.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4145084Z   analyzer_plugin 0.11.3 (0.14.20 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4145852Z   app_links 6.4.1 (7.2.2 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4146396Z   app_links_linux 1.0.3 (1.0.5 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4146943Z   app_links_web 1.0.4 (1.0.5 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4148038Z   archive 4.0.9 (4.7.1 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4149066Z   build 2.4.1 (5.0.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4150058Z   build_config 1.1.2 (1.4.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4151328Z   build_daemon 4.1.2 (4.1.7 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4152049Z   build_resolvers 2.4.2 (3.0.4 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4152634Z   build_runner 2.4.13 (2.17.1 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4154040Z   build_runner_core 7.3.2 (9.3.2 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4155185Z   built_collection 5.1.1 (6.0.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4156719Z   built_value 8.12.6 (8.13.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4157316Z   cached_network_image 3.4.1 (4.0.7 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4157985Z   cached_network_image_platform_interface 4.1.1 (5.0.4 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4158648Z   cached_network_image_web 1.3.1 (2.0.5 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4159210Z   cli_util 0.4.2 (0.6.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4159639Z > clock 1.1.3 (was 1.1.2)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4159944Z   code_assets 1.2.1 (2.2.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4160283Z   code_builder 4.11.1 (4.13.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4160639Z   cross_file 0.3.5+4 (0.4.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4160949Z   crypto 3.0.7 (3.0.8 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4161256Z   cupertino_icons 1.0.9 (2.0.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4161731Z   cupertino_ui 1.0.2 (1.1.6 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4162284Z   custom_lint 0.6.4 (0.8.1 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4162896Z   custom_lint_builder 0.6.4 (0.8.1 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4163366Z   custom_lint_core 0.6.3 (0.8.2 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4163709Z   dart_style 2.3.6 (3.1.14 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4164056Z   dbus 0.7.15 (0.8.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4164360Z   device_info_plus 11.5.0 (13.3.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4164779Z   device_info_plus_platform_interface 7.0.3 (8.1.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4165531Z   file_picker 8.3.7 (13.3.3 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4166821Z   flutter_cache_manager 3.4.1 (3.5.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4167457Z   flutter_local_notifications 18.0.1 (23.0.2 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4167933Z   flutter_local_notifications_linux 5.0.0 (9.0.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4168410Z   flutter_local_notifications_platform_interface 8.0.0 (13.0.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4168952Z   flutter_markdown 0.7.7+1 (discontinued replaced by flutter_markdown_plus)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4169399Z   flutter_riverpod 2.6.1 (3.5.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4169772Z   flutter_rust_bridge 2.11.1 (2.13.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4170122Z   flutter_svg 2.3.0 (2.4.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4170913Z   freezed 2.5.2 (4.0.3 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4171235Z   freezed_annotation 2.4.4 (3.1.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4171609Z   frontend_server_client 4.0.0 (4.2.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4174261Z   glob 2.1.3 (2.2.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4174562Z   hooks 2.0.2 (2.2.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4174851Z   html 0.15.6 (0.15.7 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4175132Z   http_multi_server 3.2.2 (3.2.3 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4175444Z   image 4.10.1 (4.13.1 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4175706Z > intl 0.20.3 (was 0.20.2)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4175951Z   io 1.0.5 (1.1.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4176238Z   jni 1.0.0 (1.1.2 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4176662Z   jni_flutter 1.0.1 (1.0.4+1 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4177045Z   json_annotation 4.9.0 (4.12.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4177373Z   json_serializable 6.8.0 (6.15.2 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4177684Z + listen 1.0.1
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4177955Z > matcher 0.12.20 (was 0.12.19)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4178270Z   material_color_utilities 0.13.0 (0.13.1 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4178616Z   material_ui 1.1.1 (1.11.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4178909Z > meta 1.19.0 (was 1.18.0)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4179171Z   mime 2.0.0 (2.1.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4179468Z   mobile_scanner 7.4.0 (7.5.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4179776Z   objective_c 9.4.1 (9.6.4 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4180071Z   octo_image 2.1.0 (2.1.5 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4180473Z   package_config 2.2.0 (3.0.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4180807Z   package_info_plus 9.0.1 (10.2.2 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4181172Z   package_info_plus_platform_interface 3.2.1 (4.1.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4181523Z   palette_generator 0.3.3+7 (discontinued)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4181883Z   petitparser 7.0.2 (7.1.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4182191Z   platform 3.1.6 (3.2.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4182481Z   pool 1.5.2 (1.5.3 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4182968Z   posix 6.5.2 (6.5.4 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4183296Z   process 5.0.5 (5.0.6 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4183587Z   pub_semver 2.2.0 (2.2.1 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4183901Z   pubspec_parse 1.5.0 (1.7.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4184217Z   qr 3.0.2 (4.0.1 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4184516Z   record_use 0.6.0 (1.1.1 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4184816Z   riverpod 2.6.1 (3.5.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4185130Z   riverpod_analyzer_utils 0.5.1 (1.0.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4185494Z   riverpod_annotation 2.6.1 (4.0.8 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4185860Z   riverpod_generator 2.4.0 (4.0.10 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4186179Z   riverpod_lint 2.3.10 (3.2.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4186482Z   rxdart 0.27.7 (0.28.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4186776Z   saf 2.1.0 (2.1.2 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4187050Z   share_plus 10.1.4 (13.3.1 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4187416Z   share_plus_platform_interface 5.0.2 (7.2.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4187785Z   shared_preferences 2.5.5 (2.5.6 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4188128Z   shared_preferences_android 2.4.23 (2.5.5 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4188510Z   shared_preferences_foundation 2.5.6 (2.6.2 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4188870Z   shelf 1.4.2 (1.4.3 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4189146Z   shelf_web_socket 2.0.1 (3.0.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4189429Z   source_gen 1.5.0 (4.3.1 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4189704Z   source_helper 1.3.5 (1.4.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4190000Z   sqflite 2.4.2+1 (2.4.6 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4190263Z   sqflite_android 2.4.2+3 (2.4.6 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4190875Z   sqflite_common 2.5.8 (2.5.17 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4191149Z   sqflite_darwin 2.4.2 (2.4.6 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4191447Z   sqflite_platform_interface 2.4.0 (2.4.4 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4191730Z > stack_trace 1.12.2 (was 1.12.1)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4191972Z   stream_transform 2.1.1 (2.1.2 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4192290Z   synchronized 3.4.0+1 (3.6.1+1 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4192568Z > test_api 0.7.14 (was 0.7.11) (0.7.15 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4192897Z   timezone 0.10.1 (0.11.2 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4193760Z   url_launcher 6.3.2 (6.3.3 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4194073Z   url_launcher_android 6.3.30 (6.3.33 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4194396Z   url_launcher_ios 6.4.1 (6.4.2 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4194683Z   url_launcher_linux 3.2.2 (3.2.3 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4194991Z   url_launcher_macos 3.2.5 (3.2.6 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4195320Z   url_launcher_windows 3.1.5 (3.1.6 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4195641Z   vector_graphics 1.2.2 (1.3.1 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4195983Z   vector_graphics_codec 1.1.13 (1.2.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4196315Z   vector_graphics_compiler 1.3.0 (1.3.6 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4196633Z > vector_math 2.4.4 (was 2.2.0)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4196920Z   video_player 2.11.1 (2.14.1 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4197275Z   video_player_android 2.9.5 (2.12.4 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4197638Z   video_player_avfoundation 2.11.0 (2.12.4 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4197989Z   vm_service 15.2.0 (15.4.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4198300Z   web 1.1.1 (1.1.2 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4198608Z   webdriver 3.1.0 (3.2.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4198927Z   webview_flutter_android 4.12.0 (4.14.1 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4199296Z   webview_flutter_wkwebview 3.25.1 (3.27.2 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4199633Z   win32 5.15.0 (6.4.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4199940Z   win32_registry 2.1.0 (3.0.3 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4200243Z   xml 7.0.1 (7.1.0 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4200512Z   yaml 3.1.3 (3.1.4 available)
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4200926Z Changed 8 dependencies!
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4201238Z 2 packages are discontinued.
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4201661Z 117 packages have newer versions incompatible with dependency constraints.
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.4202243Z Try `flutter pub outdated` for more information.
+ffi-smoke	Flutter pub get	2026-11-16T10:16:38.6743495Z Upgrading analysis_options.yaml to exclude build and platform directories.
+ffi-smoke	运行 FFI 集成冒烟测试	﻿2026-11-16T10:16:39.1777214Z ##[group]Run flutter test integration_test/ffi_smoke_test.dart -d windows
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:16:39.1777825Z ^[[36;1mflutter test integration_test/ffi_smoke_test.dart -d windows^[[0m
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:16:39.1856665Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:16:39.1857041Z env:
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:16:39.1857243Z   CARGO_HOME: C:\Users\runneradmin\.cargo
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:16:39.1857503Z   CARGO_INCREMENTAL: 0
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:16:39.1857707Z   CARGO_TERM_COLOR: always
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:16:39.1857927Z   CACHE_ON_FAILURE: false
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:16:39.1858352Z   FLUTTER_ROOT: C:\hostedtoolcache\windows\flutter\stable-3.50.0-x64/flutter
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:16:39.1875663Z   PUB_CACHE: C:\Users\runneradmin\AppData\Local\Pub\Cache
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:16:39.1876209Z ##[endgroup]
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:16:42.6057643Z 
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:18:57.0482817Z Building Windows application...                                   133.5s
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:18:57.0526460Z √ Built build\windows\x64\runner\Debug\flutter_legado.exe
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:19:06.4141305Z ##[group]✅ Passing tests
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:19:06.4146115Z ✅ Flutter-Rust FFI smoke initialize() does not throw
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:19:06.4167028Z [RustApi] ttsSetCacheDir -> C:\Users\runneradmin\AppData\Roaming\io.legado\flutter_legado\tts_cache（ok=true）
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:19:06.4220056Z [RustApi] setCacheDir -> C:\Users\runneradmin\AppData\Local\io.legado\flutter_legado\js_cache
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:19:06.4228160Z [RustApi] setImageCacheDir -> C:\Users\runneradmin\AppData\Local\io.legado\flutter_legado\image_cache
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:19:06.4255224Z [RustApi] setAudioCacheDir -> C:\Users\runneradmin\AppData\Local\io.legado\flutter_legado\audio_cache
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:19:06.4268558Z [RustApi] 设备 ID 注入失败：MissingPluginException(No implementation found for method getAndroidId on channel legado/device_id)
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:19:06.4286140Z [RustApi] 主题注入完成（palette=def mode=0）
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:19:06.4289721Z [RustApi] 阅读配置注入完成（bgIndex=0）
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:19:06.4290838Z ✅ Flutter-Rust FFI smoke getVersion() returns a dotted version
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:19:06.4332546Z ✅ Flutter-Rust FFI smoke getBookSources() FFI round-trip
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:19:06.4883719Z ##[endgroup]
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:19:06.5023556Z 
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:19:06.5036743Z 🎉 3 tests passed.
+ffi-smoke	Post Run subosito/flutter-action@v2	﻿2026-11-16T10:19:06.6855201Z Post job cleanup.
+ffi-smoke	Post Run Swatinem/rust-cache@v2	﻿2026-11-16T10:19:06.7079990Z Post job cleanup.
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6042849Z ##[group]Cache Configuration
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6044323Z Cache Provider:
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6044917Z     github
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6048063Z Workspaces:
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6048639Z     D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6049314Z Cache Paths:
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6049938Z     C:\Users\runneradmin\.cargo\bin
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6050548Z     C:\Users\runneradmin\.cargo\.crates.toml
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6051256Z     C:\Users\runneradmin\.cargo\.crates2.json
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6051947Z     C:\Users\runneradmin\.cargo\registry
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6052558Z     C:\Users\runneradmin\.cargo\git
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6053207Z     D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\target
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6053737Z Restore Key:
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6054076Z     v0-rust-ffi-smoke-Windows_NT-x64-ea627442
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6054530Z Cache Key:
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6054896Z     v0-rust-ffi-smoke-Windows_NT-x64-ea627442-b163ef60
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6055441Z .. Prefix:
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6055755Z   - v0-rust-ffi-smoke-Windows_NT-x64
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6056212Z .. Environment considered:
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6056574Z   - Rust Versions:
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6057106Z     - 1.100.0 x86_64-pc-windows-msvc 0ef1bc386059596dada8fb65b50425aab2ea637a
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6057730Z   - CARGO_HOME
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6058034Z   - CARGO_INCREMENTAL
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6058360Z   - CARGO_TERM_COLOR
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6058707Z .. Lockfiles considered:
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6059705Z   - D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\.cargo\config.toml
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6060425Z   - D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\Cargo.lock
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6061652Z   - D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-book\Cargo.toml
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6062519Z   - D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-core\Cargo.toml
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6063322Z   - D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-db\Cargo.toml
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6064159Z   - D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-fetcher\Cargo.toml
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6065130Z   - D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-ffi\Cargo.toml
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6065984Z   - D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-js\Cargo.toml
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6066871Z   - D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-net\Cargo.toml
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6067762Z   - D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-parser\Cargo.toml
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6068695Z   - D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\legado-server\Cargo.toml
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6069588Z   - D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\rust-toolchain.toml
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6070637Z ##[endgroup]
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:08.6070869Z 
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:31.4857381Z ... Cleaning D:\a\LegadoTeamFlutter\LegadoTeamFlutter\rust\target ...
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:31.9248909Z ... Cleaning cargo registry (cache-all-crates: false) ...
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:37.9003943Z ... Cleaning cargo/bin ...
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:37.9058887Z ... Cleaning cargo git cache ...
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:37.9065673Z ... Saving cache ...
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:19:38.0252441Z [command]"C:\Program Files\Git\usr\bin\tar.exe" --posix -cf cache.tzst --exclude cache.tzst -P -C D:/a/LegadoTeamFlutter/LegadoTeamFlutter --files-from manifest.txt --force-local --use-compress-program "zstd -T0"
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:20:41.2339657Z Sent 0 of 612582176 (0.0%), 0.0 MBs/sec
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:20:42.2390232Z Sent 335544320 of 612582176 (54.8%), 159.9 MBs/sec
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:20:43.2348165Z Sent 478364448 of 612582176 (78.1%), 152.0 MBs/sec
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:20:44.2347852Z Sent 478364448 of 612582176 (78.1%), 114.0 MBs/sec
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:20:45.2361833Z Sent 478364448 of 612582176 (78.1%), 91.2 MBs/sec
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:20:46.2398792Z Sent 478364448 of 612582176 (78.1%), 76.0 MBs/sec
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:20:47.2395240Z Sent 545473312 of 612582176 (89.0%), 74.3 MBs/sec
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:20:48.2399766Z Sent 545473312 of 612582176 (89.0%), 65.0 MBs/sec
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:20:49.2405339Z Sent 545473312 of 612582176 (89.0%), 57.8 MBs/sec
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:20:50.2429325Z Sent 545473312 of 612582176 (89.0%), 52.0 MBs/sec
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:20:51.2591071Z Sent 545473312 of 612582176 (89.0%), 47.2 MBs/sec
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:20:52.2596421Z Sent 545473312 of 612582176 (89.0%), 43.3 MBs/sec
+ffi-smoke	Post Run Swatinem/rust-cache@v2	2026-11-16T10:20:53.2137177Z Sent 612582176 of 612582176 (100.0%), 45.0 MBs/sec
+ffi-smoke	Post Run actions/checkout@v7	﻿2026-11-16T10:20:53.5193589Z Post job cleanup.
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:53.7352527Z [command]"C:\Program Files\Git\bin\git.exe" version
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:53.7721973Z git version 2.56.0.windows.4
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:53.7795882Z Temporarily overriding HOME='D:\a\_temp\e5c921b4-77d2-453f-ae8c-cd3abecb3e2e' before making global git config changes
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:53.7797848Z Adding repository directory to the temporary git global config as a safe directory
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:53.7810641Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\LegadoTeamFlutter\LegadoTeamFlutter
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:53.8260771Z Removing SSH command configuration
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:53.8271762Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:53.8726167Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:54.5508838Z Removing HTTP extra header
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:54.5519832Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:54.5929798Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:55.2212584Z Removing includeIf entries pointing to credentials config files
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:55.2224108Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:55.2588110Z includeif.gitdir:D:/a/LegadoTeamFlutter/LegadoTeamFlutter/.git.path
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:55.2589137Z includeif.gitdir:D:/a/LegadoTeamFlutter/LegadoTeamFlutter/.git/worktrees/*.path
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:55.2590872Z includeif.gitdir:/github/workspace/.git.path
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:55.2591416Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:55.2648155Z [command]"C:\Program Files\Git\bin\git.exe" config --local --get-all includeif.gitdir:D:/a/LegadoTeamFlutter/LegadoTeamFlutter/.git.path
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:55.3029800Z D:\a\_temp\git-credentials-b8838937-81ec-4968-b08a-7a7384916e5e.config
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:55.3077411Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset includeif.gitdir:D:/a/LegadoTeamFlutter/LegadoTeamFlutter/.git.path D\:\\a\\_temp\\git\-credentials\-b8838937\-81ec\-4968\-b08a\-7a7384916e5e\.config
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:55.3500524Z [command]"C:\Program Files\Git\bin\git.exe" config --local --get-all includeif.gitdir:D:/a/LegadoTeamFlutter/LegadoTeamFlutter/.git/worktrees/*.path
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:55.3863832Z D:\a\_temp\git-credentials-b8838937-81ec-4968-b08a-7a7384916e5e.config
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:55.3950893Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset includeif.gitdir:D:/a/LegadoTeamFlutter/LegadoTeamFlutter/.git/worktrees/*.path D\:\\a\\_temp\\git\-credentials\-b8838937\-81ec\-4968\-b08a\-7a7384916e5e\.config
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:55.4373962Z [command]"C:\Program Files\Git\bin\git.exe" config --local --get-all includeif.gitdir:/github/workspace/.git.path
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:55.4771524Z /github/runner_temp/git-credentials-b8838937-81ec-4968-b08a-7a7384916e5e.config
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:55.4824285Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset includeif.gitdir:/github/workspace/.git.path \/github\/runner_temp\/git\-credentials\-b8838937\-81ec\-4968\-b08a\-7a7384916e5e\.config
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:55.5229124Z [command]"C:\Program Files\Git\bin\git.exe" config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:55.5575199Z /github/runner_temp/git-credentials-b8838937-81ec-4968-b08a-7a7384916e5e.config
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:55.5619631Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path \/github\/runner_temp\/git\-credentials\-b8838937\-81ec\-4968\-b08a\-7a7384916e5e\.config
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:55.6020846Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+ffi-smoke	Post Run actions/checkout@v7	2026-11-16T10:20:56.2005063Z Removing credentials config 'D:\a\_temp\git-credentials-b8838937-81ec-4968-b08a-7a7384916e5e.config'
+ffi-smoke	Complete job	﻿2026-11-16T10:20:56.2320513Z Cleaning up orphan processes
+ffi-smoke	Complete job	2026-11-16T10:20:56.2578518Z Terminate orphan process: pid (5104) (vctip)

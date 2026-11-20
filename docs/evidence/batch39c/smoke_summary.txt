@@ -1,0 +1,5 @@
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:19:06.4141305Z ##[group]✅ Passing tests
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:19:06.4146115Z ✅ Flutter-Rust FFI smoke initialize() does not throw
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:19:06.4290838Z ✅ Flutter-Rust FFI smoke getVersion() returns a dotted version
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:19:06.4332546Z ✅ Flutter-Rust FFI smoke getBookSources() FFI round-trip
+ffi-smoke	运行 FFI 集成冒烟测试	2026-11-16T10:19:06.5036743Z 🎉 3 tests passed.

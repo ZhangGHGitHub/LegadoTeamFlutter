@@ -1,0 +1,7 @@
+run=44081986433 workflow=Flutter CI conclusion=success created=2026-11-17T12:19:00Z updated=2026-11-17T12:35:06Z duration=16m06s
+job android-ffi-sync=success (12:19:02 -> 12:23:18, 4m16s)
+job analyze=success (12:23:21 -> 12:35:06, 11m45s)
+flutter analyze: 554 issues found, severity breakdown = 554 info / 0 warning / 0 error
+flutter test: 6047 tests passed, 1 skipped (rss_web_config_test chrome headless, requires LEGADO_CHROME_HEADLESS=1)
+api_contract_test.dart: 11/11 passed
+BookApi method count independent verification: structural=348, unique names=348, doc declares 348

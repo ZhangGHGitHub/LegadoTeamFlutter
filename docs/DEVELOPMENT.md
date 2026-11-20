@@ -12,7 +12,7 @@
 ┌─────────────────────────────────────────────────────┐
 │                   Flutter UI 层                      │
 │              (flutter_legado/)                       │
-│     111 个页面 · 测试数以 CI 为准 · 103+ FFI 函数       │
+│     111 个页面 · 测试数以 CI 为准 · 330+ FFI 函数       │
 └────────────────────────┬────────────────────────────┘
                          │  flutter_rust_bridge (FFI)
 ┌────────────────────────▼────────────────────────────┐
@@ -26,7 +26,7 @@
 │            (公共类型 / 错误 / 工具)                   │
 └─────────────────────────────────────────────────────┘
 
-legado-server — 独立 HTTP 服务（axum + 53 REST + 5 WS + MCP）
+legado-server — 独立 HTTP 服务（axum + 63 REST(`/api`) + 40 原版 Web 端点 + 5 WS（3 在 `/api`、2 在原版独立端口）+ 2 MCP）
 ```
 
 ### 核心能力
@@ -35,7 +35,7 @@ legado-server — 独立 HTTP 服务（axum + 53 REST + 5 WS + MCP）
 - **JS 沙箱引擎**：QuickJS 真实实现，40+ 宿主 API，java 命名空间兼容
 - **网络引擎**：reqwest + 中间件链（重试/限流/Cookie）+ WebDAV 云同步
 - **书籍格式**：EPUB / TXT / MOBI / PDF 解析 + 导出
-- **数据库**：SQLite Schema（版本以 `rust/legado-db/src/schema.rs` 的 `SCHEMA_VERSION` 常量为唯一准，当前 119）+ 31 个 Repository + Room 数据导入
+- **数据库**：SQLite Schema（版本以 `rust/legado-db/src/schema.rs` 的 `SCHEMA_VERSION` 常量为唯一准，当前 119）+ 31 个 Repository（口径：`rust/legado-db/src/repository/*.rs` 排除 `mod.rs` 的模块文件数）+ Room 数据导入
 - **HTTP 服务**：axum REST API + WebSocket 实时通道 + MCP Server
 - **Flutter UI**：书架 / 阅读器 / 搜索 / 书源管理 / 设置 / RSS 等 111 个页面
 
@@ -68,7 +68,7 @@ flutter --version
 ### 3. flutter_rust_bridge CLI
 
 ```bash
-cargo install flutter_rust_bridge_codegen --version 2.12.0
+cargo install flutter_rust_bridge_codegen --version 2.11.1
 ```
 
 ### 4. C 编译器（QuickJS 需要）
@@ -97,7 +97,7 @@ legado/
 │   ├── legado-net/              # 网络引擎：HTTP/Cookie/RSS/WebDAV/中间件
 │   ├── legado-js/               # JS 沙箱：QuickJS + 40+ 宿主 API
 │   ├── legado-book/             # 书籍格式：EPUB/TXT/MOBI/PDF 解析与导出 + TXT 搜索
-│   ├── legado-db/               # 数据库：SQLite（Schema 版本见 schema.rs 的 SCHEMA_VERSION）+ 31 Repository
+│   ├── legado-db/               # 数据库：SQLite（Schema 版本见 schema.rs 的 SCHEMA_VERSION）+ 31 Repository（`repository/*.rs` 排除 `mod.rs`）
 │   ├── legado-fetcher/          # 书源抓取编排：校验规则链、失效分组、搜索/详情/目录/正文
 │   ├── legado-ffi/              # FFI 出口：flutter_rust_bridge 聚合层
 │   ├── legado-server/           # HTTP 服务：axum REST + WS + MCP
@@ -106,7 +106,7 @@ legado/
 │   └── PROGRESS.md              # 历史进度快照（2026-08-07 冻结，当前状态见 docs/REFACTORING_ACTIVE_PLAN.md）
 ├── flutter_legado/              # Flutter 跨平台 UI
 │   ├── lib/                     # Dart 源码
-│   ├── test/                    # Flutter 测试（24 个文件）
+│   ├── test/                    # Flutter 测试（548 个 .dart 文件，测试数以 CI 为准）
 │   ├── scripts/                 # 构建/代码生成脚本
 │   └── pubspec.yaml             # Flutter 依赖配置
 ├── app/                         # 原 Android Kotlin 版（历史代码）
@@ -268,7 +268,7 @@ GitHub Actions 自动执行以下检查（排除 legado-ffi，因其需要 Flutt
 |------|------|------|
 | 整体项目 | v4.0.0-alpha | Git tag 格式 |
 | Rust crates | 0.2.0 | Workspace 统一版本 |
-| Flutter app | 2.0.0+2 | pubspec.yaml |
+| Flutter app | 2.0.513+514 | pubspec.yaml |
 
 ### Git 提交规范
 

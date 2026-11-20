@@ -1,0 +1,3 @@
+check	Cargo test legado-server (quickjs)	2026-11-15T09:22:57.8440681Z test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+check	Cargo audit (RustSec advisories)	2026-11-15T09:23:01.2579743Z ^[[0m^[[0m^[[1m^[[33mwarning:^[[0m 10 allowed warnings found
+check	Cargo audit (RustSec advisories)	2026-11-15T09:23:01.2579743Z ^[[0m^[[0m^[[1m^[[33mwarning:^[[0m 10 allowed warnings found

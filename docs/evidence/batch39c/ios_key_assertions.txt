@@ -1,0 +1,30 @@
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:14.0033030Z Xcode build done.                                           108.7s
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1800100Z ##[group]✅ E2E：离线本地书源 搜索→进书→翻章（真实 Rust FFI 链路）
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1804450Z [E2E] 本地假书源服务已启动: http://127.0.0.1:53738
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1829890Z [RustApi] ttsSetCacheDir -> /Users/runner/Library/Developer/CoreSimulator/Devices/4A57FB15-6E7C-49CC-BE93-450B18BD286E/data/Containers/Data/Application/D9761A5D-1287-4018-9EC2-42CC50FC6019/Library/Application Support/tts_cache（ok=true）
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1834050Z [RustApi] setCacheDir -> /Users/runner/Library/Developer/CoreSimulator/Devices/4A57FB15-6E7C-49CC-BE93-450B18BD286E/data/Containers/Data/Application/D9761A5D-1287-4018-9EC2-42CC50FC6019/Library/Caches/js_cache
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1835830Z [RustApi] setImageCacheDir -> /Users/runner/Library/Developer/CoreSimulator/Devices/4A57FB15-6E7C-49CC-BE93-450B18BD286E/data/Containers/Data/Application/D9761A5D-1287-4018-9EC2-42CC50FC6019/Library/Caches/image_cache
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1842520Z [RustApi] setAudioCacheDir -> /Users/runner/Library/Developer/CoreSimulator/Devices/4A57FB15-6E7C-49CC-BE93-450B18BD286E/data/Containers/Data/Application/D9761A5D-1287-4018-9EC2-42CC50FC6019/Library/Caches/audio_cache
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1844140Z [RustApi] 设备 ID 注入完成（iOS IDFV）：6469AFE7-EFB2-4C9E-ABD7-507DE674BFAF
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1845090Z [RustApi] 主题注入完成（palette=def mode=0）
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1845750Z [RustApi] 阅读配置注入完成（bgIndex=0）
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1846260Z [E2E] 已导入本地书源: http://127.0.0.1:53738 (count=1)
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1846870Z dynamic_color: Dynamic color not detected on this device.
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1852120Z [WebDavBackupService] 未配置 WebDAV，跳过备份上传
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1853550Z [AutoBackupScheduler] 自动备份完成: /Users/runner/Library/Developer/CoreSimulator/Devices/4A57FB15-6E7C-49CC-BE93-450B18BD286E/data/Containers/Data/Application/D9761A5D-1287-4018-9EC2-42CC50FC6019/Documents/backup/legado_backup_1794825572550.json（上传=false）
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1855460Z [E2E] 已提交搜索: e2e
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1856130Z 搜索范围: 全部书源（无筛选）
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1856570Z [E2E] 搜索结果 2 条: {E2E测试书1, E2E测试书2}
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1864110Z [BookInfo] 首屏就绪 184ms name=E2E测试书1 chapters=0 tocLoading=true
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1864600Z [BookInfo] webbookInfo 184ms
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1866650Z [BookInfo] toc 211ms chapters=3
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1868270Z [BookInfo] 全量完成 585ms
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1875880Z [E2E] 已进入书籍详情页（E2E测试书1）
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1877570Z [BookOpen] name=E2E测试书1 origin=http://127.0.0.1:53738 typeBits=8 route=/reader srcType=0 videoLike=false
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1878720Z [E2E] 阅读器已显示第 1 章（标记 E2E-MARKER-CH1 命中）
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1880260Z [E2E] 已经右缘点击翻章（UI 手势路径）
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1881680Z [E2E] 翻章成功：第 2 章（标记 E2E-MARKER-CH2 命中），全链路验证完成
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1889010Z [PlatformBridge] setKeepScreenOn(false)：当前平台无保持亮屏通道基准（仅 Android），no-op
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:39:56.1890340Z ##[endgroup]
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:40:01.4099170Z 
+build	Run search-read e2e (iOS simulator)	2026-11-16T10:40:01.4276700Z 🎉 1 test passed.

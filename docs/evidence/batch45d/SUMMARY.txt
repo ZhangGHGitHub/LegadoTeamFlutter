@@ -1,0 +1,10 @@
+批40~45 推送 CI 验收 — commit 7a1c4b5554efd530771b8dcc5027e56276c49304
+采集时间 2026-11-17T08:00Z 左右，仓库 ZhangGHGitHub/LegadoTeamFlutter
+
+workflow            run id        结论    耗时      关键证据
+Rust CI             44038145617   success 16m44s  6785 passed / 0 failed; "database is locked"=0; SQLITE_BUSY=0; cargo-audit ok
+Flutter CI          44038145562   success 16m55s  6061 tests passed, 1 skipped; analyze 568 info / 0 warning / 0 error
+Integration Smoke   44038145540   success 10m32s  FFI 冒烟 3 tests passed
+iOS Build           44038145492   success 37m06s  1 test passed (launcher icon) + 1 test passed (search-read e2e) + 模拟器启动冒烟
+
+所有四条 run 的 headSha 均为 7a1c4b5554efd530771b8dcc5027e56276c49304。

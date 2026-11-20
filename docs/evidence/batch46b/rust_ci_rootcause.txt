@@ -1,0 +1,14 @@
+=== parallel 20 runs: pass=14 fail=6 (30% flake) ===
+
+=== single-thread 8 runs: all pass (see rust_ci_local_repro_isolation.txt) ===
+
+=== failure detail ===
+---- host_api::platform::tests::test_open_video_player_bridge_payload stdout ----
+
+thread 'host_api::platform::tests::test_open_video_player_bridge_payload' (53912) panicked at legado-js\src\host_api\platform.rs:479:9:
+assertion `left == right` failed
+  left: String("https://a.example.com/book/1")
+ right: ""
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
