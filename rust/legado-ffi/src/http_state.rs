@@ -261,9 +261,11 @@ fn make_cookie_persistence() -> Option<Arc<dyn CookiePersistence>> {
 // 注册。
 //
 // 两个写方共用行 → **合并写**（[`persist_cookie_row_merged`]，键集并集、
-// 同名键新值胜），`remove` / `remove_all` 在删 DB 行的同时同步清 HTTP 客户端
-// 内存 CookieStore 对应域（统一存储清除语义：JS 清除 = 该域 cookie 全层
-// 清除，jar 后续写回不会从旧内存复活已清域）。
+// 同名键新值胜）。`upsert` 在落库后同步写共享客户端内存 jar（按键合并，
+// R04：JS 设的 cookie 必须随同进程 HTTP 请求发出）；`remove` / `remove_all`
+// 在删 DB 行的同时同步清 HTTP 客户端内存 CookieStore 对应域（统一存储清除
+// 语义：JS 清除 = 该域 cookie 全层清除，jar 后续写回不会从旧内存复活已清域）。
+// 写/清两侧对 jar 的同步必须成对存在，否则 DB 与 jar 双向漂移。
 
 /// 基于 [`legado_db::CookieRepository`] 的 JS 宿主 Cookie 持久化下沉
 ///
@@ -271,18 +273,49 @@ fn make_cookie_persistence() -> Option<Arc<dyn CookiePersistence>> {
 /// DB 未初始化 / 读写失败仅记日志（JS 内存写入已成功，持久化失败不向
 /// JS 传播——对齐上游「持久化宽容失败」方向）。
 ///
-/// **锁序不变式**：`remove` / `remove_all` 先完成 DB 工作，再以**作用域内
-/// 写锁**清共享客户端内存 CookieStore（写锁临界区内不含 DB/sink 调用）；
-/// 调用方（`clear_cookies` / `clear_all_cookies` 的发起者）不得同时持有
-/// 客户端 cookie store 的读/写 guard（`client.cookie_store().read()/write()`
-/// 的 guard 跨调用存活）——同线程读 guard + 本下沉的 `write()` 是
-/// `std::sync::RwLock` 保证的自死锁（写方等待全部读方释放，而读方即
-/// 本线程、永不释放）。测试断言 jar 内存后须先释放读 guard 再触发清除。
+/// **锁序不变式**：三个写方法都**先完成 DB 工作**（`upsert` 经
+/// [`persist_cookie_row_merged`] 的 C→P；`remove`/`remove_all` 经
+/// [`delete_cookie_rows`]/[`clear_all_cookie_rows`] 的 C→P），再以
+/// **作用域内写锁**同步共享客户端内存 CookieStore（写锁临界区内不含
+/// DB/sink 调用）；调用方（`with_store_update` / `clear_cookies` /
+/// `clear_all_cookies` 的发起者）不得同时持有客户端 cookie store 的读/写
+/// guard（`client.cookie_store().read()/write()` 的 guard 跨调用存活）——
+/// 同线程读 guard + 本下沉的 `write()` 是 `std::sync::RwLock` 保证的自死锁
+/// （写方等待全部读方释放，而读方即本线程、永不释放）。测试断言 jar 内存
+/// 后须先释放读 guard 再触发写入/清除。
+///
+/// **写侧 jar 同步（R04）**：`upsert` 亦同步 jar（按键合并，见方法文档）——
+/// 与 `remove`/`remove_all` 的清除同步双向对称，否则 JS 设的 cookie 不随
+/// 同进程 HTTP 请求发出。
 pub struct JsCookieDbSink;
 
 impl legado_js::host_api::cookie_store::CookieSink for JsCookieDbSink {
+    /// JS `setCookie` 下沉：先落 DB 行，再同步共享 HTTP 客户端内存 jar
+    ///
+    /// **双向对称（R04）**：`remove` / `remove_all` 早已同步 jar，写侧此前只落
+    /// DB → 同进程内 JS 设的 cookie 不随 HTTP 请求发出（jar 仍是旧值或没有该
+    /// 键），登录态两侧不一致。现写侧同样同步，语义为**按键合并**（与
+    /// [`persist_cookie_row_merged`] 的 DB 合并口径一致）：只覆盖 `cookie_str`
+    /// 出现的同名键，jar 中该域其余键保留——不得整体替换该域，否则 HTTP 侧
+    /// 已写入而 JS 视图未包含的键会被抹掉（后续请求丢 cookie）。
+    ///
+    /// **锁序（D→C→P，释放后 → J）**：调用方（`with_store_update` /
+    /// `clear_cookies_locked` 等 JS 写侧）已持该域按域写通道（D）；本函数先经
+    /// [`persist_cookie_row_merged`] 完成 C（[`COOKIE_PERSIST_RW_LOCK`]）+ P
+    ///（`with_database` 连接池），**其内部作用域结束即释放**；随后才取 jar
+    /// 写锁（J）做纯内存合并。J 临界区内不做任何 DB/sink 调用，故不存在
+    /// J→C/P 的回边；调用方也不得在持 jar 读/写 guard 时调用本函数
+    ///（同线程读 guard + `write()` = 自死锁，见 [`JsCookieDbSink`] 文档）。
     fn upsert(&self, domain_key: &str, cookie_str: &str) {
         persist_cookie_row_merged(domain_key, cookie_str);
+        // 同步写入共享 HTTP 客户端内存 CookieStore（合并语义，见上）
+        if let Ok(client) = shared_client() {
+            client
+                .cookie_store()
+                .write()
+                .unwrap_or_else(|p| p.into_inner())
+                .set_cookies_from_string(domain_key, cookie_str);
+        }
     }
 
     fn remove(&self, domain_key: &str) {
@@ -1051,6 +1084,211 @@ mod tests {
             "",
             "全量清除 + 回填后不得复活已清除域"
         );
+    }
+
+    // ─── R04：JS 写侧 → 共享 HTTP 客户端 jar 内存同步 ─────────────────────
+
+    /// 带超时执行用例体（死锁 = 失败）
+    ///
+    /// 全部测试串行锁（`TEST_LOCK` / 全局 store / 池 / DB）由**主线程**持有：
+    /// - 超时 panic 时主线程正常 unwind → 锁正常释放（不中毒，不级联）；
+    /// - 用例体的 panic 经 `catch_unwind` 捕获后在主线程 `resume_unwind`，
+    ///   保留原断言信息（否则 worker 线程 panic 只会表现为通道断开）。
+    ///
+    /// 目的：R04 的修复新增「JS 写 → jar 写锁」路径，若锁序回归（如持 J 取 C
+    /// 或同线程读 guard + 写锁）会**挂起**而非报错——挂起的测试会永久卡住
+    /// 整个测试二进制，必须由超时显式转成失败。
+    fn run_with_deadlock_timeout<F>(name: &str, f: F)
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+            let _ = tx.send(outcome);
+        });
+        match rx.recv_timeout(std::time::Duration::from_secs(120)) {
+            Ok(Ok(())) => {}
+            Ok(Err(payload)) => std::panic::resume_unwind(payload),
+            Err(_) => panic!("{name} 超时（疑似死锁）"),
+        }
+    }
+
+    /// 读共享客户端 jar 内存中该域该键的值
+    ///
+    /// 读 guard 必须在函数内释放（**不得跨调用存活**）：随后任何 sink 写会
+    /// 取同一 `Arc<RwLock<CookieStore>>` 的写锁，同线程读 guard + `write()`
+    /// 是 std 保证的自死锁（见 [`JsCookieDbSink`] 文档）。
+    fn jar_get(domain: &str, name: &str) -> Option<String> {
+        let client = shared_client().expect("共享客户端必须可构建");
+        let store = client
+            .cookie_store()
+            .read()
+            .unwrap_or_else(|p| p.into_inner());
+        store.get_key(domain, name)
+    }
+
+    /// R04 核心：JS `setCookie` 必须同步写入共享 HTTP 客户端内存 CookieStore
+    ///
+    /// 修复前 `JsCookieDbSink::upsert` 只落 DB（`persist_cookie_row_merged`），
+    /// jar 侧完全不知情 → 同进程内后续 HTTP 请求仍不带（或带旧值）该 cookie，
+    /// 登录态两侧不一致；而 `remove` / `remove_all` 早已同步 jar（双向不对称）。
+    #[test]
+    fn test_js_cookie_sink_upsert_covers_jar_memory() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let _gs = crate::test_support::lock_global_store();
+        let _p = crate::test_support::lock_pool_tests();
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        run_with_deadlock_timeout("test_js_cookie_sink_upsert_covers_jar_memory", || {
+            use legado_js::host_api::cookie_store;
+
+            const URL: &str = "https://r04.core.test/";
+            let dk = cookie_store::normalized_cookie_key(URL);
+            register_js_cookie_sink();
+            cookie_store::clear_cookies(URL); // 幂等清理（JS 内存 + DB + jar）
+            assert!(
+                jar_get(&dk, "sid").is_none(),
+                "前置：jar 内存不得已有该域 cookie（红态基线）"
+            );
+
+            cookie_store::set_cookie(URL, "sid", "NEW");
+
+            assert_eq!(
+                jar_get(&dk, "sid").as_deref(),
+                Some("NEW"),
+                "JS setCookie 必须同步进共享客户端 jar 内存（否则同进程 HTTP 请求不发该 cookie）"
+            );
+            // quickjs 档（生产档）：归一键 = ETLD+1，正是 HTTP 请求注入时按
+            // URL 计算出的键——此处断言「HTTP 侧读到的键」能命中，闭合 R04。
+            #[cfg(feature = "quickjs")]
+            {
+                let http_key = legado_net::cookie_store::cookie_domain_key(URL)
+                    .expect("http(s) URL 必须可解析域名键");
+                assert_eq!(
+                    jar_get(&http_key, "sid").as_deref(),
+                    Some("NEW"),
+                    "jar 内该 cookie 必须位于 HTTP 请求按 URL 计算的域名键下"
+                );
+            }
+        });
+    }
+
+    /// 合并语义：jar 该域既有键不得被 JS 写抹掉
+    ///
+    /// `persist_cookie_row_merged` 对 DB 是「按键并集合并」，jar 侧必须同口径
+    /// ——若用「整体替换该域」的语义，jar 里 HTTP 侧写入但 JS 视图未包含的键
+    /// 会消失（后续请求丢 cookie）。
+    #[test]
+    fn test_js_cookie_sink_upsert_merges_jar_domain() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let _gs = crate::test_support::lock_global_store();
+        let _p = crate::test_support::lock_pool_tests();
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        run_with_deadlock_timeout("test_js_cookie_sink_upsert_merges_jar_domain", || {
+            use legado_js::host_api::cookie_store;
+
+            const URL: &str = "https://r04.merge.test/";
+            let dk = cookie_store::normalized_cookie_key(URL);
+            register_js_cookie_sink();
+            cookie_store::clear_cookies(URL);
+
+            // 预置 jar 该域既有 cookie（模拟 HTTP Set-Cookie 已写入的内存态）
+            {
+                let client = shared_client().unwrap();
+                client
+                    .cookie_store()
+                    .write()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .set_cookies_from_string(&dk, "a=1");
+            }
+
+            cookie_store::set_cookie(URL, "b", "2");
+
+            assert_eq!(
+                jar_get(&dk, "a").as_deref(),
+                Some("1"),
+                "jar 既有键不得被 JS 写整体替换抹掉"
+            );
+            assert_eq!(
+                jar_get(&dk, "b").as_deref(),
+                Some("2"),
+                "JS 新键必须写入 jar"
+            );
+        });
+    }
+
+    /// 同名覆盖：JS 新值必须接管 jar 内同名旧值
+    #[test]
+    fn test_js_cookie_sink_upsert_overwrites_same_name_in_jar() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let _gs = crate::test_support::lock_global_store();
+        let _p = crate::test_support::lock_pool_tests();
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        run_with_deadlock_timeout(
+            "test_js_cookie_sink_upsert_overwrites_same_name_in_jar",
+            || {
+                use legado_js::host_api::cookie_store;
+
+                const URL: &str = "https://r04.overwrite.test/";
+                let dk = cookie_store::normalized_cookie_key(URL);
+                register_js_cookie_sink();
+                cookie_store::clear_cookies(URL);
+
+                {
+                    let client = shared_client().unwrap();
+                    client
+                        .cookie_store()
+                        .write()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .set_cookies_from_string(&dk, "sid=OLD");
+                }
+
+                cookie_store::set_cookie(URL, "sid", "NEW");
+
+                assert_eq!(
+                    jar_get(&dk, "sid").as_deref(),
+                    Some("NEW"),
+                    "同名键 JS 新值必须覆盖 jar 旧值"
+                );
+            },
+        );
+    }
+
+    /// 删除路径回归（R04 修复不得破坏既有 `remove` → jar 同步语义）
+    #[test]
+    fn test_js_cookie_sink_remove_still_clears_jar_memory() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let _gs = crate::test_support::lock_global_store();
+        let _p = crate::test_support::lock_pool_tests();
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        run_with_deadlock_timeout("test_js_cookie_sink_remove_still_clears_jar_memory", || {
+            use legado_js::host_api::cookie_store;
+
+            const URL: &str = "https://r04.remove.test/";
+            let dk = cookie_store::normalized_cookie_key(URL);
+            register_js_cookie_sink();
+            cookie_store::clear_cookies(URL);
+
+            // 写入路径已把 cookie 同步进 jar，再走删除路径必须齐清
+            cookie_store::set_cookie(URL, "sid", "NEW");
+            assert_eq!(
+                jar_get(&dk, "sid").as_deref(),
+                Some("NEW"),
+                "前置：写入后 jar 必须已有该 cookie"
+            );
+
+            cookie_store::clear_cookies(URL);
+
+            assert!(
+                jar_get(&dk, "sid").is_none(),
+                "JS 删除后 jar 对应域必须同步清除"
+            );
+            assert!(db_cookie_row(&dk).is_none(), "删除后 DB 行必须删除");
+        });
     }
 
     /// 写放大缓解吞吐：1000 次值变化 `set_cookie`（每次触发一次 DB upsert，
