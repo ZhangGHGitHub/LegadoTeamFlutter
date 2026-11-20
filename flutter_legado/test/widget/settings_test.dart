@@ -46,6 +46,10 @@ void main() {
     AppStrings.setLocale('zh');
     SharedPreferences.setMockInitialValues({'app_locale': 'zh'});
     mockApi = FakeServersRustApi();
+    // C1：备份与恢复全页加载会读 caches `config:backupIgnoreTables`；未 stub
+    // 时 mocktail 返回 null 会触发「读取备份内容忽略配置失败」告警（虽被兜底
+    // 捕获）。默认空配置，个别用例仍可按需覆写 getConfig。
+    when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
     addressResolver = FakeWebServiceAddressResolver();
     container = ProviderContainer(
       overrides: [

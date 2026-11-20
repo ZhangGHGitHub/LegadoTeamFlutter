@@ -36,6 +36,10 @@ void main() {
 
   Future<void> pumpScreen(WidgetTester tester) async {
     mockApi = FakeServersRustApi();
+    // C1：页面加载会读 caches `config:backupIgnoreTables`；未 stub 时
+    // mocktail 返回 null 会触发「读取备份内容忽略配置失败」告警（虽被兜底
+    // 捕获），默认给空配置使页面加载路径保持干净。
+    when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [bookApiProvider.overrideWithValue(mockApi)],
@@ -142,6 +146,8 @@ void main() {
     settings = SettingsService();
 
     mockApi = FakeServersRustApi();
+    // C1：同上，页面加载读 `config:backupIgnoreTables` 需有 stub。
+    when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
     when(() => mockApi.backup(any())).thenAnswer((_) async => backupFile.path);
     when(() => mockApi.getBooks()).thenAnswer((_) async => []);
 
