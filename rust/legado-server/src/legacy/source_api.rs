@@ -37,7 +37,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::extract::{Query, State};
-use axum::http::{HeaderMap, HeaderValue};
+use axum::http::{header, HeaderMap, HeaderValue};
 use axum::response::Response;
 use serde_json::{json, Value};
 
@@ -139,9 +139,56 @@ pub fn token_error_response(uri_path: &str, origin: Option<&str>) -> Response {
     resp
 }
 
+// ─── 登录态剔除（`getBookSource` / `getBookSources`） ───────────────────────
+
+/// 从书源 JSON 中剔除登录态键 `variable`
+///
+/// 原版依据：`BookSourceController.sources`（:28-35）/ `getSource`（:196-205）
+/// 免令牌返回**完整 `BookSource` 实体**，但原版实体**没有 `variable` 字段**
+/// ——登录态由 `CacheManager.put("sourceVariable_<key>")` 单独存放
+/// （`BaseSource.kt:329-346`），实体里只有 `variableComment`（注释文本）。
+///
+/// 我方 `BookSource.variable` 是实体字段（`rename = "variable"`，
+/// `rust/legado-core/src/models/book_source.rs`），若原样序列化会多泄漏登录态
+/// ——属实现差异导致的回归。剔除它是**对齐原版实际行为**，不是偏离。
+///
+/// 实现：调用方先 `variable.clear()`，该字段带
+/// `skip_serializing_if = "str::is_empty"`，空串本就不输出；此处再对序列化
+/// 结果显式 `remove("variable")` 兜底，使「响应彻底不含该键」不依赖上游
+/// serde 属性是否被改动（防回归）。支持数组与单对象两种形态。
+///
+/// **只剔 `variable`**：legacy 端点必须保留完整规则 / `jsLib` / `header` 等
+/// 字段（Web UI 编辑书源、第三方脚本依赖），不能退化成 `/api/sources` 的摘要视图。
+fn strip_login_variable(mut value: Value) -> Value {
+    fn remove_key(value: &mut Value) {
+        if let Some(obj) = value.as_object_mut() {
+            obj.remove("variable");
+        }
+    }
+    match &mut value {
+        Value::Array(items) => items.iter_mut().for_each(remove_key),
+        single => remove_key(single),
+    }
+    value
+}
+
+/// 书源读端点响应：`to_response` + `Cache-Control: no-store`
+///
+/// 响应含完整书源规则（抓取地址/请求头/脚本），不应被中间层或浏览器缓存。
+/// 白名单在 [`crate::web_assets::with_api_headers`] 内按路径匹配，本模块
+/// 不改动该函数，直接在此覆盖头（同 review_api 的局部头策略）。
+fn source_read_response(rd: &ReturnData, uri: &str, origin: Option<&str>) -> Response {
+    let mut resp = to_response(rd, uri, origin);
+    resp.headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    resp
+}
+
 // ─── GET /getBookSource ─────────────────────────────────────────────────────
 
 /// GET `/getBookSource?url=`（BookSourceController.getSource，:196-205）
+///
+/// 登录态 `variable` 剔除见 [`strip_login_variable`]。
 pub async fn get_book_source(
     State(state): State<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
@@ -151,7 +198,7 @@ pub async fn get_book_source(
     let uri = "/getBookSource";
     let url = params.get("url").cloned().unwrap_or_default();
     if url.is_empty() {
-        return to_response(
+        return source_read_response(
             &ReturnData::error("参数url不能为空，请指定源地址"),
             uri,
             origin.as_deref(),
@@ -160,15 +207,19 @@ pub async fn get_book_source(
     let rd = {
         let db = state.db.lock().await;
         match BookSourceRepository::new(db.connection()).find_by_url(&url) {
-            Ok(Some(source)) => match serde_json::to_value(&source) {
-                Ok(value) => ReturnData::success(value),
-                Err(e) => ReturnData::error(e.to_string()),
-            },
+            Ok(Some(mut source)) => {
+                // 登录态置空（空串经 skip_serializing_if 不输出，下方再兜底删键）
+                source.variable.clear();
+                match serde_json::to_value(&source) {
+                    Ok(value) => ReturnData::success(strip_login_variable(value)),
+                    Err(e) => ReturnData::error(e.to_string()),
+                }
+            }
             Ok(None) => ReturnData::error("未找到源，请检查书源地址"),
             Err(e) => ReturnData::error(e.to_string()),
         }
     };
-    to_response(&rd, uri, origin.as_deref())
+    source_read_response(&rd, uri, origin.as_deref())
 }
 
 // ─── GET /getBookSources ────────────────────────────────────────────────────
@@ -176,7 +227,8 @@ pub async fn get_book_source(
 /// GET `/getBookSources`（BookSourceController.sources，:28-35）
 ///
 /// 取数对齐 `appDb.bookSourceDao.all`（全部书源，含停用，按 customOrder 升序）；
-/// 空列表 → errorMsg「设备源列表为空」。
+/// 空列表 → errorMsg「设备源列表为空」。登录态 `variable` 剔除见
+/// [`strip_login_variable`]（规则/`jsLib`/`header` 等字段保持完整）。
 pub async fn get_book_sources(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     let origin = origin_of(&headers);
     let uri = "/getBookSources";
@@ -184,14 +236,19 @@ pub async fn get_book_sources(State(state): State<Arc<AppState>>, headers: Heade
         let db = state.db.lock().await;
         match BookSourceRepository::new(db.connection()).find_all() {
             Ok(sources) if sources.is_empty() => ReturnData::error("设备源列表为空"),
-            Ok(sources) => match serde_json::to_value(&sources) {
-                Ok(value) => ReturnData::success(value),
-                Err(e) => ReturnData::error(e.to_string()),
-            },
+            Ok(mut sources) => {
+                for source in sources.iter_mut() {
+                    source.variable.clear();
+                }
+                match serde_json::to_value(&sources) {
+                    Ok(value) => ReturnData::success(strip_login_variable(value)),
+                    Err(e) => ReturnData::error(e.to_string()),
+                }
+            }
             Err(e) => ReturnData::error(e.to_string()),
         }
     };
-    to_response(&rd, uri, origin.as_deref())
+    source_read_response(&rd, uri, origin.as_deref())
 }
 
 // ─── GET /getRssSource ──────────────────────────────────────────────────────
@@ -398,5 +455,36 @@ mod tests {
         assert!(!parse_required("false"));
         assert!(!parse_required(" 0 "));
         // 缺省（缓存无键）由 load_js_source_api_config 的 unwrap_or(true) 覆盖
+    }
+
+    /// R06：`strip_login_variable` 对单对象/数组两种形态都彻底删除 `variable`，
+    /// 且不影响其他字段（规则/`jsLib`/`header` 保持原样）
+    #[test]
+    fn test_strip_login_variable_removes_key_only() {
+        let single = json!({
+            "bookSourceUrl": "https://a.example.com",
+            "variable": "user=secret-token",
+            "jsLib": "var lib = 1;",
+            "ruleSearch": {"bookList": ".book"},
+        });
+        let stripped = strip_login_variable(single);
+        assert!(stripped.get("variable").is_none(), "single: {stripped}");
+        assert_eq!(stripped["jsLib"], "var lib = 1;");
+        assert_eq!(stripped["ruleSearch"]["bookList"], ".book");
+
+        let array = json!([
+            {"bookSourceUrl": "https://a.example.com", "variable": "user=secret-token"},
+            {"bookSourceUrl": "https://b.example.com"},
+        ]);
+        let stripped = strip_login_variable(array);
+        let items = stripped.as_array().unwrap();
+        assert_eq!(items.len(), 2);
+        assert!(
+            items.iter().all(|s| s.get("variable").is_none()),
+            "{stripped}"
+        );
+        // 空串形态（调用方 variable.clear() 后序列化）同样不出现键
+        let empty = strip_login_variable(json!([{"bookSourceUrl": "https://c.example.com"}]));
+        assert!(empty[0].get("variable").is_none());
     }
 }

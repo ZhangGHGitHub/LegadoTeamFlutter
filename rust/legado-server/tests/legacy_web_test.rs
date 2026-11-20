@@ -2625,6 +2625,194 @@ async fn test_b4_book_source_reads_and_empty_message() {
     assert_eq!(rd["data"]["bookSourceName"], "前");
 }
 
+/// R06：legacy `GET /getBookSources` 不得泄漏登录态（`variable`）
+///
+/// 原版依据：`BookSourceController.sources`（:28-35）免令牌返回**完整
+/// `BookSource` 实体**，但原版实体**没有 `variable` 字段**——登录态存
+/// `CacheManager.put("sourceVariable_<key>")`（`BaseSource.kt:329-346`），
+/// 实体里只有 `variableComment`（注释文本）。我方 `variable` 是实体字段
+/// （`rename = "variable"`），因此必须在序列化前剔除才对齐原版实际行为。
+#[tokio::test]
+async fn test_b4_book_sources_redacts_login_variable() {
+    let state = make_test_state();
+    seed_book_source(
+        &state,
+        legado_core::models::BookSource {
+            book_source_url: "https://r06.example.com".into(),
+            book_source_name: "登录源".into(),
+            // 登录态：绝不能出现在响应里
+            variable: "user=secret-token&cookie=abc".into(),
+            // 兼容性字段：必须保留（legacy 端点与新 API 摘要视图的关键区别）
+            js_lib: Some("var lib = 1;".into()),
+            header: Some("{\"User-Agent\":\"ua\"}".into()),
+            search_url: Some("/search?q={{key}}".into()),
+            rule_search: Some(legado_core::models::SearchRule {
+                book_list: Some(".result".into()),
+                name: Some(".name".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+    )
+    .await;
+    let app = create_router(state);
+
+    // 原始响应体：不得出现 variable 键名，也不得出现登录态值
+    let (_, _, body) = get_with_headers(app.clone(), "/getBookSources", &[]).await;
+    let text = String::from_utf8(body).unwrap();
+    assert!(
+        !text.contains("secret-token"),
+        "响应体不得含登录态值: {text}"
+    );
+    assert!(
+        !text.contains("\"variable\""),
+        "响应体不得含 variable 键: {text}"
+    );
+
+    // 结构断言：键彻底不存在（不是空串占位）
+    let (_, _, rd) = get_json_with_headers(app, "/getBookSources", &[]).await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    let source = &rd["data"][0];
+    assert!(
+        source.get("variable").is_none(),
+        "不得出现 variable 键: {rd}"
+    );
+}
+
+/// R06：legacy `GET /getBookSource?url=` 单源读取同样不得泄漏登录态
+#[tokio::test]
+async fn test_b4_book_source_single_redacts_login_variable() {
+    let state = make_test_state();
+    seed_book_source(
+        &state,
+        legado_core::models::BookSource {
+            book_source_url: "https://r06.single/1".into(),
+            book_source_name: "单源".into(),
+            variable: "user=secret-token".into(),
+            rule_search: Some(legado_core::models::SearchRule {
+                book_list: Some(".result".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+    )
+    .await;
+    let app = create_router(state);
+
+    let (_, _, body) = get_with_headers(
+        app.clone(),
+        "/getBookSource?url=https%3A%2F%2Fr06.single%2F1",
+        &[],
+    )
+    .await;
+    let text = String::from_utf8(body).unwrap();
+    assert!(
+        !text.contains("secret-token"),
+        "响应体不得含登录态值: {text}"
+    );
+    assert!(
+        !text.contains("\"variable\""),
+        "响应体不得含 variable 键: {text}"
+    );
+
+    let (_, _, rd) =
+        get_json_with_headers(app, "/getBookSource?url=https%3A%2F%2Fr06.single%2F1", &[]).await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert!(
+        rd["data"].get("variable").is_none(),
+        "不得出现 variable 键: {rd}"
+    );
+    // 规则仍保留（剔除范围仅限登录态）
+    assert_eq!(rd["data"]["ruleSearch"]["bookList"], ".result");
+}
+
+/// R06 兼容性：`/getBookSources` 仍返回**全部**源，且规则/脚本/请求头原样保留
+///
+/// legacy 端点必须保留完整规则（Web UI 编辑书源、第三方脚本依赖），
+/// 不能退化成 `/api/sources` 的摘要视图。
+#[tokio::test]
+async fn test_b4_book_sources_keeps_full_rules_and_all_sources() {
+    let state = make_test_state();
+    for (url, name, order) in [
+        ("https://r06.compat/a", "甲", 1),
+        ("https://r06.compat/b", "乙", 2),
+    ] {
+        seed_book_source(
+            &state,
+            legado_core::models::BookSource {
+                book_source_url: url.into(),
+                book_source_name: name.into(),
+                custom_order: order,
+                enabled: false,
+                js_lib: Some(format!("var lib = '{name}';")),
+                header: Some("{\"Referer\":\"https://r06.compat\"}".into()),
+                search_url: Some("/search?q={{key}}".into()),
+                rule_search: Some(legado_core::models::SearchRule {
+                    book_list: Some(".book".into()),
+                    author: Some(".author".into()),
+                    ..Default::default()
+                }),
+                rule_toc: Some(legado_core::models::TocRule {
+                    chapter_list: Some(".chapter".into()),
+                    ..Default::default()
+                }),
+                variable: "user=secret-token".into(),
+                ..Default::default()
+            },
+        )
+        .await;
+    }
+    let app = create_router(state);
+    let (_, _, rd) = get_json_with_headers(app, "/getBookSources", &[]).await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    let arr = rd["data"].as_array().unwrap();
+    assert_eq!(arr.len(), 2, "必须返回全部源（含停用）: {rd}");
+    assert_eq!(arr[0]["bookSourceName"], "甲", "customOrder 升序");
+    assert_eq!(arr[0]["enabled"], false, "停用源也必须返回");
+    for (idx, name) in [(0usize, "甲"), (1, "乙")] {
+        let src = &arr[idx];
+        assert_eq!(
+            src["jsLib"],
+            format!("var lib = '{name}';"),
+            "jsLib 必须保留"
+        );
+        assert_eq!(src["header"], "{\"Referer\":\"https://r06.compat\"}");
+        assert_eq!(src["searchUrl"], "/search?q={{key}}");
+        assert_eq!(src["ruleSearch"]["bookList"], ".book");
+        assert_eq!(src["ruleSearch"]["author"], ".author");
+        assert_eq!(src["ruleToc"]["chapterList"], ".chapter");
+        assert!(src.get("variable").is_none(), "variable 必须剔除: {src}");
+    }
+}
+
+/// R06：两条 legacy 书源读端点加 `Cache-Control: no-store`
+/// （响应含完整书源规则，不应被中间层/浏览器缓存）
+#[tokio::test]
+async fn test_b4_book_source_reads_no_store() {
+    let state = make_test_state();
+    seed_book_source(
+        &state,
+        legado_core::models::BookSource {
+            book_source_url: "https://r06.nostore/1".into(),
+            book_source_name: "缓存".into(),
+            ..Default::default()
+        },
+    )
+    .await;
+    let app = create_router(state);
+    for uri in [
+        "/getBookSources",
+        "/getBookSource?url=https%3A%2F%2Fr06.nostore%2F1",
+    ] {
+        let (_, headers, _) = get_with_headers(app.clone(), uri, &[]).await;
+        assert_eq!(
+            header_str(&headers, "cache-control"),
+            "no-store",
+            "{uri} 必须 no-store"
+        );
+    }
+}
+
 #[tokio::test]
 async fn test_b4_rss_source_reads_and_empty_message() {
     let state = make_test_state();
