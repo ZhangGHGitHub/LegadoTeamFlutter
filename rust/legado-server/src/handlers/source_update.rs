@@ -9,9 +9,11 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
 use legado_core::models::BookSource;
+use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::net::IpAddr;
+use std::future::Future;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
 use legado_db::repository::book_source_repository::BookSourceRepository;
@@ -153,19 +155,18 @@ fn is_loopback_repo_url(url: &str) -> bool {
     url.starts_with("http://127.0.0.1") || url.starts_with("http://localhost")
 }
 
-/// 校验 `/api/sources/update` 的 `repo_url`（审查批 P1-1）
+/// 校验 `/api/sources/update` 的 `repo_url` 字面量部分（审查批 P1-1）
 ///
-/// 只允许 `http`/`https`；拒绝本机与内网/保留地址（`localhost`、
+/// 只允许 `http`/`https`；拒绝本机与内网/保留地址的字面量形态（`localhost`、
 /// `127.0.0.1`、`10.x`、`172.16-31.x`、`192.168.x`、`169.254.x`、
 /// `100.64.0.0/10`（含云元数据 `100.100.100.200`）、`192.0.0.0/24`、
 /// `198.18.0.0/15`、`240.0.0.0/4`、`::1`、`fc00::/7`、`fe80::/10`、
-/// IPv4-mapped 回环等）。拒绝字面量即可挡住
-/// 「把设备当 SSRF 探针」的最直接形态；域名解析到内网（DNS rebinding）
-/// 属登记残余，需要解析级校验时另立批次。
+/// IPv4-mapped 回环等）。
 ///
-/// 重定向同样逐跳走本函数（[`execute_update`] 的 `redirect::Policy`），
-/// 防止公网 URL 302 到内网。
-fn validate_repo_url(raw: &str) -> Result<reqwest::Url, String> {
+/// 本函数**不做** DNS 解析（同步、可在 reqwest 重定向策略里逐跳调用）；
+/// 域名的解析级复核见 [`validate_repo_url`]，连接期的解析复核见
+/// [`SsrfGuardResolver`]。
+fn validate_repo_url_literal(raw: &str) -> Result<reqwest::Url, String> {
     let url = reqwest::Url::parse(raw).map_err(|e| format!("仓库地址无效: {e}"))?;
     if !matches!(url.scheme(), "http" | "https") {
         return Err(format!(
@@ -175,8 +176,7 @@ fn validate_repo_url(raw: &str) -> Result<reqwest::Url, String> {
     }
     match url.host() {
         Some(url::Host::Domain(domain)) => {
-            let lowered = domain.to_ascii_lowercase();
-            let lowered = lowered.trim_end_matches('.');
+            let lowered = normalize_host(domain);
             if lowered == "localhost" || lowered.ends_with(".localhost") {
                 return Err(format!("仓库地址不允许指向本机: {domain}"));
             }
@@ -194,6 +194,219 @@ fn validate_repo_url(raw: &str) -> Result<reqwest::Url, String> {
         None => return Err("仓库地址缺少主机名".to_string()),
     }
     Ok(url)
+}
+
+/// 主机名归一化：小写 + 去掉末尾根域点（`EXAMPLE.COM.` → `example.com`）
+fn normalize_host(domain: &str) -> String {
+    domain
+        .to_ascii_lowercase()
+        .trim_end_matches('.')
+        .to_string()
+}
+
+/// 校验 `/api/sources/update` 的 `repo_url`（R06：字面量 + DNS 解析级复核）
+///
+/// 在 [`validate_repo_url_literal`] 的字面量校验之上补一层解析级校验：
+/// 域名的**每一条** A/AAAA 记录都必须通过 [`is_disallowed_ip`]，任一命中
+/// 内网/保留地址即拒绝（防「公网域名解析到 127.0.0.1 / 192.168.x.x /
+/// 169.254.169.254 云元数据」的 SSRF 与 DNS rebinding 前置探测）。
+///
+/// 解析失败与解析结果为空均**保守拒绝**（fail-closed）：无法证明目标不是
+/// 内网，就不放行。
+///
+/// 本函数只负责「请求发起前」的早拒绝（返回 400）；真正阻止 TOCTOU 的是
+/// 客户端挂载的 [`SsrfGuardResolver`]——它在每次建连时重新解析并复核，
+/// 且校验用的 IP 就是实际连接的 IP，重定向的每一跳同样经过它。
+async fn validate_repo_url(raw: &str) -> Result<reqwest::Url, String> {
+    validate_repo_url_with(raw, &SystemDnsResolver).await
+}
+
+/// [`validate_repo_url`] 的可注入版本（测试注入固定解析结果，不依赖外网）
+async fn validate_repo_url_with<R: RepoDnsResolver>(
+    raw: &str,
+    resolver: &R,
+) -> Result<reqwest::Url, String> {
+    let url = validate_repo_url_literal(raw)?;
+    if let Some(url::Host::Domain(domain)) = url.host() {
+        let normalized = normalize_host(domain);
+        let ips = resolver
+            .resolve(&normalized)
+            .await
+            .map_err(|e| format!("仓库地址无法解析: {domain}（{e}）"))?;
+        check_resolved_ips(&normalized, &ips)?;
+    }
+    Ok(url)
+}
+
+// ─── R06：DNS 解析抽象与 SSRF 连接期守卫 ─────────────────────────────
+
+/// 域名解析抽象（可注入）
+///
+/// 生产实现 [`SystemDnsResolver`]：先查 `setCustomHosts` 映射，未命中回落
+/// 系统 DNS。测试注入 `tests::FixedDnsResolver` 固定结果，用例不依赖外网。
+trait RepoDnsResolver: Send + Sync {
+    fn resolve<'a>(
+        &'a self,
+        domain: &'a str,
+    ) -> std::pin::Pin<Box<dyn Future<Output = Result<Vec<IpAddr>, String>> + Send + 'a>>;
+}
+
+/// 生产解析器：`setCustomHosts` 覆盖优先，未命中回落系统 DNS
+///
+/// 系统解析带 5s 上限：本解析发生在请求发起**之前**（客户端的 60s 超时
+/// 尚未生效），DNS 服务器无响应时不能让 handler 无限挂起。
+struct SystemDnsResolver;
+
+/// 系统 DNS 解析上限（解析级校验发生在客户端超时生效之前）
+const DNS_RESOLVE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+impl RepoDnsResolver for SystemDnsResolver {
+    fn resolve<'a>(
+        &'a self,
+        domain: &'a str,
+    ) -> std::pin::Pin<Box<dyn Future<Output = Result<Vec<IpAddr>, String>> + Send + 'a>> {
+        Box::pin(async move {
+            // 与 `legado_net::custom_hosts::resolver()` 同一优先级：
+            // 用户显式 hosts 映射（本地配置）优先于系统 DNS
+            if let Some(ips) = legado_net::custom_hosts::lookup_ips(domain) {
+                return Ok(ips);
+            }
+            let addrs =
+                tokio::time::timeout(DNS_RESOLVE_TIMEOUT, tokio::net::lookup_host((domain, 0u16)))
+                    .await
+                    .map_err(|_| {
+                        format!("系统 DNS 解析超时（{}s）", DNS_RESOLVE_TIMEOUT.as_secs())
+                    })?
+                    .map_err(|e| format!("系统 DNS 解析失败: {e}"))?;
+            let mut ips: Vec<IpAddr> = Vec::new();
+            for addr in addrs {
+                let ip = addr.ip();
+                if !ips.contains(&ip) {
+                    ips.push(ip);
+                }
+            }
+            Ok(ips)
+        })
+    }
+}
+
+/// 解析结果复核：非空且每条记录都必须不是内网/保留地址（fail-closed）
+fn check_resolved_ips(domain: &str, ips: &[IpAddr]) -> Result<(), String> {
+    if ips.is_empty() {
+        return Err(format!("仓库地址无法解析: {domain}（解析结果为空）"));
+    }
+    // 测试专用：回环 mock 仓库域名（`map_mock_repo_host` 注册）显式放行。
+    // 生产构建下 `is_test_trusted_host` 恒为 false，无旁路。
+    if is_test_trusted_host(domain) {
+        return Ok(());
+    }
+    for ip in ips {
+        if is_disallowed_ip(*ip) {
+            return Err(format!(
+                "仓库地址不允许指向内网/保留地址: {domain} 解析为 {ip}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// 测试专用：回环 mock 仓库域名判定（生产构建恒为 false）
+///
+/// 生产环境**没有**任何域名豁免：即便用户 `setCustomHosts` 把某域名映射到
+/// 回环地址，解析级校验也照样拒绝（否则该配置本身就是 SSRF 旁路）。
+/// 测试构建下，[`tests::map_mock_repo_host`] 在持
+/// [`tests::MOCK_HOSTS_LOCK`] 期间登记 mock 域名，视为可信 seam——集成用例
+/// 要真的把请求打到 `127.0.0.1` 的 mock 仓库，而生产语义必须拒绝回环，
+/// 两者只能靠编译期开关区分。登记表为空时无任何豁免。
+#[cfg(not(test))]
+fn is_test_trusted_host(_domain: &str) -> bool {
+    false
+}
+
+#[cfg(test)]
+fn is_test_trusted_host(domain: &str) -> bool {
+    TEST_TRUSTED_HOSTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .iter()
+        .any(|host| host == domain)
+}
+
+/// 测试专用可信域名登记表（生产构建不存在此符号）
+#[cfg(test)]
+static TEST_TRUSTED_HOSTS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// 连接期 SSRF 守卫（reqwest [`Resolve`] 实现）
+///
+/// 与「请求前解析一次」相比，本解析器在**每次建连**时解析并复核，且返回的
+/// 地址就是 hyper 实际连接的地址——校验与连接使用同一次解析结果，堵住
+/// 「第一次解析返回公网 IP 过校验、第二次返回内网 IP 实际连接」的
+/// TOCTOU（DNS rebinding）。重定向的每一跳都会重新建连，因此逐跳覆盖。
+///
+/// 字面量形态（IP / `localhost`）不经过 DNS，由
+/// [`validate_repo_url_literal`] 在重定向策略里逐跳拦截。
+///
+/// ## 已知残余（已登记，非本批可解）
+///
+/// 若运行环境配置了 HTTP(S) 代理（reqwest 默认读取 `HTTP_PROXY` 等环境
+/// 变量），请求会交给代理转发，**本地不做目标域名解析**，本守卫因此不被
+/// 调用；此时域名解析发生在代理侧，校验只覆盖请求发起前的那一次
+/// [`validate_repo_url`]。要彻底闭合需要禁用代理或改为代理侧校验，属运维
+/// 配置面，不在本批范围。
+struct SsrfGuardResolver {
+    inner: Arc<dyn RepoDnsResolver>,
+}
+
+impl SsrfGuardResolver {
+    fn new(inner: Arc<dyn RepoDnsResolver>) -> Self {
+        Self { inner }
+    }
+}
+
+impl Resolve for SsrfGuardResolver {
+    fn resolve(&self, name: Name) -> Resolving {
+        let host = name.as_str().to_string();
+        // 先克隆 Arc：异步块需 `'static`，不能借用 `&self`
+        let inner = Arc::clone(&self.inner);
+        Box::pin(async move {
+            let normalized = normalize_host(&host);
+            let started = std::time::Instant::now();
+            let ips = inner.resolve(&normalized).await.map_err(
+                |e| -> Box<dyn std::error::Error + Send + Sync> {
+                    format!("仓库地址无法解析: {host}（{e}）").into()
+                },
+            )?;
+            // 保留原 `custom_hosts::resolver()` 的 DNS 计时埋点（未开启计时时无操作）
+            legado_net::timing::record_dns(
+                &normalized,
+                started.elapsed(),
+                ips.iter().map(|ip| SocketAddr::new(*ip, 0)).collect(),
+            );
+            check_resolved_ips(&normalized, &ips)
+                .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?;
+            let addrs: Addrs = Box::new(ips.into_iter().map(|ip| SocketAddr::new(ip, 0)));
+            Ok(addrs)
+        })
+    }
+}
+
+/// 展平 reqwest 错误链为可读文案（含 SSRF 守卫在解析器里给出的原因）
+///
+/// reqwest 顶层 `Display` 只有 `error sending request for url (...)`，DNS
+/// 解析器返回的错误在其 `source()` 链上。这里沿链拼接，使「被 SSRF 守卫
+/// 拦下」与「网络不可达」在错误消息里可区分。
+fn describe_reqwest_error(err: &reqwest::Error) -> String {
+    let mut parts: Vec<String> = vec![err.to_string()];
+    let mut source = std::error::Error::source(err);
+    while let Some(cause) = source {
+        let text = cause.to_string();
+        // 去重：reqwest 常把内层文案原样嵌在外层 Display 里
+        if !parts.iter().any(|part| part.contains(&text)) {
+            parts.push(text);
+        }
+        source = cause.source();
+    }
+    parts.join(": ")
 }
 
 /// 内网/保留地址判定（对齐审查批 P1-1 要求的最小集合 + 明显不可路由地址）
@@ -298,9 +511,12 @@ pub async fn check_updates(State(state): State<Arc<AppState>>) -> Result<Json<Va
 ///
 /// 从指定仓库下载书源并合并到本地数据库。
 ///
-/// 安全约束（审查批 P1-1）：
+/// 安全约束（审查批 P1-1 + R06）：
 /// - `repo_url` 只允许 `http`/`https`，且不得指向本机/内网/保留地址
-///   （[`validate_repo_url`]）；重定向逐跳复用同一校验；
+///   （[`validate_repo_url`]：字面量 + DNS 解析级复核）；
+/// - 重定向逐跳做字面量校验（[`validate_repo_url_literal`]），并在建连时
+///   经 [`SsrfGuardResolver`] 做解析级复核——每跳都重新解析并校验，
+///   校验所用 IP 即实际连接 IP，堵住 DNS rebinding 的 TOCTOU 窗口；
 /// - 不再无条件 `danger_accept_invalid_certs(true)`（原实现会接受任意自签
 ///   证书，配合任意 `repo_url` 放大中间人攻击面）；证书校验恢复默认。
 pub async fn execute_update(
@@ -308,27 +524,36 @@ pub async fn execute_update(
     Json(req): Json<UpdateRequest>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     let repo_url = validate_repo_url(&req.repo_url)
+        .await
         .map_err(|message| ApiError(legado_core::LegadoError::Parser(message)))?;
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
-        // 逐跳校验重定向目标：拒绝 302 到内网/非 http(s) 的 SSRF 变形
+        // 逐跳校验重定向目标：拒绝 302 到非 http(s)/本机/内网字面量的 SSRF 变形。
+        // 域名解析到内网的形态由 SsrfGuardResolver 在建连时逐跳拦截
+        // （重定向策略是同步闭包，无法 await DNS）。
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
-            if validate_repo_url(attempt.url().as_str()).is_ok() {
+            if validate_repo_url_literal(attempt.url().as_str()).is_ok() {
                 attempt.follow()
             } else {
                 attempt.error("重定向目标不被允许（仅 http/https 且不得指向内网）")
             }
         }))
-        .dns_resolver(legado_net::custom_hosts::resolver())
+        .dns_resolver(Arc::new(SsrfGuardResolver::new(Arc::new(
+            SystemDnsResolver,
+        ))))
         .build()
         .map_err(|e| legado_core::LegadoError::Network(format!("创建 HTTP 客户端失败: {e}")))?;
 
     // 下载远程书源
-    let response = client
-        .get(repo_url)
-        .send()
-        .await
-        .map_err(|e| legado_core::LegadoError::Network(format!("请求仓库失败: {e}")))?;
+    //
+    // `SsrfGuardResolver` 在建连期拒绝内网/保留地址时，reqwest 只保留顶层
+    // 文案（`error sending request for url (...)`），底层原因在 source 链里。
+    // 这里把它展平进错误消息，避免运维/测试只能看到「请求失败」而无法区分
+    // 「网络不可达」与「被 SSRF 守卫拦下」。
+    let response = client.get(repo_url).send().await.map_err(|e| {
+        let detail = describe_reqwest_error(&e);
+        legado_core::LegadoError::Network(format!("请求仓库失败: {detail}"))
+    })?;
 
     if !response.status().is_success() {
         return Err(ApiError(legado_core::LegadoError::Network(format!(
@@ -584,21 +809,32 @@ mod tests {
     /// 串行锁：自定义 hosts 映射为进程级全局状态，避免并行用例互相清理
     static MOCK_HOSTS_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-    /// 离开作用域清理 hosts 映射（panic 亦不泄漏）
+    /// 离开作用域清理 hosts 映射与可信域名登记（panic 亦不泄漏）
     struct MockHostsGuard;
 
     impl Drop for MockHostsGuard {
         fn drop(&mut self) {
             legado_net::custom_hosts::clear_custom_hosts();
+            TEST_TRUSTED_HOSTS
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clear();
         }
     }
 
-    /// 注入 `MOCK_REPO_HOST → 127.0.0.1` 映射，返回清理守卫
+    /// 注入 `MOCK_REPO_HOST → 127.0.0.1` 映射并登记为测试可信域名，返回清理守卫
     fn map_mock_repo_host() -> MockHostsGuard {
         legado_net::custom_hosts::apply_custom_hosts(
             &json!({ MOCK_REPO_HOST: "127.0.0.1" }).to_string(),
         )
         .expect("hosts 映射注入失败");
+        let mut trusted = TEST_TRUSTED_HOSTS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !trusted.iter().any(|host| host == MOCK_REPO_HOST) {
+            trusted.push(MOCK_REPO_HOST.to_string());
+        }
+        drop(trusted);
         MockHostsGuard
     }
 
@@ -1323,8 +1559,10 @@ mod tests {
 
     // ── P1-1：repo_url 校验（协议/内网/保留地址） ─────────────────────────
 
+    /// 字面量校验回归（同步路径）：协议与 IP/localhost 字面量判定不依赖 DNS，
+    /// 是 R06 解析级校验之前的第一道闸。
     #[test]
-    fn test_validate_repo_url_rejects_non_http_and_private_hosts() {
+    fn test_validate_repo_url_literal_rejects_non_http_and_private_hosts() {
         for raw in [
             "ftp://example.com/repo.json",
             "file:///etc/passwd",
@@ -1357,7 +1595,7 @@ mod tests {
             "not-a-url",
             "http://",
         ] {
-            assert!(validate_repo_url(raw).is_err(), "应拒绝: {raw}");
+            assert!(validate_repo_url_literal(raw).is_err(), "应拒绝: {raw}");
         }
         for raw in [
             "https://raw.githubusercontent.com/gedoor/legado/master/x.json",
@@ -1370,7 +1608,341 @@ mod tests {
             "http://192.0.1.1/repo.json",
             "http://198.20.0.1/repo.json",
         ] {
-            assert!(validate_repo_url(raw).is_ok(), "应接受: {raw}");
+            assert!(validate_repo_url_literal(raw).is_ok(), "应接受: {raw}");
+        }
+    }
+
+    /// 字面量拒绝在异步校验里同样生效，且**不触发 DNS 解析**
+    /// （解析器注入为「任何域名都失败」，若字面量先拦下就不会走到解析）
+    #[tokio::test]
+    async fn test_validate_repo_url_literal_rejections_skip_dns() {
+        let resolver = FixedDnsResolver::failing();
+        for raw in [
+            "ftp://example.com/repo.json",
+            "http://127.0.0.1:8080/repo.json",
+            "http://localhost/repo.json",
+            "http://192.168.1.10/repo.json",
+            "http://169.254.169.254/latest/meta-data",
+        ] {
+            let err = validate_repo_url_with(raw, &resolver).await.unwrap_err();
+            assert!(
+                !err.contains("无法解析"),
+                "字面量拒绝不应走到 DNS 解析: {raw} → {err}"
+            );
+        }
+    }
+
+    // ── R06：DNS 解析级校验（可注入解析器，不依赖外网） ──────────────────
+
+    /// 测试用固定结果解析器：域名 → 解析结果（Ok=IP 列表 / Err=解析失败）
+    struct FixedDnsResolver {
+        answers: std::collections::HashMap<String, Result<Vec<IpAddr>, String>>,
+    }
+
+    impl FixedDnsResolver {
+        fn new(entries: &[(&str, Result<&[&str], &str>)]) -> Self {
+            let answers = entries
+                .iter()
+                .map(|(domain, answer)| {
+                    let value = match answer {
+                        Ok(ips) => Ok(ips
+                            .iter()
+                            .map(|ip| ip.parse::<IpAddr>().expect("测试 IP 字面量应合法"))
+                            .collect()),
+                        Err(message) => Err((*message).to_string()),
+                    };
+                    ((*domain).to_string(), value)
+                })
+                .collect();
+            Self { answers }
+        }
+
+        fn single(domain: &str, ip: &str) -> Self {
+            let mut resolver = Self::new(&[]);
+            resolver
+                .answers
+                .insert(domain.to_string(), Ok(vec![ip.parse().unwrap()]));
+            resolver
+        }
+
+        fn failing() -> Self {
+            Self::new(&[])
+        }
+    }
+
+    impl RepoDnsResolver for FixedDnsResolver {
+        fn resolve<'a>(
+            &'a self,
+            domain: &'a str,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<Vec<IpAddr>, String>> + Send + 'a>,
+        > {
+            let answer = self
+                .answers
+                .get(domain)
+                .cloned()
+                .unwrap_or_else(|| Err(format!("测试解析器未配置该域名: {domain}")));
+            Box::pin(async move { answer })
+        }
+    }
+
+    /// R06 ①：域名解析到回环地址 → 拒绝（修复前此 URL 通过校验）
+    #[tokio::test]
+    async fn test_validate_repo_url_rejects_domain_resolving_to_loopback() {
+        for ip in ["127.0.0.1", "127.0.0.2", "::1"] {
+            let resolver = FixedDnsResolver::single("rebind-loopback.test", ip);
+            let err = validate_repo_url_with("http://rebind-loopback.test/repo.json", &resolver)
+                .await
+                .unwrap_err();
+            assert!(err.contains("内网/保留"), "文案应指明内网/保留: {err}");
+            assert!(err.contains(ip), "文案应含解析出的 IP: {err}");
+        }
+    }
+
+    /// R06 ②：域名解析到云元数据地址 → 拒绝
+    #[tokio::test]
+    async fn test_validate_repo_url_rejects_domain_resolving_to_metadata() {
+        for ip in ["169.254.169.254", "100.100.100.200"] {
+            let resolver = FixedDnsResolver::single("rebind-metadata.test", ip);
+            let err =
+                validate_repo_url_with("http://rebind-metadata.test/latest/meta-data", &resolver)
+                    .await
+                    .unwrap_err();
+            assert!(err.contains("内网/保留"), "{err}");
+            assert!(err.contains(ip), "{err}");
+        }
+    }
+
+    /// R06 ②b：多条 A 记录中**任一条**命中内网即拒绝（不得只看第一条）
+    #[tokio::test]
+    async fn test_validate_repo_url_rejects_mixed_public_and_private_records() {
+        let resolver =
+            FixedDnsResolver::new(&[("rebind-mixed.test", Ok(&["93.184.216.34", "192.168.1.10"]))]);
+        let err = validate_repo_url_with("http://rebind-mixed.test/repo.json", &resolver)
+            .await
+            .unwrap_err();
+        assert!(err.contains("192.168.1.10"), "{err}");
+    }
+
+    /// R06 ③：正常公网域名 → Ok（注入公网 IP，不依赖外网 DNS）
+    #[tokio::test]
+    async fn test_validate_repo_url_accepts_public_domain() {
+        let resolver = FixedDnsResolver::new(&[(
+            "example.com",
+            Ok(&["93.184.216.34", "2606:2800:220:1:248:1893:25c8:1946"]),
+        )]);
+        let url = validate_repo_url_with("http://example.com/repo.json", &resolver)
+            .await
+            .expect("公网域名应通过解析级校验");
+        assert_eq!(url.host_str(), Some("example.com"));
+    }
+
+    /// R06 ④：解析失败 / 解析结果为空 → 保守拒绝（fail-closed）
+    #[tokio::test]
+    async fn test_validate_repo_url_fails_closed_on_resolution_error() {
+        let resolver =
+            FixedDnsResolver::new(&[("nxdomain.test", Err("系统 DNS 解析失败: 未找到记录"))]);
+        let err = validate_repo_url_with("http://nxdomain.test/repo.json", &resolver)
+            .await
+            .unwrap_err();
+        assert!(err.contains("无法解析"), "{err}");
+        assert!(err.contains("nxdomain.test"), "文案应含域名: {err}");
+        assert!(err.contains("未找到记录"), "文案应含底层原因: {err}");
+
+        let empty = FixedDnsResolver::new(&[("empty-records.test", Ok(&[]))]);
+        let err = validate_repo_url_with("http://empty-records.test/repo.json", &empty)
+            .await
+            .unwrap_err();
+        assert!(err.contains("无法解析"), "{err}");
+        assert!(err.contains("解析结果为空"), "{err}");
+    }
+
+    /// R06 ②c：连接期守卫独立于请求前校验——即便跳过早校验，建连时同样拦下
+    /// （模拟 DNS rebinding 的第二次解析返回内网地址）
+    #[tokio::test]
+    async fn test_ssrf_guard_resolver_blocks_internal_on_connect() {
+        use reqwest::dns::Resolve as _;
+
+        let guard = SsrfGuardResolver::new(Arc::new(FixedDnsResolver::single(
+            "rebind-connect.test",
+            "10.0.0.7",
+        )));
+        let name: reqwest::dns::Name = "rebind-connect.test".parse().unwrap();
+        let err = guard
+            .resolve(name)
+            .await
+            .err()
+            .expect("建连期应拒绝内网地址");
+        assert!(err.to_string().contains("内网/保留"), "{err}");
+
+        let ok_guard = SsrfGuardResolver::new(Arc::new(FixedDnsResolver::single(
+            "public-connect.test",
+            "93.184.216.34",
+        )));
+        let name: reqwest::dns::Name = "public-connect.test".parse().unwrap();
+        let addrs: Vec<std::net::SocketAddr> = ok_guard.resolve(name).await.unwrap().collect();
+        assert_eq!(addrs.len(), 1);
+        assert_eq!(addrs[0].ip().to_string(), "93.184.216.34");
+        assert_eq!(addrs[0].port(), 0, "端口由 hyper 按 URL 补齐");
+    }
+
+    /// 测试专用：返回 302 到指定 Location 的本地 mock（重定向用例）
+    fn spawn_redirect_mock(location: String) -> std::net::SocketAddr {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
+        let addr = listener.local_addr().expect("local_addr");
+        std::thread::spawn(move || {
+            for stream in listener.incoming().take(4) {
+                let Ok(mut sock) = stream else { continue };
+                let _ = sock.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    if sock.read_exact(&mut byte).is_err() {
+                        break;
+                    }
+                    head.push(byte[0]);
+                    if head.len() > 65_536 {
+                        break;
+                    }
+                }
+                let resp = format!(
+                    "HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                );
+                let _ = sock.write_all(resp.as_bytes());
+            }
+        });
+        addr
+    }
+
+    /// R06 ⑤：重定向到「解析后是内网」的域名 → 被拦截
+    ///
+    /// 修复前：第一跳公网/回环 mock 返回 302 到 `rebind-redirect.test`
+    /// （经自定义 hosts 指向 127.0.0.1 的同一 mock），重定向策略只做字面量
+    /// 校验（该域名不是 localhost 字面量）→ 放行 → 请求成功 200。
+    /// 修复后：建连期 `SsrfGuardResolver` 解析出 127.0.0.1 → 拒绝 → 502。
+    #[tokio::test]
+    async fn test_execute_update_blocks_redirect_to_internal_domain() {
+        let state = make_test_state();
+        let _hosts_lock = MOCK_HOSTS_LOCK.lock().await;
+        // 首跳用可信 mock 域名；重定向目标域名映射到回环但**不登记**为可信，
+        // 因此解析级校验必须拦下（这正是 DNS rebinding 的形态）
+        legado_net::custom_hosts::apply_custom_hosts(
+            &json!({
+                MOCK_REPO_HOST: "127.0.0.1",
+                "rebind-redirect.test": "127.0.0.1",
+            })
+            .to_string(),
+        )
+        .expect("hosts 映射注入失败");
+        TEST_TRUSTED_HOSTS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(MOCK_REPO_HOST.to_string());
+        let _hosts_guard = MockHostsGuard;
+
+        let target_mock =
+            spawn_source_repo_mock(4, vec![("/repo.json".to_string(), "[]".to_string())]);
+        let redirect_addr = spawn_redirect_mock(format!(
+            "http://rebind-redirect.test:{}/repo.json",
+            target_mock.port()
+        ));
+
+        let app = create_router(state);
+        let body = serde_json::to_string(&json!({
+            "repo_url": mock_repo_url(redirect_addr, "/repo.json"),
+            "only_update_existing": false
+        }))
+        .unwrap();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/sources/update")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::BAD_GATEWAY,
+            "重定向到解析为内网的域名必须被建连期守卫拦下"
+        );
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let rd: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(rd["error"]["type"], "network", "rd={rd}");
+        let message = rd["error"]["message"].as_str().unwrap_or_default();
+        assert!(message.contains("请求仓库失败"), "rd={rd}");
+        // 必须是 SSRF 守卫给出的原因，而不是「连接被拒绝」之类的普通网络错误
+        assert!(
+            message.contains("内网/保留"),
+            "重定向目标的内网解析应在错误文案里可见: {message}"
+        );
+        assert!(
+            message.contains("rebind-redirect.test"),
+            "文案应含被拦下的域名: {message}"
+        );
+    }
+
+    /// 集成面（生产路径，不经测试注入的解析器）：经 `setCustomHosts` 把域名
+    /// 映射到内网，请求在发起前即 400 —— 证明 `execute_update` 真实接的是
+    /// `SystemDnsResolver` + 解析级复核，而不是只在单测里成立。
+    ///
+    /// 修复前该 URL 通过校验并尝试出站（响应为 502/网络错误而非 400）。
+    #[tokio::test]
+    async fn test_execute_update_rejects_domain_mapping_to_private_via_hosts() {
+        let state = make_test_state();
+        let _hosts_lock = MOCK_HOSTS_LOCK.lock().await;
+        legado_net::custom_hosts::apply_custom_hosts(
+            &json!({
+                "ssrf-internal.test": "10.0.0.9",
+                "ssrf-metadata.test": "169.254.169.254",
+            })
+            .to_string(),
+        )
+        .expect("hosts 映射注入失败");
+        let _hosts_guard = MockHostsGuard;
+
+        let app = create_router(state);
+        for (repo_url, expected_ip) in [
+            ("http://ssrf-internal.test/repo.json", "10.0.0.9"),
+            (
+                "http://ssrf-metadata.test/latest/meta-data",
+                "169.254.169.254",
+            ),
+        ] {
+            let body = json!({ "repo_url": repo_url, "only_update_existing": false }).to_string();
+            let resp = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/sources/update")
+                        .header("Content-Type", "application/json")
+                        .body(Body::from(body))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                resp.status(),
+                StatusCode::BAD_REQUEST,
+                "{repo_url} 应在发起请求前被拒"
+            );
+            let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let rd: Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(rd["error"]["type"], "parser", "{repo_url} rd={rd}");
+            let message = rd["error"]["message"].as_str().unwrap_or_default();
+            assert!(message.contains("内网/保留"), "{repo_url} rd={rd}");
+            assert!(
+                message.contains(expected_ip),
+                "文案应含解析出的内网 IP {expected_ip}: {message}"
+            );
         }
     }
 
