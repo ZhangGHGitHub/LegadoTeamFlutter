@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.513] - 2026-11-20
+
+### Added
+- [UI] 界面全面英文化（L10N 阶段 3 完成）：书架布局配置、阅读器顶栏/菜单/工具栏/字体面板、高亮规则、定时任务、替换规则、订阅源编辑、听书、书源管理、目录、阅读主题、日志、文件管理等全部页面接入 `AppStrings` 双语。用户可见中文字面量从 2213 处降至 83 处（96.3%），剩余均为数据值（Mock 数据、资源站识别关键词、Kotlin 契约对照表、错误串匹配判据）而非 UI 文案。
+
+### Fixed
+- [UI] 修复英文文案较长导致的多处 360dp 宽度溢出：阅读器配置面板分区标题、书源编辑选项面板（改 `Wrap`）、扫码页降级头部（改 `minHeight`）、远程书库底栏、听书后台播放提示、订阅首页入口卡、首页阅读目标标题、书源调试日志计数行。
+- [UI] 修复顶栏动作文案在首次访问时被缓存、切换语言后不更新的问题（`reader_top_bar_actions.dart` 的 `const`/顶层 `final` 改为 getter）。
+
+### Changed
+- [Rust] 重建三 ABI（arm64-v8a / armeabi-v7a / x86_64）的 `liblegado_ffi.so`，统一指纹并确认 HLS 缓存修复文案全部进入产物（15/15 命中，含历史漏验的 armeabi-v7a）。
+- [UI] 清理 7 个零引用组件、8 个未使用 SVG 与 Web 自制首页（`docs/pending_deletion/` 已清空）。
+
 ## [2.0.512] - 2026-11-19
 
 ### Added
