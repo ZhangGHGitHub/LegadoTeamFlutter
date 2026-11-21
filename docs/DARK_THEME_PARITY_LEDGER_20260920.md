@@ -25,6 +25,8 @@
 
 **结论**：深色参考素材 = **部分**。屏级深色实机截图仅「设置·外观」1 屏（43 屏的 1/43），其余 42 屏深色参考须补采（外部输入，见 §五）；源码级 2 套暗色调色板可作为配色裁决依据先行使用。
 
+> **2026-11-21 回销核实（R43）**：经全仓 `docs/**` 图片亮度扫描（PIL 灰度均值 <90 判深色）+ 逐屏目视核对，**42 个「❌待补采」屏中 11 屏已存在参考版深色实机证据、1 屏部分存在**，已在本表逐行改为「✅已补采 / 🔄部分已补采」并注明证据路径（1-1 / 1-3 / 1-8 / 1-10 / 1-11 / 1-13 / 2-1 / 2-3 / 2-8 / 3-1 / 3-5 共 11 屏全量；2-10 仅 Web 服务开启态）。这些证据此前散落在 `materials_1301/evidence/kz*.png`、`materials_1031b/*kz*.png`、`materials_1105/ref_kazusa_*.png`、`materials_1101d/ref_*.png` 与 `parity_shots/ref_dark_20260920|21/`，本台账此前未回销。**剩 30 屏仍为真待办**（详见 `docs/LEDGER_VERIFICATION_20261121.md`）。
+
 ## 二、我方深色实现现状（摸底结论：机制齐全）
 
 | 维度 | 现状 | 证据 |
@@ -99,19 +101,19 @@
 
 | # | 屏 | 深色参考素材 | 静态审计发现 | 客观问题 | 疑似问题 | 优先级 | 批次 |
 |---|---|---|---|---|---|---|---|
-| 1-1 | 底部导航（五页签） | ❌待补采 | —（`app_navigation_bars.dart:164/176` isDark 分支合法） | — | — | P3 | B |
+| 1-1 | 底部导航（五页签） | ✅已补采（2026-11-21 核实）：`materials_1301/evidence/kz1_home.png`（书架深色，五页签底栏完整）+ `kz9_longpress.png`（我的页深色，选中态高亮） | —（`navigation/app_navigation_bars.dart:262/274` isDark 分支合法；台账原引 `:164/176` 为旧行号，2026-11-21 实测已漂移） | — | — | P3 | B |
 | 1-2 | 首页页签 | ❌待补采 | — | — | — | P3 | B |
-| 1-3 | 书架（含空态） | ❌待补采 | —（`bookshelf_screen.dart:421` 中性薄覆盖合法） | — | — | P3 | B |
+| 1-3 | 书架（含空态） | ✅已补采（2026-11-21 核实）：`materials_1301/evidence/kz1_home.png`（深色书架·四分组 tab·两书网格）+ `materials_1101d/ref_00_launch.png`（深色书架·顶栏圆底搜索/⋮·四分组 tab） | —（`bookshelf_screen.dart:421` 中性薄覆盖合法） | — | — | P3 | B |
 | 1-4 | 书架溢出菜单 | ❌待补采 | — | — | — | P3 | B |
 | 1-5 | 书架批量多选态 | ❌待补采 | — | — | — | P3 | B |
 | 1-6 | 搜索 | ❌待补采 | — | — | — | P3 | B |
 | 1-7 | 搜索结果页 | ❌待补采 | — | — | — | P3 | B |
-| 1-8 | 书籍详情 | ❌待补采 | `book_info_screen.dart:147-148`（B1）；`book_info_screen_builders.part.dart:1008`（B2）；`builders:818-819` 阴影合法 | —（B1/B2 为已登记例外，非客观异常） | 绿 FAB/状态词绿深色形态存疑 | P2 | B（依赖 ref 08 深色） |
+| 1-8 | 书籍详情 | ✅已补采（2026-11-21 核实）：`parity_shots/ref_dark_20260920/08_book_info.png` + `.xml`（背景 lum≈27.6） | `book_info_screen.dart:147-148`（B1）；`book_info_screen_builders.part.dart:1008`（B2）；`builders:818-819` 阴影合法 | —（B1/B2 为已登记例外，非客观异常） | 绿 FAB/状态词绿深色形态存疑 | P2 | B（依赖 ref 08 深色） |
 | 1-9 | 目录页 | ❌待补采 | — | — | — | P3 | B |
-| 1-10 | 阅读器正文 | ❌待补采 | `reader_screen.dart:511-517`（C2）；`paragraph_layout_engine.dart:176-177`（C3 死默认）；`reader_page_view.dart:784-785` 亮度自适应合法 | — | C2 纯黑底徽标近隐形 | P2 | A（C2/C3 可无截图修；C2 亦可留 B 对照） |
-| 1-11 | 阅读器菜单 | ❌待补采 | `reader_settings_sheet.dart:880` black54 合法 | — | — | P3 | B |
+| 1-10 | 阅读器正文 | ✅已补采（2026-11-21 核实）：`parity_shots/ref_dark_20260920/10_reader.png` + `.xml`（正文均值 (0,0,0)、浅字 max 173，非空白） | `reader_screen.dart:511-517`（C2）；`paragraph_layout_engine.dart:176-177`（C3 死默认）；`reader_page_view.dart:784-785` 亮度自适应合法 | — | C2 纯黑底徽标近隐形 | P2 | A（C2/C3 可无截图修；C2 亦可留 B 对照） |
+| 1-11 | 阅读器菜单 | ✅已补采（2026-11-21 核实）：`parity_shots/ref_dark_20260920/11_reader_menu.png` + `.xml`；另 `materials_1031b/34_kz_menu.png`（阅读器菜单态：顶部五圆钮 + 底栏五键）、`35_kz_readcfg1.png`（阅读界面 Sheet）、`36~39_kz_more_tab*.png`（更多 tab 四帧）——`DEVICE_ACCEPTANCE_20261031_BATCH1A.md` §7.1 明载 35~39 为参考版基准 | `reader_settings_sheet.dart:880` black54 合法 | — | — | P3 | B |
 | 1-12 | 正文长按菜单 | ❌待补采 | `text_selection_panel.dart:31-35` 高亮色板合法 | — | — | P3 | B |
-| 1-13 | 全文搜索 | ❌待补采 | `search_content_screen.dart:607/637`（B3，ref 13 量化） | — | 胶囊深色形态存疑（色本身偏深，大概率保持） | P2 | B（依赖 ref 13 深色） |
+| 1-13 | 全文搜索 | ✅已补采（2026-11-21 核实）：`parity_shots/ref_dark_20260920/13_search_content.png` + `.xml`（背景 lum≈18.8） | `search_content_screen.dart:607/637`（B3，ref 13 量化） | — | 胶囊深色形态存疑（色本身偏深，大概率保持） | P2 | B（依赖 ref 13 深色） |
 | 1-14 | 目录·书签页签 | ❌待补采 | — | — | — | P3 | B |
 | 1-15 | 章节跳转 | ❌待补采 | — | — | — | P3 | B |
 | 1-16 | 自动翻页 | ❌待补采 | — | — | — | P3 | B |
@@ -120,26 +122,26 @@
 
 | # | 屏 | 深色参考素材 | 静态审计发现 | 客观问题 | 疑似问题 | 优先级 | 批次 |
 |---|---|---|---|---|---|---|---|
-| 2-1 | 发现（分组 chips） | ❌待补采 | — | — | — | P3 | B |
+| 2-1 | 发现（分组 chips） | ✅已补采（2026-11-21 核实）：`materials_1301/evidence/kz6_settings_night.png`（发现页深色·五源列表 + 分组 chips 两行；同内容另见 `kz5_reader_settings.png`/`kz7_settings_other.png`/`kz8_other_tab.png`，见执行记录的证据完整性告警） | — | — | — | P3 | B |
 | 2-2 | 发现溢出菜单 | ❌待补采 | — | — | — | P3 | B |
-| 2-3 | 发现源二级页（chips） | ❌待补采 | — | — | — | P3 | B |
-| 2-4 | 发现源二级页（下拉） | ❌待补采 | — | — | — | P3 | B |
+| 2-3 | 发现源二级页（chips） | ✅已补采（2026-11-21 核实）：`materials_1301/evidence/kz8b.png`（霹雳书屋展开态·3 列 chips 两行：全部小说/男频/女频/电子图书/无CP/纯爱，深色） | — | — | — | P3 | B |
+| 2-4 | 发现源二级页（下拉） | ❌待补采（2026-11-21 核实：`kz8b.png` 为 chips 型源展开态，非下拉选择器型源；参考侧仍未采到下拉型源深色态） | — | — | — | P3 | B |
 | 2-5 | 发现分类书单 | ❌待补采 | — | — | — | P3 | B |
 | 2-6 | 换源/书源 | ❌待补采 | — | — | — | P3 | B |
 | 2-7 | 书源管理 | ❌待补采 | — | — | — | P3 | B |
-| 2-8 | 书源编辑器 | ❌待补采 | `source_edit_screen_dialogs.part.dart:91-93/136`（B4，B10 扫码语义例外） | — | QR 对话框深色形态（白底惯例保留） | P2 | B（B4 例外仅需形态确认） |
+| 2-8 | 书源编辑器 | ✅已补采（2026-11-21 核实）：`parity_shots/ref_dark_20260920/09_source_editor_qr_dialog.png` + `.xml`（顶栏 lum≈18.8；参考=全屏扫描器形态） | `source_edit_screen_dialogs.part.dart:91-93/136`（B4，B10 扫码语义例外） | — | QR 对话框深色形态（白底惯例保留） | P2 | B（B4 例外仅需形态确认） |
 | 2-9 | 替换净化编辑器 | ❌待补采 | `replace_rules_screen.dart:101`（C1） | — | C1 白 0.2 填充两态不一致 | P2 | A |
-| 2-10 | RSS 源二级页/Web 服务 | ❌待补采 | — | — | — | P3 | B |
+| 2-10 | RSS 源二级页/Web 服务 | 🔄部分已补采（2026-11-21 核实）：Web 服务开启态 ✅ `materials_1105/ref_kazusa_running.png`（深色，开关开 + 地址 `http://192.168.100.62:1122` + 复制/浏览器两钮）；RSS 源二级页深色态 ❌仍缺（参考侧订阅无源不可达，与 0914 台账 2-10 同口径） | — | — | — | P3 | B |
 
 ### 第 3 批：我的与设置（11 屏）
 
 | # | 屏 | 深色参考素材 | 静态审计发现 | 客观问题 | 疑似问题 | 优先级 | 批次 |
 |---|---|---|---|---|---|---|---|
-| 3-1 | 我的 | ❌待补采 | — | — | — | P3 | B |
+| 3-1 | 我的 | ✅已补采（2026-11-21 核实）：`materials_1105/ref_kazusa_my_top.png`（停止态）、`ref_kazusa_my_stopped.png`、`ref_kazusa_running.png`（运行态，含地址 `http://192.168.100.62:1122` + 复制/浏览器两钮）；另 `materials_1301/evidence/kz9_longpress.png`（深色我的页，选中态高亮） | — | — | — | P3 | B |
 | 3-2 | 阅读记录 | ❌待补采 | — | — | — | P3 | B |
 | 3-3 | 设置主页 | ❌待补采 | `settings_screen.dart:168-170`（C4，孤儿槽位引用） | — | C4 槽位体系清理（视觉无异常） | P3 | A（顺手项） |
-| 3-4 | 设置·外观 | ✅ **ref_batch3/04_appearance_dark.png**（唯一屏级深色参考；配对 ours_2.0.266/04_appearance_dark.png 差分已记） | — | — | 既有差分（均值 36.2 vs 52.3）待 2.0.270 后复验深色态 | P1 | B |
-| 3-5 | 主题设置（12 色卡） | ❌待补采（参考 12 卡网格量化 fail_all，`theme_colors_ref.json` 无 dark scheme） | — | — | 12 色卡深色形态 + def 套暗色锚点（#303030 系）核对 | P1 | B（须补采 12 卡深色 + def 暗色锚点复核） |
+| 3-4 | 设置·外观 | ✅ **ref_batch3/04_appearance_dark.png**（唯一屏级深色参考；配对 ours_2.0.266/04_appearance_dark.png 差分已记）；追加（2026-11-21）：`materials_1101d/ref_00_launch.png`/`ref_01_eye_group.png`/`ref_02_eye_enabled.png`/`ref_03_color_temp_dialog.png`/`ref_eye_i0|i50|i100.png`（外观页深色 + 护眼 0/50/100 强度 + 色温弹窗）；`parity_shots/ref_dark_20260921/04_appearance_clean_dark*.png`（默认动态取色深色干净基线） | — | — | 既有差分（均值 36.2 vs 52.3）待 2.0.270 后复验深色态 | P1 | B |
+| 3-5 | 主题设置（12 色卡） | ✅已补采（2026-11-21 核实）：`parity_shots/ref_dark_20260920/05_theme.png` + `.xml`（横滑 12 卡，可见 4 卡 swatch rgb 已采）；`ref_dark_20260921/04_appearance_clean_dark*.png`（默认动态取色深色基线） | — | — | 12 色卡深色形态 + def 套暗色锚点（#303030 系）核对 | P1 | B（须补采 12 卡深色 + def 暗色锚点复核） |
 | 3-6 | 设置·备份与恢复 | ❌待补采 | — | — | — | P3 | B |
 | 3-7 | 字体（Tt 入口） | ❌待补采 | — | — | — | P3 | B |
 | 3-8 | 朗读 | ❌待补采 | — | — | — | P3 | B |
@@ -183,7 +185,7 @@
 
 | # | 项 | 依赖（外部输入清单） |
 |---|---|---|
-| B-1 | 43 屏全量深色实机比对（本台账 42 屏 ❌待补采 + 3-4 复验 + 3-5） | **参考版（io.legato.kazusa）实机深色截图补采**：①「黑白」套（#303030，isNightTheme）与「A屏黑」套（#000000）两套各一屏级全量（或至少 P1/P2 屏：1-8/1-10/1-11/1-13/2-8/3-4/3-5 七屏两套）②归档按规范 `docs/parity_shots/ref_dark_<YYYYMMDD>/` |
+| B-1 | 43 屏全量深色实机比对（本台账 30 屏 ❌待补采 + 2-10 部分 + 3-4 复验） | **参考版（io.legato.kazusa）实机深色截图补采**：①「黑白」套（#303030，isNightTheme）与「A屏黑」套（#000000）两套各一屏级全量（或至少 P1/P2 屏：1-8/1-10/1-11/1-13/2-8/3-4/3-5 七屏两套——其中 1-8/1-10/1-11/1-13/2-8/3-5 已于 `ref_dark_20260920` 采到单套）②归档按规范 `docs/parity_shots/ref_dark_<YYYYMMDD>/` |
 | B-2 | 【B1/B2】1-8 绿 FAB + 状态词绿深色形态裁决 | ref 08 深色截图 |
 | B-3 | 【B3】1-13 「仅本书」胶囊深色形态确认 | ref 13 深色截图 |
 | B-4 | 【B4】2-8 QR 对话框深色形态确认（扫码白底预期保留） | ref 09 深色截图 |
@@ -218,3 +220,14 @@
   - **A3 干净基线已入库**（默认动态取色主题 + 深色外观页顶部/中部帧）；**A3 页面 IA 对齐尚未实施**（列为 ⑦c 待办）。
 
 - **2026-09-21 A4 实施 + 审查（code-reviewer：pass/可提交，无 P0/P1）**：实现为"详情页 + 立即自动开读"（`BookInfoArgs(openReaderImmediately)`、`_autoStartScheduled` 守卫、目录非空且全量加载完成后 postFrame 开读；书架未读分支改推该参数；长按与已读分流不变）。**阅读器零进度经代码+实机双证无需补丁**；实机五项通过（未读单击直达首章 / 返回后 dci 0→1 写回 / 长按仍详情 / 已读无回归 / 应用零崩溃）。审查要求同批补齐：① 回调加**栈顶校验**（防用户抢先点 FAB 后二次压栈）；② "仅首入触发"落实（首轮加载完成即消费机会，避免后续 reload/桥接刷新把用户拽进阅读器）；③ 3 条 widget 测试（正面/空目录负例/只 push 一次）；④ 取证重采（`a4b2_03` 与长按图 md5 相同且内容为详情页，"返回落点"证据无效 → 重采 + 补"未读长按不自动开读"负例）。**审查附带 P3 观察（非本次引入，登记）**：书架从阅读器返回后不刷新（内存 Book 进度陈旧，`bookshelf_screen.dart` 仅下拉刷新；无功能损失，因详情页会取 DB 最新进度）；`_openReader` 的 `copyWith(bookType:)` 在 typeBits=0 时清内存 notShelf 位（不写库，无污染）。
+
+- **2026-11-21 台账回销核实（R43，只读调研 + 台账回写，未改产品代码）**：对 42 个「❌待补采」屏做全仓证据反查（`docs/**` 全部 6703 张图片按 16×16 缩略图灰度均值扫描，<90 判深色，再逐屏目视确认内容与屏号匹配），**11 屏确认已有参考版深色实机证据并回销**：
+  - `1-1 底部导航`、`1-3 书架` ← `materials_1301/evidence/kz1_home.png`（+ `kz9_longpress.png` 选中态）、`materials_1101d/ref_00_launch.png`
+  - `1-8 书籍详情`、`1-10 阅读器正文`、`1-11 阅读器菜单`、`1-13 全文搜索`、`2-8 书源编辑器(扫码)` ← `parity_shots/ref_dark_20260920/08|10|11|13|09_*.png` + 同名 `.xml`
+  - `2-1 发现`、`2-3 发现源展开(chips)` ← `materials_1301/evidence/kz6_settings_night.png`（发现页深色）、`kz8b.png`（展开态 3 列 chips）
+  - `3-1 我的` ← `materials_1105/ref_kazusa_my_top.png` / `ref_kazusa_my_stopped.png` / `ref_kazusa_running.png`
+  - `3-5 主题设置 12 色卡` ← `parity_shots/ref_dark_20260920/05_theme.png`（横滑 12 卡，含 swatch rgb 采样）+ `ref_dark_20260921/04_appearance_clean_dark*.png`
+  - 追加证据（不改变屏号归属，补记于对应行）：`1-11` 另见 `materials_1031b/34_kz_menu.png`、`35_kz_readcfg1.png`、`36~39_kz_more_tab*.png`（阅读器菜单/字号背景面板/更多 tab 四帧深色）。
+  - **剩余 30 屏仍为真待办**（1-2/1-4/1-5/1-6/1-7/1-9/1-12/1-14/1-15/1-16、2-2/2-4/2-5/2-6/2-7/2-9、3-2/3-3/3-6/3-7/3-8/3-9/3-10/3-11、4-1/4-2/4-3/4-4/4-5/4-6），参考侧仍缺对应深色实机截图；`2-10` 为部分（仅 Web 服务开启态有证据，RSS 源二级页仍缺）。逐屏对照表与判定依据见 `docs/LEDGER_VERIFICATION_20261121.md`。
+  - **口径说明**：`materials_1031c/1031d/1031e`、`materials_1101e/1102/1104*/1107/1109a/1110d` 等目录中的深色图经核实为**我方应用**实机截图（批次验收证据），不计入参考侧素材；`ref_batch3/04_appearance_dark.png` 仍为 3-4 的唯一原始深色参考（本轮由 `ref_dark_20260920/21` 补充）。
+  - **证据完整性告警（2026-11-21 新发现）**：`materials_1301/evidence/` 下 `kz2_reader_open.png` / `kz3_reader_menu.png` / `kz4_tap_top.png` 三文件字节相同（md5 `17b573eb`）且**内容均为书架**；`kz5_reader_settings.png` / `kz7_settings_other.png` 相同（md5 `a97093c5`）、`kz6_settings_night.png` / `kz7b_settings_other.png` 相同（md5 `edebb3f4`），**内容均为发现页**。因此 `P43_WAVE1_DEVICE_QA_20260929.md:122-127` 对 kz2/kz3/kz4/kz5/kz6 的「阅读器/阅读设置 dialog」描述失实，**不可作为 1-10/1-11 深色基准**。本轮 1-10/1-11 改用 `ref_dark_20260920/10_reader.png`、`11_reader_menu.png` 与 `materials_1031b/35~39_kz_*.png`（后者经 `DEVICE_ACCEPTANCE_20261031_BATCH1A.md` §7.1 登记为参考版基准）。
