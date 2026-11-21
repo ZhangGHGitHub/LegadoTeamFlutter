@@ -7,6 +7,73 @@ part of 'book_info_screen.dart';
 // 本文件所有方法均运行于 State 自身（this），受保护访问语义安全。
 // ignore_for_file: invalid_use_of_protected_member
 
+/// [R42 阶段 1] 相关书条目封面高度（5:7，宽 96 → 高 134.4，取整 134）
+const double _relatedBookCoverHeight = 134;
+
+/// [R42 阶段 1 | 2026-11-21] 相关书条目：封面 + 书名 + 作者（宽 96）
+///
+/// 形态对齐参考版 `BannerModule`（`CoilBookCover` width=96dp + 12dp 间距），
+/// 文案层级与书架卡片一致（书名 12sp / 作者 11sp，均单行省略）。
+///
+/// **刻意不带 Hero**：参考版用「按索引唯一」的 sharedCoverKey 做共享元素
+/// 过渡；本仓 Hero 标签约定为 `book-cover:<bookUrl>`，而同一本书可能同时
+/// 出现在两个模块（或多条模块结果重复），同路由重复 Hero tag 会直接抛
+/// 断言崩溃。相关书是次要推荐位，放弃封面飞行换稳定渲染。
+class _RelatedBookTile extends StatelessWidget {
+  const _RelatedBookTile({required this.book, required this.onTap});
+
+  final Book book;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ts = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: 96,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            BookCover(
+              coverUrl: book.coverUrl,
+              bookName: book.name,
+              bookAuthor: book.author,
+              width: 96,
+              height: _relatedBookCoverHeight,
+              borderRadius: 12,
+              sourceOrigin: book.origin,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              book.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: ts.bodySmall?.copyWith(
+                fontSize: 12,
+                color: cs.onSurface,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              book.author,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: ts.labelSmall?.copyWith(
+                fontSize: 11,
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// [08 元信息区对齐 | 台账 0922 修订] chips 行单项数据（分组/kind/字数）
 class _MetaChipSpec {
   const _MetaChipSpec({required this.text, this.onTap, this.onLongPress});
@@ -1601,21 +1668,103 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     ];
   }
 
-  /// [UI_SYNC_REFACTOR S3] RelatedBooks 区块骨架（同上，后端调研中）
+  /// [R42 阶段 1 | 2026-11-21] 相关书区块（契约 §2.55）
+  ///
+  /// 数据源：书源规则 `ruleBookInfo.relatedBooks` → Rust `getRelatedBooks`
+  /// → provider 解析为 [RelatedBooksModule] 列表（JSON 解析全在 provider，
+  /// UI 层不含业务逻辑）。
+  ///
+  /// 形态对齐参考版 `BookInfoScreen.kt` `state.relatedBooks.forEach`：每个
+  /// module 独立一段（标题 + 横向书列表），模块间不共用固定标签。
+  /// **无模块 / 加载中 / 加载失败一律 `const []`**——保持既有「无数据隐藏」
+  /// 缺省语义（加载中也隐藏，避免区块先出现再消失的跳动）。
   List<Widget> _buildRelatedBooksSection(BuildContext context, Book book) {
-    const List<Book> relatedBooks = [];
-    if (relatedBooks.isEmpty) return const [];
+    // 本地书无书源规则，不触发 FFI 请求（Rust 侧同样返回空）
+    if (!_isOnlineBook(book)) return const [];
+    final modules =
+        ref.watch(relatedBooksProvider(book.bookUrl)).valueOrNull ??
+        const <RelatedBooksModule>[];
+    if (modules.isEmpty) return const [];
     return [
       SliverToBoxAdapter(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: Text(
-            AppStrings.relatedBooksLabel,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
+        child: Column(
+          key: const ValueKey('bookInfoRelatedBooks'),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final module in modules)
+              _buildRelatedBooksModule(context, module),
+          ],
         ),
       ),
     ];
+  }
+
+  /// 单个相关书模块：标题行（空标题不渲染）+ 横向书列表
+  ///
+  /// 列表高度按「封面高 + 书名/作者两行」并用 [MediaQuery.textScalerOf]
+  /// 换算，随系统字体缩放增高，避免大字号下 RenderFlex 溢出。
+  Widget _buildRelatedBooksModule(
+    BuildContext context,
+    RelatedBooksModule module,
+  ) {
+    final ts = Theme.of(context).textTheme;
+    final textScaler = MediaQuery.textScalerOf(context);
+    // 封面 96×134（5:7，同参考版 BannerModule width=96dp），下方书名 12sp、
+    // 作者 11sp（与书架/搜索结果层级一致）
+    final rowHeight =
+        _relatedBookCoverHeight +
+        8 +
+        textScaler.scale(12) * 1.3 +
+        textScaler.scale(11) * 1.3 +
+        6;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (module.title.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Text(
+                module.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: ts.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              ),
+            ),
+          SizedBox(
+            height: rowHeight,
+            // 横向长列表按需渲染（懒加载），避免模块书量大时一次性建树
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: module.books.length,
+              itemBuilder: (context, index) {
+                final related = module.books[index];
+                return Padding(
+                  padding: EdgeInsets.only(
+                    right: index == module.books.length - 1 ? 0 : 12,
+                  ),
+                  child: _RelatedBookTile(
+                    book: related,
+                    onTap: () => _openRelatedBook(related),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 相关书点击：进入该书详情页
+  ///
+  /// 复用列表-详情入口 [pushMainDetailNamed]（宽屏右栏追加、窄屏 root 全屏），
+  /// 与书架/发现/搜索点击书籍同一跳转语义；相关书是详情页内下钻，故
+  /// `replace: false`（不清右栏既有栈）。
+  void _openRelatedBook(Book related) {
+    pushMainDetailNamed(context, AppRoutes.bookInfo, arguments: related);
   }
 
   /// 信息面板（[08 元信息区对齐 | 台账 0922 修订] 对标参考 08
