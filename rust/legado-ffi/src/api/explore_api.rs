@@ -448,6 +448,25 @@ async fn explore_books_async(
     url: &str,
     page: i32,
 ) -> LegadoResult<Vec<WebSearchResult>> {
+    explore_books_with_resolved_url_async(source, url, page)
+        .await
+        .map(|(_resolved_url, books)| books)
+}
+
+/// 异步抓取发现分类书籍，同时返回**解析后的最终 URL**（内部实现）
+///
+/// [R42 阶段 1 | 2026-11-21] 相关书需要 `resolvedUrl`（对齐参考版
+/// `WebBook.exploreBookWithResolvedUrl` 返回的 `Pair<String, List<SearchBook>>`），
+/// 故把既有 `explore_books_async` 的实现体提升为本函数，原函数退化为
+/// 丢弃 URL 的薄包装——**单一实现**，不复制请求/解析逻辑。
+///
+/// 返回的 URL 语义与参考版一致：`loginCheckJs` 与重定向之后（即
+/// `login_outcome.url`），本实现内原本就以此作为列表解析 base。
+pub(crate) async fn explore_books_with_resolved_url_async(
+    source: &BookSource,
+    url: &str,
+    page: i32,
+) -> LegadoResult<(String, Vec<WebSearchResult>)> {
     // 解析书源静态 header（登录头在请求合并点按目标 URL 门控附加：
     // 对齐原版 `AnalyzeUrl.isLoginHeaderSite`，见下方 `is_login_header_site`；
     // JS setCookie cookie 改按**请求 URL 属域**在下方合并请求头时兜底注入，
@@ -731,9 +750,9 @@ async fn explore_books_async(
     // collections 空 → getInfoItem 用 ruleBookInfo 整页解析；详情页直连场景）
     if elements.is_empty() {
         if let Some(book) = parse_explore_as_single_book(source, &analyzer, &base_url) {
-            return Ok(vec![book]);
+            return Ok((base_url, vec![book]));
         }
-        return Ok(Vec::new());
+        return Ok((base_url, Vec::new()));
     }
 
     let mut results = Vec::with_capacity(elements.len().min(50));
@@ -836,7 +855,7 @@ async fn explore_books_async(
         t_parse.elapsed()
     );
 
-    Ok(results)
+    Ok((base_url, results))
 }
 
 /// P2-11 ①：explore 顶层分析器的 JS 绑定（形态对齐搜索路径

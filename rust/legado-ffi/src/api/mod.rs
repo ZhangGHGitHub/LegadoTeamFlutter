@@ -46,6 +46,8 @@ pub mod pre_update;
 pub mod privacy_api;
 pub mod read_record_api;
 pub mod reader;
+/// [R42 阶段 1 | 2026-11-21] 相关书（契约 2026-11-21c 行 `getRelatedBooks`）
+pub mod related_books_api;
 pub mod replace_rule_api;
 pub mod review_api;
 pub mod rss;

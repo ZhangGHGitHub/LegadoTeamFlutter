@@ -1439,6 +1439,20 @@ Future<String> exploreEvalUiJs({
   jsStr: jsStr,
 );
 
+/// 获取书籍的相关书模块列表（返回 `{"modules":[…]}` JSON）
+///
+/// 数据源是书源规则 `ruleBookInfo.relatedBooks`（JSON 数组，每项
+/// `{key, title, url}`）：逐模块按发现页规则抓取第 1 页书籍并过滤掉当前书。
+///
+/// **不抛业务错误**：无配置 / 配置非法 / 书或书源不在库 / 全部模块失败 /
+/// 过滤后全空 一律返回 `{"modules":[]}`（UI 按「空数据隐藏」降级）。
+///
+/// 阻塞线程池执行（非阻塞 FFI，不阻塞 Dart 主 isolate）。
+///
+/// `book_url` — 书籍稳定主键（`books.bookUrl`）
+Future<String> getRelatedBooks({required String bookUrl}) =>
+    RustLib.instance.api.crateFfiFfiGetRelatedBooks(bookUrl: bookUrl);
+
 /// 使用规则解析内容，返回 JSON 格式的结果
 Future<String> parseRule({
   required String content,
