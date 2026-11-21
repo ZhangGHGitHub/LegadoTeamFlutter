@@ -14,7 +14,8 @@
 //!   `JsExtensions.kt:518-540`：`<md5Encode16(url)>.<type>`，返回源内
 //!   **相对名**（上游返回相对缓存目录的路径）。URL 后的 `,{...}` 选项
 //!   参与命名，网络请求前经 `split_url_option` 剥离（选项内
-//!   `headers` / `method` 暂不支持，见 [`download_file`]）
+//!   `headers` / `method` / `body` 按上游 `AnalyzeUrl` 语义应用，见
+//!   [`download_file`]，R30）
 //! - cacheFile — 缓存网络文件（`md5Encode16(url)` 为键与文件名，返回文件内容）
 //! - importScript — 读取本地/远端 JS 脚本（远端经 cacheFile）
 //! - getTxtInFolder — 获取文件夹下所有文件内容（读完删除该目录，对齐上游
@@ -442,6 +443,84 @@ mod impl_file_utils {
         (!type_hint.trim().is_empty()).then(|| type_hint.to_string())
     }
 
+    /// `downloadFile` 的请求参数（URL 选项里与网络相关的子集，R30）
+    ///
+    /// 上游 `downloadFile(url)` 走 `AnalyzeUrl(url).getInputStream()`，因此
+    /// 尾部 `,{...}` 的 `method` / `headers` / `body` 都参与真实请求：
+    /// - `method`：`POST` → POST，**其余一律 GET**。上游 `AnalyzeUrl` 解析
+    ///   阶段虽把 `HEAD` 记为 `RequestMethod.HEAD`，但下载实际走的
+    ///   `getResponseAwait()`（`AnalyzeUrl.kt:594-620`）只有 POST 分支，
+    ///   `HEAD` 落入 `else -> get(urlNoQuery, encodedQuery)` 发出 GET；
+    ///   照抄 `HEAD` 会得到一个空 body 的空文件，故按上游实际行为收敛；
+    /// - `headers`：键值都按 `toString()` 取字符串（GSON 会把数字/布尔转文本），
+    ///   覆盖书源级同名头（`AnalyzeUrl.kt:274-276`）；
+    /// - `body`：字符串原样；对象/数组取 JSON 文本
+    ///   （`UrlOption.getBody()` 的 `GSON.toJson`）。
+    ///
+    /// 只解析与下载请求相关的字段；`charset` / `type` / `js` / `webView` 等
+    /// 不在本入口语义内（`type` 仅参与命名，见 [`url_option_type`]）。
+    #[derive(Debug, Default)]
+    struct DownloadRequestOptions {
+        method: Option<legado_net::Method>,
+        headers: std::collections::HashMap<String, String>,
+        body: Option<String>,
+    }
+
+    /// 解析 URL 尾部 `,{...}` 中与请求相关的选项
+    ///
+    /// JSON 非法时返回全默认（GET / 无头 / 无 body）——对齐上游「GSON 解析
+    /// 失败只丢选项、不影响下载」的行为。
+    fn parse_download_request_options(url: &str) -> DownloadRequestOptions {
+        let (_, Some(option)) = split_url_option(url) else {
+            return DownloadRequestOptions::default();
+        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(option) else {
+            return DownloadRequestOptions::default();
+        };
+        let Some(obj) = value.as_object() else {
+            return DownloadRequestOptions::default();
+        };
+
+        let method =
+            obj.get("method")
+                .and_then(|v| v.as_str())
+                .map(|m| match m.to_uppercase().as_str() {
+                    "POST" => legado_net::Method::Post,
+                    // 上游下载链路只有 POST 分支，其余（GET/HEAD/未知）都发 GET
+                    _ => legado_net::Method::Get,
+                });
+
+        let headers = obj
+            .get("headers")
+            .and_then(|v| v.as_object())
+            .map(|map| {
+                map.iter()
+                    .filter_map(|(k, v)| {
+                        // 对齐 GSON String 适配器：数字/布尔按文本、null 跳过
+                        let text = match v {
+                            serde_json::Value::String(s) => s.clone(),
+                            serde_json::Value::Null => return None,
+                            other => other.to_string(),
+                        };
+                        Some((k.clone(), text))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // `UrlOption.getBody()`：字符串原样，对象/数组序列化为 JSON 文本
+        let body = obj.get("body").map(|v| match v {
+            serde_json::Value::String(s) => s.clone(),
+            other => other.to_string(),
+        });
+
+        DownloadRequestOptions {
+            method,
+            headers,
+            body,
+        }
+    }
+
     /// 扩展名（对齐上游 `UrlUtil.getSuffix`）
     ///
     /// `JsExtensions.kt:521` 在无选项 `type` 时调用
@@ -537,10 +616,9 @@ mod impl_file_utils {
     /// 我方扩展 `fileName` 存在时按调用方给定名落盘并原样返回该名（可为
     /// 绝对路径，permissive 调试场景保持既有行为）。
     ///
-    /// 落盘为**原始字节**（P1-2）：下载走 legado-net 的
-    /// `get_bytes_capped`（流式有上限、不经 UTF-8 解码），不再经
-    /// `response.text()` 做文本转换，非 UTF-8 二进制（图片/字体/压缩包）
-    /// 字节完全一致。
+    /// 落盘为**原始字节**（P1-2）：下载走 legado-net 的流式有界读取
+    /// （[`download_bytes_capped`]，不经 UTF-8 解码），不做文本转换，
+    /// 非 UTF-8 二进制（图片/字体/压缩包）字节完全一致。
     ///
     /// 资源上限（P1-1）：单文件 32MB（与 archive 单条目同口径）。网络层按
     /// 块累计并在超限时立即中止（内存峰值 ≤ 上限），`Content-Length` 已
@@ -550,20 +628,27 @@ mod impl_file_utils {
     /// 落盘——流式写盘还需额外处理临时名、rename 与失败清理；二进制完整性
     /// 由网络层的无损字节读取保证。
     ///
-    /// # `,{...}` 选项（P2-3）
+    /// # `,{...}` 选项（P2-3 / R30）
     ///
-    /// 命名覆盖**完整入参**（含选项），但网络请求只使用
+    /// 命名覆盖**完整入参**（含选项），网络请求使用
     /// [`split_url_option`] 剥离后的 URL 部分（对齐上游 `AnalyzeUrl` 在
     /// 发请求前去掉 `paramPattern` 之后的选项）：
     /// `downloadFile("http://h/a.jpg,{"type":"jpg"}")` 请求 `/a.jpg`，
     /// 不会把 `,{...}` 字面量拼进请求路径导致 404。
     ///
-    /// 选项中的 `headers` / `method` / `body` **暂不支持**（仅 GET）。完整
-    /// 应用需要走 `AnalyzeUrl` 链路：书源级 headers、cookie jar 合并、
-    /// 非 GET 方法的流式有界下载；当前 `get_bytes_capped` 只接受 GET +
-    /// 显式 headers，只应用选项 headers 而不合并书源头/Cookie 会形成半套
-    /// 语义，且可能改变现网下载行为，故留待后续专题。当前选项仅参与命名
-    /// 与 URL 剥离，属已登记的已知差异。
+    /// 选项里的 `method` / `headers` / `body` 与上游一致**真正参与请求**
+    /// （R30，`AnalyzeUrl.getInputStream()` 链路）：
+    /// - `method`：`POST` → POST，其余（含 `HEAD`）→ GET。上游下载实际走
+    ///   `getResponseAwait()`，该方法只有 POST 分支，`HEAD` 也会退化为 GET；
+    /// - `headers`：覆盖书源级同名头，再合并会话 Cookie 与 CookieJar 门控
+    ///   （见 [`crate::host_api::network::prepare_download_headers`]）；
+    /// - `body`：字符串原样，对象/数组转 JSON 文本；POST 且无显式
+    ///   `Content-Type` 时按 body 形态兜底 JSON / form-urlencoded。
+    ///
+    /// 未走 `legado-parser::AnalyzeUrl`：该链路还包含 `{{}}` 变量替换、
+    /// `@js` 规则、相对 URL 拼接与 query 编码，对「已成型下载 URL」属
+    /// 无关语义；这里用本模块的 [`split_url_option`] + 选项 JSON 手工
+    /// 应用，保持命名与请求 URL 的既有行为不变。
     pub fn download_file(
         policy: &FsPolicy,
         url: &str,
@@ -572,9 +657,63 @@ mod impl_file_utils {
         download_file_capped(policy, url, file_name, MAX_FILE_BYTES)
     }
 
+    /// 有界读取下载响应体（GET/POST 通用，R30）
+    ///
+    /// 与 `LegadoClient::get_bytes_capped` 同一上限语义（`Content-Length`
+    /// 快拒 + 逐块累计 + 超限立即中止、不留半成品），但允许任意方法与
+    /// body：上游 `downloadFile` 走 `AnalyzeUrl.getInputStream()`，选项
+    /// `method` / `body` 必须真正作用于请求。错误文本保持
+    /// 「下载超出大小上限」不变（批37 回归依赖该文案）。
+    fn download_bytes_capped(
+        request: &legado_net::LegadoRequest,
+        max_bytes: u64,
+    ) -> Result<Vec<u8>, String> {
+        let url = request.url.clone();
+        crate::host_api::runtime_bridge::block_on(async {
+            let client = crate::host_api::network::shared_client_for_url(&url)
+                .map_err(|e| format!("Download client error: {}", e))?;
+            let mut response = client
+                .send_stream(request)
+                .await
+                .map_err(|e| format!("Download error: {}", e))?;
+
+            if !response.is_success() {
+                return Err(format!("Download error: HTTP {}: {url}", response.status()));
+            }
+
+            // Content-Length 快拒：声明值已超限时不必读 body（声明值可被
+            // 服务端伪造得更小，逐块累计仍会兜底）
+            if let Some(declared) = response.content_length() {
+                if declared > max_bytes {
+                    return Err(download_size_limit_error(&url, declared, max_bytes));
+                }
+            }
+
+            let mut body = Vec::new();
+            while let Some(chunk) = response
+                .next_chunk()
+                .await
+                .map_err(|e| format!("Download error: {}", e))?
+            {
+                let received = body.len() as u64 + chunk.len() as u64;
+                if received > max_bytes {
+                    return Err(download_size_limit_error(&url, received, max_bytes));
+                }
+                body.extend_from_slice(&chunk);
+            }
+            Ok(body)
+        })
+    }
+
+    /// 下载超限错误（文案与 `legado-net::download_limit_error` 同口径，
+    /// 批37 回归断言依赖「下载超出大小上限」）
+    fn download_size_limit_error(url: &str, size: u64, max_bytes: u64) -> String {
+        format!("下载超出大小上限：{url} 响应体 {size} 字节，超过上限 {max_bytes} 字节")
+    }
+
     /// [`download_file`] 的有界实现（`max_bytes` 供单测注入小上限，生产入口
     /// 固定 [`MAX_FILE_BYTES`]）
-    fn download_file_capped(
+    pub(crate) fn download_file_capped(
         policy: &FsPolicy,
         url: &str,
         file_name: Option<&str>,
@@ -588,22 +727,30 @@ mod impl_file_utils {
         // 落盘路径必须先过写策略（越界在联网前即拒绝）
         let dest = policy.resolve_write_path(&name)?;
 
-        // P2-3：`,{...}` 选项参与命名（hash 覆盖完整入参），但不属于请求
-        // URL——上游 AnalyzeUrl 在发请求前剥离选项。去掉后
+        // P2-3 / R30：`,{...}` 选项参与命名（hash 覆盖完整入参），但不属于
+        // 请求 URL——上游 AnalyzeUrl 在发请求前剥离选项。去掉后
         // `downloadFile("http://h/a.jpg,{"type":"jpg"}")` 请求 `/a.jpg`，
-        // 而不是把选项字面量拼进路径导致 404。
+        // 而不是把选项字面量拼进路径导致 404。选项里的 method/headers/body
+        // 则作为请求参数应用（R30）。
         let (request_url, _) = split_url_option(url);
-
-        // 异步下载（通过 block_on 桥接）：进程级共享池（2026-09-24 性能专项：
-        // 不再每下载新建客户端/连接池；回环 URL 经 no_proxy 直连池）
-        let bytes = crate::host_api::runtime_bridge::block_on(async {
-            let client = crate::host_api::network::shared_client_for_url(request_url)
-                .map_err(|e| format!("Download client error: {}", e))?;
-            client
-                .get_bytes_capped(request_url, None, max_bytes)
-                .await
-                .map_err(|e| format!("Download error: {}", e))
-        })?;
+        let options = parse_download_request_options(url);
+        let method = options.method.unwrap_or(legado_net::Method::Get);
+        // 上游下载链路的 GET 分支不带 body（`get(urlNoQuery, encodedQuery)`），
+        // 只有 POST 分支消费 body；GET 时丢弃 body 避免发出非预期请求体。
+        let body = match method {
+            legado_net::Method::Post => options.body,
+            _ => None,
+        };
+        let headers =
+            crate::host_api::network::prepare_download_headers(request_url, options.headers, &body);
+        let request = legado_net::LegadoRequest {
+            url: request_url.to_string(),
+            method,
+            headers,
+            body,
+            timeout: None,
+        };
+        let bytes = download_bytes_capped(&request, max_bytes)?;
 
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent).map_err(|e| format!("Cannot create dir: {}", e))?;
@@ -992,6 +1139,7 @@ pub use stub_file_utils::*;
 mod tests {
     use super::*;
     use crate::host_api::fs_policy::FsPolicy;
+    use crate::host_api::MAX_FILE_BYTES;
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1478,6 +1626,296 @@ mod tests {
         let dest = sandbox_root().join(&name);
         assert_eq!(fs::read(&dest).unwrap(), b"JPEG-BYTES");
         let _ = fs::remove_file(dest);
+    }
+
+    /// 记录完整请求（起始行 + 头 + body）的回环服务器（R30）
+    ///
+    /// 返回 `(base_url, captured)`，`captured` 的每项是 `(request_line,
+    /// header_map, body)`。按 `Content-Length` 读 body，供 POST 选项断言。
+    #[allow(clippy::type_complexity)]
+    fn spawn_request_capture_server(
+        body: &'static str,
+    ) -> (
+        String,
+        Arc<std::sync::Mutex<Vec<(String, std::collections::HashMap<String, String>, String)>>>,
+    ) {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环服务器");
+        let port = listener.local_addr().unwrap().port();
+        let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let server_captured = Arc::clone(&captured);
+        std::thread::spawn(move || {
+            for stream in listener.incoming().take(4) {
+                let Ok(mut stream) = stream else { continue };
+                let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut byte) {
+                        Ok(1) => head.push(byte[0]),
+                        _ => break,
+                    }
+                    if head.len() > 64 * 1024 {
+                        break;
+                    }
+                }
+                let text = String::from_utf8_lossy(&head).into_owned();
+                let mut lines = text.split("\r\n");
+                let request_line = lines.next().unwrap_or_default().to_string();
+                let mut headers = std::collections::HashMap::new();
+                for line in lines {
+                    if line.is_empty() {
+                        break;
+                    }
+                    if let Some((k, v)) = line.split_once(':') {
+                        headers.insert(k.trim().to_ascii_lowercase(), v.trim().to_string());
+                    }
+                }
+                let content_length = headers
+                    .get("content-length")
+                    .and_then(|v| v.parse::<usize>().ok())
+                    .unwrap_or(0);
+                let mut raw_body = vec![0u8; content_length];
+                if content_length > 0 {
+                    let _ = stream.read_exact(&mut raw_body);
+                }
+                server_captured.lock().unwrap().push((
+                    request_line,
+                    headers,
+                    String::from_utf8_lossy(&raw_body).into_owned(),
+                ));
+
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n\
+                     Content-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.write_all(body.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+        (format!("http://127.0.0.1:{port}"), captured)
+    }
+
+    /// R30：URL 选项 `headers` 真正作用于下载请求
+    ///
+    /// 修复前 `downloadFile` 只发裸 GET，选项 headers 被丢弃。
+    #[test]
+    fn test_download_file_applies_option_headers() {
+        setup_sandbox();
+        let (base, captured) = spawn_request_capture_server("HEADER-OK");
+        let url =
+            format!("{base}/a.jpg,{{\"headers\":{{\"Referer\":\"https://x/\",\"X-Test\":\"1\"}}}}");
+
+        let name = download_file(&restricted(), &url, None).unwrap();
+        let requests = captured.lock().unwrap().clone();
+        assert_eq!(requests.len(), 1, "应只发起一次请求: {requests:?}");
+        let (line, headers, body) = &requests[0];
+        assert!(
+            line.starts_with("GET /a.jpg "),
+            "无 method 选项应为 GET: {line}"
+        );
+        assert_eq!(
+            headers.get("referer").map(String::as_str),
+            Some("https://x/"),
+            "选项 Referer 未生效: {headers:?}"
+        );
+        assert_eq!(
+            headers.get("x-test").map(String::as_str),
+            Some("1"),
+            "选项自定义头未生效: {headers:?}"
+        );
+        assert!(body.is_empty(), "GET 不应携带 body: {body:?}");
+
+        let dest = sandbox_root().join(&name);
+        assert_eq!(fs::read(&dest).unwrap(), b"HEADER-OK");
+        let _ = fs::remove_file(dest);
+    }
+
+    /// R30：URL 选项 `method` + `body` 真正作用于下载请求
+    ///
+    /// 修复前固定 GET，POST 选项被忽略。
+    #[test]
+    fn test_download_file_applies_option_method_and_body() {
+        setup_sandbox();
+        let (base, captured) = spawn_request_capture_server("POST-OK");
+        let url = format!("{base}/submit.bin,{{\"method\":\"POST\",\"body\":\"a=1\"}}");
+
+        let name = download_file(&restricted(), &url, None).unwrap();
+        let requests = captured.lock().unwrap().clone();
+        assert_eq!(requests.len(), 1, "应只发起一次请求: {requests:?}");
+        let (line, headers, body) = &requests[0];
+        assert!(
+            line.starts_with("POST /submit.bin "),
+            "选项 method=POST 应生效: {line}"
+        );
+        assert_eq!(body, "a=1", "选项 body 应作为请求体发送");
+        assert_eq!(
+            headers.get("content-type").map(String::as_str),
+            Some("application/x-www-form-urlencoded"),
+            "表单形态 body 应补 form-urlencoded Content-Type: {headers:?}"
+        );
+
+        let dest = sandbox_root().join(&name);
+        assert_eq!(fs::read(&dest).unwrap(), b"POST-OK");
+        let _ = fs::remove_file(dest);
+    }
+
+    /// R30：`method` 只认 POST，`HEAD`/未知值按上游下载链路退化为 GET
+    ///
+    /// 上游 `downloadFile` 实际走 `getResponseAwait()`，该方法只有 POST 分支，
+    /// `HEAD` 落入 `else -> get(...)`。若照抄 HEAD 会得到空 body 的空文件。
+    #[test]
+    fn test_download_file_head_option_falls_back_to_get() {
+        setup_sandbox();
+        let (base, captured) = spawn_request_capture_server("HEAD-FALLBACK");
+        let url = format!("{base}/h.bin,{{\"method\":\"HEAD\"}}");
+
+        let name = download_file(&restricted(), &url, None).unwrap();
+        let requests = captured.lock().unwrap().clone();
+        assert_eq!(requests.len(), 1, "应只发起一次请求: {requests:?}");
+        let (line, _, body) = &requests[0];
+        assert!(
+            line.starts_with("GET /h.bin "),
+            "HEAD 应退化为 GET（对齐 getResponseAwait 的 else 分支）: {line}"
+        );
+        assert!(body.is_empty(), "退化后的 GET 不应携带 body");
+
+        let dest = sandbox_root().join(&name);
+        assert_eq!(fs::read(&dest).unwrap(), b"HEAD-FALLBACK");
+        let _ = fs::remove_file(dest);
+    }
+
+    /// R30 回归：无选项时行为不变（GET、无额外请求头）
+    #[test]
+    fn test_download_file_without_option_stays_plain_get() {
+        setup_sandbox();
+        let (base, captured) = spawn_request_capture_server("PLAIN");
+        let url = format!("{base}/plain.bin");
+
+        let name = download_file(&restricted(), &url, None).unwrap();
+        let requests = captured.lock().unwrap().clone();
+        assert_eq!(requests.len(), 1, "应只发起一次请求: {requests:?}");
+        let (line, headers, body) = &requests[0];
+        assert!(line.starts_with("GET /plain.bin "), "默认应为 GET: {line}");
+        assert!(body.is_empty(), "默认不应携带 body: {body:?}");
+        for unexpected in ["referer", "x-test", "content-type"] {
+            assert!(
+                !headers.contains_key(unexpected),
+                "无选项时不应注入 {unexpected}: {headers:?}"
+            );
+        }
+
+        let dest = sandbox_root().join(&name);
+        assert_eq!(fs::read(&dest).unwrap(), b"PLAIN");
+        let _ = fs::remove_file(dest);
+    }
+
+    /// 回环服务器：返回非 UTF-8 二进制（批33 P1-2 二进制安全回归）
+    fn spawn_binary_body_server() -> String {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        const BINARY: &[u8] = &[0x00, 0xff, 0x80, 0x1f, 0xc3, 0x28];
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环服务器");
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().take(2) {
+                let Ok(mut stream) = stream else { continue };
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut byte) {
+                        Ok(1) => head.push(byte[0]),
+                        _ => break,
+                    }
+                }
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n\
+                     Content-Length: {}\r\nConnection: close\r\n\r\n",
+                    BINARY.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.write_all(BINARY);
+                let _ = stream.flush();
+            }
+        });
+        format!("http://127.0.0.1:{port}")
+    }
+
+    /// 批33 P1-2 回归：R30 改用 `send_stream` 后仍按原始字节落盘
+    #[test]
+    fn test_download_file_binary_bytes_unchanged_after_option_support() {
+        setup_sandbox();
+        let base = spawn_binary_body_server();
+        let url = format!("{base}/payload.bin");
+
+        let name = download_file(&restricted(), &url, None).unwrap();
+        let dest = sandbox_root().join(&name);
+        assert_eq!(
+            fs::read(&dest).unwrap(),
+            vec![0x00, 0xff, 0x80, 0x1f, 0xc3, 0x28],
+            "非 UTF-8 字节必须原样落盘（不得被替换为 U+FFFD）"
+        );
+        let _ = fs::remove_file(dest);
+    }
+
+    /// 批37 回归：新请求路径（`send_stream`）仍按块累计执行 32MB 上限
+    ///
+    /// 用无 `Content-Length` 的响应强制走「逐块累计」分支（声明值快拒由
+    /// `download_limit_tests` 覆盖），注入小上限后必须在超限时立即中止且
+    /// 不落盘。生产入口上限由 [`test_download_file_production_cap_is_32mb`]
+    /// 钉住。
+    #[test]
+    fn test_download_file_streaming_limit_still_enforced() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        setup_sandbox();
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环服务器");
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().take(2) {
+                let Ok(mut stream) = stream else { continue };
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut byte) {
+                        Ok(1) => head.push(byte[0]),
+                        _ => break,
+                    }
+                }
+                // 不声明 Content-Length：走逐块累计上限分支
+                let head = "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n\
+                            Connection: close\r\n\r\n";
+                let _ = stream.write_all(head.as_bytes());
+                let _ = stream.write_all(&vec![0x41u8; 8192]);
+                let _ = stream.flush();
+            }
+        });
+        let url = format!("http://127.0.0.1:{port}/big.bin");
+        let name = unique_name("legado_js_stream_limit");
+
+        let err = download_file_capped(&restricted(), &url, Some(&name), 1024)
+            .expect_err("超限下载应报错");
+        assert!(
+            err.contains("下载超出大小上限"),
+            "逐块累计超限应报大小上限错误: {err}"
+        );
+        assert!(!sandbox_root().join(&name).exists(), "超限下载不得落盘");
+    }
+
+    /// 批37：生产入口上限常量仍为 32MB
+    #[test]
+    fn test_download_file_production_cap_is_32mb() {
+        assert_eq!(
+            MAX_FILE_BYTES,
+            32 * 1024 * 1024,
+            "单文件下载上限应为 32MB（批37 口径）"
+        );
     }
 
     /// `deleteFile(dir)` 递归删除（对齐上游 `FileUtils.delete(file, true)`）

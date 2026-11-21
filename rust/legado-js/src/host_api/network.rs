@@ -356,6 +356,29 @@ fn apply_source_cookie_jar_gate(headers: &mut HashMap<String, String>) {
     headers.insert(COOKIE_JAR_HEADER.to_string(), "1".to_string());
 }
 
+/// `downloadFile` 的请求头准备（书源级 headers → URL 选项 headers → 会话
+/// Cookie → 非 GET body 的 Content-Type 兜底 → CookieJar 写侧门控）
+///
+/// 合并顺序对齐上游 `AnalyzeUrl`（R30）：
+/// 1. 书源 header 规则执行结果（`global_headers`，按 tag 隔离）作为底；
+/// 2. URL 尾部 `,{...}` 的 `headers` **覆盖**同名书源头（`AnalyzeUrl.kt:274-276`
+///    直接 `headerMap[key] = value`）；
+/// 3. `setCookie()` 把会话 Cookie 合并进已有 `Cookie` 头（已有键胜、缺键补）；
+/// 4. 非 GET 带 body 且无显式 `Content-Type` 时按 body 形态兜底
+///    （`postJson` / `postForm` 的等价近似，与 `ajax` 同一实现）；
+/// 5. 书源开启 CookieJar 时补写侧标记（批 2 门控）。
+///
+/// 只服务于文件下载入口，`ajax` 仍走 [`merge_global_cookie`] 的既有顺序。
+pub(crate) fn prepare_download_headers(
+    url: &str,
+    option_headers: HashMap<String, String>,
+    body: &Option<String>,
+) -> HashMap<String, String> {
+    let mut headers = ensure_json_content_type(merge_global_cookie(option_headers, url), body);
+    apply_source_cookie_jar_gate(&mut headers);
+    headers
+}
+
 /// 重置全部 4 个池槽位（仿 `legado-ffi::http_state::reset_shared_client`）
 ///
 /// 置空后下次 [`shared_client`] 调用按当前配置重建（构建时读取此刻已
