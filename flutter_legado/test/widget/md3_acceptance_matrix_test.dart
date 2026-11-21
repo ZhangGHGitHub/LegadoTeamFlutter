@@ -1,11 +1,15 @@
 // MD3 验收矩阵（UI_MD3_PLAN.md 第十三节）自动化
 //
-// 覆盖三项：
+// 覆盖四项：
 // 1. 关键页渲染矩阵：theme_config/home/settings/search × WH/koharu/sora
 //    × light/dark 全部无异常渲染（溢出/布局异常会被 flutter test 捕获）；
 //    golden 截图基线按计划修订以渲染矩阵替代——跨平台（Windows 开发 /
 //    Linux CI）字体渲染差异使 golden 二进制基线脆弱，截图验收改由
 //    模拟器 -CheckUI 流程承担（UI_MD3_PLAN.md 实施状态记录）。
+//    [R41] 补「书籍详情 / 阅读」两核心屏：同样 3 调色板 × 亮暗全覆盖，
+//    断言关键元素在位（详情：书名/查看目录/书源；阅读：ReaderPageView
+//    已挂载）且 takeException 为 null。pump 成本低（详情 7 stub、阅读 4
+//    stub，复用 one_to_one_matrix / reader_dark_background 模板）。
 // 2. 系统字体缩放边界：textScaler 0.8/1.6 下关键页无溢出。
 // 3. 语义/触控目标：底栏 NavigationBar 目标 ≥ 48dp、SwitchListTile 行高
 //    ≥ 48dp、主题卡片语义标签存在。
@@ -16,13 +20,18 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
+import 'package:flutter_legado/src/providers/reader/reader_notifier.dart';
+import 'package:flutter_legado/src/screens/book_info_screen.dart';
 import 'package:flutter_legado/src/screens/home_screen.dart';
+import 'package:flutter_legado/src/screens/reader_screen.dart';
 import 'package:flutter_legado/src/screens/search_screen.dart';
 import 'package:flutter_legado/src/screens/settings_screen.dart';
 import 'package:flutter_legado/src/screens/theme_config_screen.dart';
 import 'package:flutter_legado/src/theme/app_theme.dart';
 import 'package:flutter_legado/src/theme/md3_colors.dart';
+import 'package:flutter_legado/src/widgets/reader/reader_page_view.dart';
 import '../mocks/mocks.dart';
 
 void main() {
@@ -138,6 +147,115 @@ void main() {
       await tester.pumpAndSettle(const Duration(seconds: 2));
       expect(tester.takeException(), isNull);
     });
+  });
+
+  /// 装配指定调色板 + 亮暗、可指定 home 的 MaterialApp
+  /// （与 buildApp 同口径，仅把 home 参数化以复用关键屏矩阵）
+  Widget buildScreenApp(String paletteId, ThemeMode mode, Widget home) {
+    SharedPreferences.setMockInitialValues({
+      'app_palette_id': paletteId,
+      'app_theme_mode': switch (mode) {
+        ThemeMode.light => 'light',
+        ThemeMode.dark => 'dark',
+        _ => 'system',
+      },
+    });
+    return MaterialApp(
+      theme: _paletteTheme(paletteId, Brightness.light),
+      darkTheme: _paletteTheme(paletteId, Brightness.dark),
+      themeMode: mode,
+      home: home,
+    );
+  }
+
+  /// 书籍详情页最小 mock 链（对齐 one_to_one_matrix_test 模板）：
+  /// getBook / getChapters / getBooks / getBookGroups / getBookSources /
+  /// getConfig / getChapterContent 共 7 项，均为详情首屏加载所需。
+  MockRustApi stubBookInfoApi(Book book) {
+    final api = MockRustApi();
+    when(() => api.getBook(any())).thenAnswer((_) async => book);
+    when(() => api.getChapters(any()))
+        .thenAnswer((_) async => const [BookChapter(title: '第一章')]);
+    when(() => api.getBooks()).thenAnswer((_) async => [book]);
+    when(() => api.getBookGroups()).thenAnswer((_) async => const []);
+    when(() => api.getBookSources()).thenAnswer((_) async => const []);
+    when(() => api.getConfig(any())).thenAnswer((_) async => '');
+    when(() => api.getChapterContent(any(), any()))
+        .thenAnswer((_) async => '内容');
+    return api;
+  }
+
+  /// 阅读页最小 mock 链（对齐 reader_dark_background_test 模板）：
+  /// getChapters / getChapterContent / getBookSources / getConfig 共 4 项。
+  MockRustApi stubReaderApi() {
+    final api = MockRustApi();
+    when(() => api.getChapters(any()))
+        .thenAnswer((_) async => const [BookChapter(title: '第一章')]);
+    when(() => api.getChapterContent(any(), any()))
+        .thenAnswer((_) async => '正文内容');
+    when(() => api.getBookSources()).thenAnswer((_) async => const []);
+    when(() => api.getConfig(any())).thenAnswer((_) async => '');
+    return api;
+  }
+
+  // [R41] 详情/阅读两屏单测级渲染防护：与 theme_config 同口径，3 调色板 ×
+  // 亮暗全部无异常渲染（异常/溢出会被 flutter test 捕获），并断言关键元素在
+  // 位。不写像素级断言（本仓无 golden 基础设施）。
+  group('关键页渲染矩阵（详情/阅读补页）', () {
+    for (final (name, _) in palettes) {
+      for (final mode in [ThemeMode.light, ThemeMode.dark]) {
+        testWidgets('$name/${mode.name} book_info 无异常渲染', (tester) async {
+          tester.view.physicalSize = const Size(1080, 2260);
+          tester.view.devicePixelRatio = 3.0;
+          addTearDown(tester.view.reset);
+          final book = Book(
+            bookUrl: 'https://src.com/book/matrix',
+            name: '矩阵详情书',
+            author: '作者',
+            coverUrl: '',
+          );
+          final api = stubBookInfoApi(book);
+          await tester.pumpWidget(
+            ProviderScope(
+              overrides: [bookApiProvider.overrideWithValue(api)],
+              child: buildScreenApp(name, mode, BookInfoScreen(book: book)),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          // 关键元素在位：书名 / 四宫格入口「查看目录」「书源」
+          expect(find.text('矩阵详情书'), findsWidgets);
+          expect(find.text('查看目录'), findsWidgets);
+          expect(find.text('书源'), findsWidgets);
+          expect(tester.takeException(), isNull);
+        });
+
+        testWidgets('$name/${mode.name} reader 无异常渲染', (tester) async {
+          tester.view.physicalSize = const Size(1080, 2260);
+          tester.view.devicePixelRatio = 3.0;
+          addTearDown(tester.view.reset);
+          final api = stubReaderApi();
+          await tester.pumpWidget(
+            ProviderScope(
+              overrides: [bookApiProvider.overrideWithValue(api)],
+              child: buildScreenApp(name, mode, const ReaderScreen()),
+            ),
+          );
+          // 书架打开链路注入（对标 reader_dark_background_test）
+          final container = ProviderScope.containerOf(
+            tester.element(find.byType(ReaderScreen)),
+          );
+          await container
+              .read(readerNotifierProvider.notifier)
+              .openBook(const Book(bookUrl: 'u1', name: '矩阵书'));
+          await tester.pumpAndSettle();
+
+          // 正文分页面板已挂载（说明书籍打开链路走通、非空态占位）
+          expect(find.byType(ReaderPageView), findsOneWidget);
+          expect(tester.takeException(), isNull);
+        });
+      }
+    }
   });
 
   group('系统字体缩放边界（0.8x / 1.6x）', () {
