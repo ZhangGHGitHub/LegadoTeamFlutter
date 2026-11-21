@@ -28,10 +28,10 @@
 //! ## 并发
 //!
 //! 参考版 `coroutineScope + async + awaitAll` 并发请求各模块。本实现在
-//! [`crate::runtime::block_on`] 驱动的单线程执行器上用
-//! `buffered(RELATED_BOOKS_CONCURRENCY)` 并发跑模块 future（HTTP 并发、
-//! 结果顺序与配置顺序一致），并用 [`RELATED_BOOKS_CONCURRENCY`] 限制同时在途
-//! 的请求数，避免模块数异常大时打爆共享连接池。
+//! [`crate::runtime::block_on`] 驱动的同一异步任务内用
+//! `buffered(RELATED_BOOKS_CONCURRENCY)` 并发推进各模块 future（HTTP 请求
+//! 真并发、结果顺序与配置顺序一致），并用 [`RELATED_BOOKS_CONCURRENCY`]
+//! 限制同时在途的请求数，避免模块数异常大时打爆进程级共享连接池。
 //!
 //! ## 流程作用域
 //!
