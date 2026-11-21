@@ -41,6 +41,48 @@
 //! 书源自定的合法键（`cache.put` 键无语义约束），有误删用户缓存的风险，
 //! 收益仅为一次性的磁盘回收——用户点「清理缓存」即可回收 KV 层孤儿。
 //!
+//! # 已知边界：RSS WebView 垫片的 cache 读不对称（R29）
+//!
+//! 本模块是 QuickJS 路径与 RSS WebView 垫片**共用的唯一存储**，但两条路径
+//! 的读面能力不同，缺口是**单向**的（核实自 `legado-ffi` 的
+//! `rss_web_bridge.rs` `PREPARE_SCRIPT_TEMPLATE`，2026-11-21）：
+//!
+//! - **写**：垫片 `cache.put/remove/putMemory/deleteMemory` 先改页面内
+//!   `__lgCacheMirror`，再 `__lgStore('cachePut'|…)` fire-and-forget 转发到
+//!   `__store`，最终落在本模块 → QuickJS 路径可读到（方向成立）。
+//! - **读**：垫片 `cache.get/getFromMemory` **只查 `__lgCacheMirror`**，
+//!   **从不**发出 `cacheGet` 转发（`__store` 虽实现了 `cacheGet`，垫片侧无
+//!   调用点）。镜像只在页面内被本页写入填充，**不从本模块预置**，故
+//!   「QuickJS 已写入 → WebView 读」在每页首次命中时返回 `null`。
+//!
+//! 实际后果比「读一致性缺口」的笼统表述要窄：`preloadJs` 里的
+//! `cache.put` 只对**当前页面**的后续 `cache.get` 生效（镜像命中），
+//! 跨页面/跨路径读不到；但不会读到**错值**，最坏退化为重复取数。
+//!
+//! ## 为何不在本模块侧修
+//!
+//! 三条候选路径均被硬约束挡住（不是成本问题，是可行性问题）：
+//!
+//! 1. **同步经桥读**：不可行。宿主是 `webview_flutter` 的
+//!    `JavaScriptChannel`，只有 `postMessage` 单向发送、**无同步返回值**
+//!    （原版靠 `@JavascriptInterface` 同步调用，Flutter 无该面）。要同步
+//!    必须自研原生 WebView 插件，属平台层且超出 Rust 范围。
+//! 2. **miss 时异步回落（返回 Promise）**：**破坏性**。`cache.get` 现为
+//!    同步 `String|null`，既有书源 `preloadJs` 直接把它当值用
+//!    （`cache.get(k).split(...)`、真值判断、模板拼接）。改返回 Promise
+//!    会让所有调用方静默出错（Promise 恒真、无 `.split`）。
+//! 3. **prepare 时用本模块预置镜像**：不可行且越界。①本模块**无键枚举
+//!    API**，`cache.put` 键无语义约束 → 全量扫描无界（`total_size_bytes`
+//!    只统计不返回键）；②需给 `__prepare` 的 `snapshot` 加字段 →
+//!    属契约变更（本项目要求契约先行，不得在缺陷修复里夹带）；③即便预置，
+//!    也只能覆盖 prepare 之前的写入，之后的跨路径写入仍读不到。
+//!
+//! 故按「不引入破坏性变更」原则**登记为已知边界**：与本模块 R31 同类处置，
+//! 上游等价性说明见 `API_CONTRACT.md` §2.5 批21a 平台差异 ②。若未来宿主
+//! 换成支持同步 JS 接口的原生 WebView，或允许契约先行新增
+//! `cache.getAwait`（**不改变** `cache.get` 语义的加法式新方法），可重新
+//! 评估；届时预置镜像所需的有界键枚举也应在此处提供。
+//!
 //! QuickJS 引擎按 source_tag LRU 缓存、跨书源复用（engine_cache），
 //! 故缓存实现为 **Rust 进程级存储**而非 JS 对象——同一进程内多书源共享
 //! 同一份缓存，对齐上游单例 CacheManager 语义（JS 侧每次 eval 都能命中）。
