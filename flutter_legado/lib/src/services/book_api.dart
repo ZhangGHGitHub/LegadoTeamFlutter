@@ -1340,6 +1340,16 @@ abstract class BookApi {
   /// [B2 | 2026-10-03] 加法式新增（契约 §2.48 audio_cache 写入面）。
   Future<bool> audioCacheCancel();
 
+  // ========== 相关书（契约 §2.55，R42 阶段 1） ==========
+
+  /// 取书籍详情页「相关书」模块（只读、幂等）
+  ///
+  /// 数据源为书源规则 `ruleBookInfo.relatedBooks`（JSON 数组 `{key,title,url}`），
+  /// Rust 侧逐个调既有 explore 取书并过滤当前书。返回 JSON 字符串
+  /// `{"modules":[{key,title,url,resolvedUrl,books[]}]}`；**无规则配置 /
+  /// 全部模块失败 / 过滤后全空 → `{"modules":[]}`（不抛错）**，UI 按空数据隐藏。
+  Future<String> getRelatedBooks({required String bookUrl});
+
   // ========== 章节购买 ==========
 
   /// 执行章节购买动作（契约 §2.43.2，对照 Kotlin ReadBookActivity.payAction）

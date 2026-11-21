@@ -566,6 +566,14 @@ mixin RustApiDiscoveryCache on RustApiDecode implements BookApi {
   @override
   Future<bool> audioCacheCancel() => bridge.audioCacheCancel();
 
+  // ========== 相关书（契约 §2.55，R42 阶段 1） ==========
+
+  /// 直通 FFI：Rust 侧读 `ruleBookInfo.relatedBooks` → 逐个 explore →
+  /// 过滤当前书 → 组装 JSON。容错与空态语义全在 Rust，Dart 原样透传。
+  @override
+  Future<String> getRelatedBooks({required String bookUrl}) =>
+      bridge.getRelatedBooks(bookUrl: bookUrl);
+
   // ========== 视频弹幕（契约 §2.49，V-B1） ==========
 
   /// 查询某章弹幕数据（只读、幂等；降级路径返回 null）
