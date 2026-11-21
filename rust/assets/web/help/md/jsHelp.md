@@ -356,8 +356,9 @@ java.htmlFormat(str: String, redirectUrl: String): String
 >  所有文件操作都限域在引擎沙箱目录内（应用缓存下的 `js_files/<书源哈希>/`；未注入宿主目录时为系统临时目录 `legado_js_cache/<书源哈希>/`，同一书源共享一个子目录、不同书源互不可见）：相对路径相对该子目录解析，绝对路径也必须位于其中，越界读写返回 `[ERROR]` 或抛异常。单文件读取/下载上限 32MB（`writeFile` 仅调试环境可用且无上限），`getTxtInFolder` 累计上限 64MB。下载按**原始字节**落盘，不做文本编码转换。
 ```js
 //文件下载：落盘名 <md5Encode16(url)>.<type>，返回**源内相对文件名**
-//（可直接传给 readTxtFile/getFile）；URL 尾部的 ,{...} 选项仅参与命名
-//与 URL 剥离，headers/method 暂不支持
+//（可直接传给 readTxtFile/getFile）。URL 尾部的 ,{...} 选项参与请求：
+//method（仅 POST 生效，其余含 HEAD 按上游退化为 GET）、headers（覆盖
+//书源同名头）、body（POST 时随请求发送）
 java.downloadFile(url: String): String
 //已废弃：十六进制内容按 url 类型落盘（原版 @Deprecated 重载）
 java.downloadFile(contentHex: String, url: String): String
