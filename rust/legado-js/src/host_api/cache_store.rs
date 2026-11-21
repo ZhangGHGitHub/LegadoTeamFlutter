@@ -20,6 +20,26 @@
 //!   `file/` 数据与 meta；**只清本模块自己的产物**、保留注入根目录
 //!   （根目录与 image_cache/audio_cache/js_files 等兄弟目录不受影响），
 //!   供宿主「清理缓存」入口（FFI `cache_clear`）接线。
+//! - `total_size_bytes()` — 占用统计（R26）：与 `clear_all` **同口径**
+//!   （内存层 + 根目录 KV + `file/`），供宿主「已用缓存」展示；修复前
+//!   FFI `get_cache_size` 只统计章节缓存，清得比统计得多。
+//!
+//! # 已知边界：旧「前 16 位」键孤儿（R31）
+//!
+//! 批36 修复 `cacheFile` 键口径前（`be23f3a13f` 之前），`file_utils` 内的
+//! 私有 `md5_hex16` 取 MD5 hex **前 16 位**（上游 `MD5Utils.md5Encode16`
+//! 取中段 `[8, 24)`），修复后旧键与旧命名文件不再被读到。它们的归宿：
+//! - 本模块磁盘 KV：文件名是 `sha256(旧键).json`，仍是 64 位小写 hex，
+//!   落在 [`is_kv_disk_entry`] 的识别范围内 → [`clear_all`] 会一并删除；
+//! - 内存层：进程级，重启即失；
+//! - `js_files/<源 tag>/<前 16 位>.<后缀>` 下载文件：属 `file_utils` 沙箱
+//!   目录、**不在本模块清理范围**（与当前代文件同等，`clear_all` 本来
+//!   就不清 js_files，见 [`clear_all`] 范围说明）。
+//!
+//! 故孤儿只占空间、不影响功能与正确性（永不命中 ≠ 读到错值），**不做
+//! 破坏性迁移**：启动扫描删除「不符合当前键格式」的条目需判定哪些键是
+//! 书源自定的合法键（`cache.put` 键无语义约束），有误删用户缓存的风险，
+//! 收益仅为一次性的磁盘回收——用户点「清理缓存」即可回收 KV 层孤儿。
 //!
 //! QuickJS 引擎按 source_tag LRU 缓存、跨书源复用（engine_cache），
 //! 故缓存实现为 **Rust 进程级存储**而非 JS 对象——同一进程内多书源共享
@@ -498,6 +518,77 @@ fn is_kv_disk_entry(path: &std::path::Path) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
+/// 本模块缓存占用（字节）：内存 LRU + 根目录 KV 条目 + `file/` 数据与 meta
+///
+/// # 口径（R26）
+///
+/// 与 [`clear_all`] 的**清理范围严格同源**：宿主「已用缓存」与「清理缓存」
+/// 实际释放量必须一致，否则出现「显示 10MB、清理后释放更多」。修复前 FFI
+/// `get_cache_size` 只统计 `cached_chapters`（章节缓存），而 `clear_cache`
+/// 同时清 DB 通用 KV 与 [`clear_all`]——统计与清理口径不一致。
+///
+/// # IO 代价
+///
+/// 两次 `read_dir`（根目录 + `file/`）+ 每条目一次 `metadata()`（一次 stat
+/// 系统调用）累加。条目数量级：根目录 KV 通常几十到几百（书源 `cache.put`
+/// 键），`file/` 可达上千（`putFile` 抓取的文件）——单次统计在毫秒量级。
+/// 该函数仅供设置页「已用缓存」展示（低频、非热路径），故不引入索引/缓存
+/// 层；若将来调用频率上升，可改为增量记账（put/put_file/delete 时累加），
+/// 但需处理外部删除与跨进程并发，复杂度显著高于当前收益。
+///
+/// # 重复计入口径
+///
+/// `put` 的永久条目（`deadline == 0`）同时持有磁盘文件与内存副本，本函数按
+/// **实际占用**双计（磁盘与内存各占一份，都是真实开销）；内存层容量上限
+/// [`MEMORY_CACHE_CAPACITY`] 条，双计对总量的影响有界。
+///
+/// 目录不存在（首次使用 / 刚清空）按 0 计；单条目 stat 失败跳过（统计不应
+/// 因个别条目异常而失败）。
+pub fn total_size_bytes() -> u64 {
+    // 读锁：与 clear_all 的写锁互斥，避免统计到「清了一半」的中间态
+    let _guard = disk_read_guard();
+
+    let memory_bytes: u64 = match memory_cache().lock() {
+        Ok(cache) => cache
+            .iter()
+            .map(|(k, v)| (k.len() as u64).saturating_add(v.len() as u64))
+            .sum(),
+        Err(poisoned) => poisoned
+            .into_inner()
+            .iter()
+            .map(|(k, v)| (k.len() as u64).saturating_add(v.len() as u64))
+            .sum(),
+    };
+
+    let root = disk_dir();
+    // 根目录只算本模块命名的 `<sha256>.json`（兄弟模块的 image_cache /
+    // audio_cache / js_files 目录与无关文件不计入，与 clear_all 同口径）
+    let kv_bytes = dir_entry_bytes(&root, is_kv_disk_entry);
+    // file/ 子目录：数据文件 + `.meta.json`（全部为本模块产物）
+    let file_bytes = dir_entry_bytes(&root.join("file"), |_| true);
+
+    memory_bytes
+        .saturating_add(kv_bytes)
+        .saturating_add(file_bytes)
+}
+
+/// 累加目录内**直接子项文件**的字节数（`read_dir` + 每条目 `metadata()`）
+///
+/// `filter` 作用于条目路径（根目录用来排除兄弟模块目录/无关文件）；
+/// 目录不存在返回 0；子目录本身不计（`file/` 下无嵌套目录，根目录的
+/// 子目录已被 [`is_kv_disk_entry`] 排除）。
+fn dir_entry_bytes(dir: &std::path::Path, filter: impl Fn(&std::path::Path) -> bool) -> u64 {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .filter(|entry| filter(&entry.path()))
+        .filter_map(|entry| entry.metadata().ok())
+        .filter(|meta| meta.is_file())
+        .fold(0u64, |acc, meta| acc.saturating_add(meta.len()))
+}
+
 /// 清空全部缓存（内存层 + 磁盘 KV 条目 + `file/` 数据与 meta）
 ///
 /// # 语义（批36 P3-4）
@@ -721,6 +812,110 @@ mod tests {
         assert!(get(&k, true).is_none());
         assert!(get_file(&k).is_none());
         assert!(get_from_memory(&k).is_none());
+    }
+
+    /// [R26] `total_size_bytes`：与 `clear_all` 同口径统计
+    /// 内存层 + 根目录 KV 条目 + `file/` 数据与 meta；兄弟模块目录与
+    /// 根目录无关文件不计入；清空后归零
+    #[test]
+    fn test_total_size_bytes_matches_clear_all_scope() {
+        let _lock = lock_cache_for_test();
+        let root = unique_root("total-size");
+        set_test_disk_dir_override(Some(root.clone()));
+
+        assert_eq!(total_size_bytes(), 0, "空目录应为 0");
+
+        let k_kv = unique_key("size-kv");
+        let k_file = unique_key("size-file");
+        let k_file_ttl = unique_key("size-file-ttl");
+        let k_mem = unique_key("size-mem");
+
+        assert!(put(&k_kv, &"a".repeat(4096), 0));
+        assert!(put_file(&k_file, &"b".repeat(8192), 0));
+        assert!(put_file(&k_file_ttl, &"c".repeat(1024), 3600));
+        put_memory(&k_mem, &"d".repeat(2048));
+
+        let with_entries = total_size_bytes();
+        // 磁盘三份原始负载 + 内存一份（put 的永久值另有内存副本，只增不减）
+        assert!(
+            with_entries >= 4096 + 8192 + 1024 + 2048,
+            "应累加内存 + KV + file/ 负载，实际 {with_entries}"
+        );
+
+        // 兄弟模块目录与根目录无关文件不计入（与 clear_all 范围同源）
+        let image_dir = root.join("image_cache");
+        fs::create_dir_all(&image_dir).expect("image_cache 目录");
+        fs::write(image_dir.join("cover.bin"), vec![0u8; 65536]).expect("图片缓存文件");
+        fs::write(root.join("not-a-cache-entry.json"), vec![0u8; 65536]).expect("无关文件");
+        assert_eq!(
+            total_size_bytes(),
+            with_entries,
+            "兄弟模块目录与根目录非本模块文件不得计入"
+        );
+
+        // 清空后归零（统计与清理口径一致：清掉的正是统计到的）
+        clear_all();
+        assert_eq!(total_size_bytes(), 0, "清空后占用应为 0");
+
+        set_test_disk_dir_override(None);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// [R26] 目录不存在时统计为 0（首次使用路径，不 panic 不告警）
+    #[test]
+    fn test_total_size_bytes_missing_dir_is_zero() {
+        let _lock = lock_cache_for_test();
+        let root = unique_root("total-size-missing");
+        set_test_disk_dir_override(Some(root.join("never-created")));
+        assert_eq!(total_size_bytes(), 0);
+        set_test_disk_dir_override(None);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// [R31] 旧「前 16 位」键孤儿可被 `clear_all` 回收（只占空间、不影响功能）
+    ///
+    /// 批36 修复 `cacheFile` 键口径后，修复前写入的旧键条目永不命中。本测试
+    /// 固化「孤儿可回收」这一结论：手工按**旧键**（MD5 hex 前 16 位，与
+    /// `encoding::md5_encode_16` 的中段口径不同）写入一条 KV，验证
+    /// - 新键读不到旧键值（孤儿确认存在，且不会读到错值）；
+    /// - `clear_all` 仍能删除它（文件名是 `sha256(旧键).json`，仍符合
+    ///   `is_kv_disk_entry` 的 64 位小写 hex 命名）。
+    ///
+    /// 故采用「方案 C：不迁移、仅登记」——破坏性扫描删除有误删书源自定义
+    /// 键的风险，而用户点「清理缓存」即可回收。
+    #[test]
+    fn test_legacy_prefix16_key_orphan_is_reclaimed_by_clear_all() {
+        let _lock = lock_cache_for_test();
+        let root = unique_root("r31-orphan");
+        set_test_disk_dir_override(Some(root.clone()));
+
+        // 构造旧口径键：MD5 小写 hex 的**前** 16 字符（修复前 file_utils 私有
+        // `md5_hex16` 口径），与新口径中段 16 字符必然不同。此处用固定样例
+        // 键即可——本测试只验证「任意 16 位 hex 旧键」的回收路径，不依赖
+        // 具体 URL 的哈希值。
+        let legacy_key = "5d41402abc4b2a76"; // 旧口径样例键（前 16 位）
+        let new_key = "bc4b2a76b9719d91"; // 新口径样例键（中段 16 字符）
+
+        // 旧键写入磁盘 KV（模拟修复前遗留）
+        let legacy_path = disk_path(legacy_key);
+        fs::create_dir_all(&root).expect("缓存根目录");
+        fs::write(&legacy_path, r#"{"v":"legacy-value","d":0}"#).expect("旧键条目");
+        assert!(legacy_path.exists());
+
+        // 旧键仍可按自身键读到（孤儿 ≠ 损坏数据）；新键读不到旧键值
+        assert_eq!(
+            get(legacy_key, true).as_deref(),
+            Some("legacy-value"),
+            "旧键条目本身可读（孤儿只影响命中率，不污染新键）"
+        );
+        assert!(get(new_key, true).is_none(), "新键不得命中旧键条目");
+
+        // clear_all 回收孤儿（命名仍是 sha256(键).json → 在识别范围内）
+        clear_all();
+        assert!(!legacy_path.exists(), "clear_all 应回收旧键孤儿条目");
+
+        set_test_disk_dir_override(None);
+        let _ = fs::remove_dir_all(&root);
     }
 
     /// [批36 P3-4] `clear_all`：内存层 + 根目录 KV 条目全清；

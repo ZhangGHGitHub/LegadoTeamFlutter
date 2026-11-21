@@ -11,12 +11,31 @@ use legado_db::{CacheBookRepository, CacheRepository};
 use crate::db_state::with_database;
 
 /// 获取缓存总大小（字节）
+///
+/// [R26] 统计口径与 [`clear_cache`] 的清理口径对齐：章节缓存
+/// （`cached_chapters.total_size_bytes`）+ JS 宿主 [`cache_store`] 占用
+/// （内存 LRU + `js_cache` 根目录 KV 条目 + `file/` 数据与 meta）。
+///
+/// 修复前只统计章节缓存，而 `clear_cache` 已同时清 DB 通用 KV 与
+/// `cache_store`——「已用」小于「清理后释放量」，用户看到 10MB 但清理后
+/// 释放更多。现在两者同源（`cache_store::total_size_bytes` 与
+/// `cache_store::clear_all` 共用 `is_kv_disk_entry` 识别规则）。
+///
+/// 返回值语义**不变**（仍是「缓存总字节数」`i64`），但数值会比修复前大：
+/// 这是统计缺陷修复而非签名/语义变更（见提交说明中的契约判断）。
+///
+/// IO 代价：`cache_store` 侧为两次 `read_dir` + 每条目一次 `metadata()`，
+/// 仅供设置页低频展示，详见 [`legado_js::host_api::cache_store::total_size_bytes`]。
 pub fn get_cache_size() -> LegadoResult<i64> {
-    with_database(|db| {
+    let chapter_bytes = with_database(|db| {
         let repo = CacheBookRepository::new(db.connection());
         let stats = repo.get_stats()?;
         Ok(stats.total_size_bytes)
-    })
+    })?;
+    // u64 → i64：缓存总量不可能接近 i64::MAX，饱和转换防溢出回绕为负
+    let store_bytes =
+        i64::try_from(legado_js::host_api::cache_store::total_size_bytes()).unwrap_or(i64::MAX);
+    Ok(chapter_bytes.saturating_add(store_bytes))
 }
 
 /// 清空所有缓存（章节缓存 + DB 通用 KV + JS 宿主 cache_store）
@@ -423,7 +442,23 @@ mod tests {
 
     #[test]
     fn test_cache_apis() {
+        use legado_js::host_api::cache_store;
+
+        // [R26] `get_cache_size` 现含进程级 cache_store 占用：持 cache 测试锁
+        // 并把磁盘根钉在临时目录，避免并行测试（如 rss_web_bridge 的
+        // cachePutMemory）写入的内存值污染「清空后为 0」断言。
+        // 锁序：模块级测试锁先于 DB 守卫（test_support 全局锁序不变式）
+        let _cache_guard = cache_store::lock_cache_for_test();
         let _db_guard = crate::db_state::ensure_test_db();
+        let root = std::env::temp_dir().join(format!(
+            "legado-ffi-cache-apis-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        cache_store::set_test_disk_dir_override(Some(root.clone()));
 
         // 先清空缓存确保测试隔离
         clear_cache().unwrap();
@@ -438,6 +473,77 @@ mod tests {
 
         // 清空缓存不报错
         assert!(clear_cache().unwrap());
+
+        cache_store::set_test_disk_dir_override(None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// [R26] `get_cache_size` 必须把 JS 宿主 `cache_store` 计入总量
+    ///
+    /// 修复前 `get_cache_size` 只返回 `cached_chapters.total_size_bytes`，
+    /// 而 `clear_cache` 已同时清 `cache_store`——统计与清理口径不一致
+    /// （清得比统计得多）。本测试构造「章节缓存 + cache_store 值」：
+    /// - 修复前：返回值 == 仅章节缓存值（红）
+    /// - 修复后：返回值 > 仅章节缓存值（绿）
+    #[test]
+    fn test_get_cache_size_includes_js_cache_store() {
+        use legado_js::host_api::cache_store;
+
+        let _cache_guard = cache_store::lock_cache_for_test();
+        let _db_guard = crate::db_state::ensure_test_db();
+        // 独立缓存根：统计范围钉在临时目录，避免读到开发机真实缓存
+        let root = std::env::temp_dir().join(format!(
+            "legado-ffi-cache-size-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        cache_store::set_test_disk_dir_override(Some(root.clone()));
+
+        clear_cache().expect("clear_cache 应成功");
+        // ① 空缓存：章节缓存与 cache_store 均空 → 0
+        assert_eq!(get_cache_size().unwrap(), 0, "空缓存应为 0");
+
+        // 仅章节缓存：记下基线
+        let book_url = "http://cache-size.example.com/book1";
+        let chapter_content = "缓存大小统计测试正文。".repeat(100);
+        assert!(save_chapter_content(
+            book_url,
+            0,
+            "第一章",
+            &chapter_content,
+            "http://cache-size.example.com/ch1"
+        )
+        .unwrap());
+        let chapter_only = get_cache_size().unwrap();
+        assert!(
+            chapter_only >= chapter_content.len() as i64,
+            "基线应至少包含章节正文字节，实际 {chapter_only}"
+        );
+
+        // ② 再写入 cache_store 值（KV + file/ + 内存）→ 必须变大（红→绿）
+        let store_value = "x".repeat(4096);
+        assert!(cache_store::put("cache-size-kv-key", &store_value, 0));
+        assert!(cache_store::put_file(
+            "cache-size-file-key",
+            &store_value,
+            0
+        ));
+        cache_store::put_memory("cache-size-mem-key", &store_value);
+        let with_store = get_cache_size().unwrap();
+        assert!(
+            with_store > chapter_only,
+            "cache_store 占用必须计入缓存总量（修复前两者相等）：章节 {chapter_only}，含 store {with_store}"
+        );
+
+        // ③ 清理后归零（统计与清理同口径）
+        clear_cache().expect("clear_cache 应成功");
+        assert_eq!(get_cache_size().unwrap(), 0, "清理后应归零");
+
+        cache_store::set_test_disk_dir_override(None);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// [批36 P3-4] 全局 `clear_cache` 必须同时清空 JS 宿主 cache_store
@@ -449,6 +555,10 @@ mod tests {
     fn test_clear_cache_clears_js_cache_store() {
         use legado_js::host_api::cache_store;
 
+        // [R26] 与 `get_cache_size` 系测试共用 cache_store 进程级状态：
+        // 持同一把测试锁，避免并行执行时互相清空/统计对方的临时条目。
+        // 锁序：模块级 cache 测试锁先于 DB 守卫（test_support 全局锁序不变式）
+        let _cache_guard = cache_store::lock_cache_for_test();
         let _db_guard = crate::db_state::ensure_test_db();
         // 独立缓存根：把清空范围钉在临时目录，避免清到开发机真实缓存
         let root = std::env::temp_dir().join(format!(
