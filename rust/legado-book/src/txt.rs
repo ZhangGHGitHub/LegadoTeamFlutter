@@ -270,9 +270,38 @@ impl TxtParser {
     /// GBK/BIG5 这类需要统计判定的编码样本太小——短样本里若恰好没有非法
     /// 字节，`gb18030` 的有损解码会「成功」，把其它编码误判成 GBK。样本
     /// 上限仍远小于常见 TXT 体积。
+    ///
+    /// [R33] **非普通文件先行拒绝**：B21 把采样改成「填满 64KB」后，
+    /// [`read_up_to`] 对无界输入不再有自然终止点——FIFO 无写端时
+    /// `File::open` 本身就会永久阻塞，有写端但不写数据时读取永久阻塞；
+    /// 字符设备（`/dev/zero`）虽会立即返回数据，但也只是凑巧能填满窗口。
+    /// 本地书的打开路径不该出现 FIFO/设备节点，静默阻塞远比明确报错危险，
+    /// 因此这里在**打开之前**用 `fs::metadata`（stat 本身不阻塞）做类型
+    /// 检查，非普通文件直接返回错误。
+    ///
+    /// 类型检查放在 `File::open` 之前是必须的：一旦 `open` 了无写端 FIFO
+    /// 就已经阻塞，事后再查 `file.metadata()` 为时已晚。符号链接由
+    /// `fs::metadata` 跟随到目标后再判类型（指向普通文件仍放行）。
+    ///
+    /// 普通文件的读取语义完全不变（仍由 [`read_up_to`] 填满
+    /// [`ENCODING_SAMPLE_LEN`]，B21 的多字节截断防护不受影响）。
     pub fn detect_encoding(path: &str) -> LegadoResult<String> {
+        let meta = std::fs::metadata(path)
+            .map_err(|e| LegadoError::BookParse(format!("无法打开文件: {e}")))?;
+        ensure_regular_file(&meta, path)?;
+
         let mut file =
             File::open(path).map_err(|e| LegadoError::BookParse(format!("无法打开文件: {e}")))?;
+
+        // 第二道防线（TOCTOU）：`fs::metadata` 与 `File::open` 之间路径若被
+        // 换成设备节点（open 会立即成功），只靠先前的 stat 结果会漏过，
+        // 随后 `read_up_to` 的填满循环对该设备无意义。用已打开句柄的
+        // 元数据复核一次。（对「换成无写端 FIFO」无效——那种情况下
+        // `open` 自身就已阻塞，只能靠第一道防线在上游拒绝。）
+        let opened_meta = file
+            .metadata()
+            .map_err(|e| LegadoError::BookParse(format!("无法读取文件信息: {e}")))?;
+        ensure_regular_file(&opened_meta, path)?;
 
         let mut buf = vec![0u8; ENCODING_SAMPLE_LEN];
         let n = read_up_to(&mut file, &mut buf)?;
@@ -287,6 +316,22 @@ impl TxtParser {
 
 /// 编码检测采样长度（B21：由 4KB 扩到 64KB）
 pub(crate) const ENCODING_SAMPLE_LEN: usize = 64 * 1024;
+
+/// [R33] 非普通文件（FIFO / 字符设备 / 块设备 / socket / 目录）一律拒绝
+///
+/// [`read_up_to`] 的语义是「读到填满缓冲区或 EOF」。普通文件读不满必然
+/// 意味着已到 EOF，因此该语义安全；但 FIFO / 设备节点没有确定的 EOF
+/// （`/dev/zero` 永不 EOF，FIFO 在写端不关闭时永不 EOF），填满循环会
+/// 永久阻塞。本地书场景下这些都不是合法输入，明确报错优于静默挂死。
+fn ensure_regular_file(meta: &std::fs::Metadata, path: &str) -> LegadoResult<()> {
+    if meta.is_file() {
+        Ok(())
+    } else {
+        Err(LegadoError::BookParse(format!(
+            "不支持读取非普通文件: {path}"
+        )))
+    }
+}
 
 /// 多字节编码试解时允许丢弃的尾部字节数上限
 ///
@@ -1079,6 +1124,111 @@ mod tests {
             "utf-8"
         );
         assert_eq!(detect_encoding_from_sample(b""), "utf-8");
+    }
+
+    // ─── [R33] 非普通文件（FIFO / 设备节点）不得阻塞 ─────────────────────
+
+    /// [R33] 非普通文件必须在**打开前**被拒绝
+    ///
+    /// 目录是唯一能跨平台稳定构造的非普通文件：`fs::metadata` 对目录
+    /// `is_file()` 为 false → 直接报错。这条路径在 Windows 上同样可跑，
+    /// 覆盖与 FIFO 相同的类型检查分支。
+    #[test]
+    fn test_detect_encoding_rejects_non_regular_file() {
+        let file = write_temp_txt("r33_dir_target", b"seed");
+        let dir = file.parent().unwrap().to_path_buf();
+        let err = TxtParser::detect_encoding(dir.to_str().unwrap())
+            .expect_err("目录不是普通文件，必须报错而不是尝试读取");
+        assert!(
+            err.to_string().contains("不支持读取非普通文件"),
+            "错误信息应说明非普通文件被拒绝，实际: {err}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// [R33] FIFO 不得阻塞：修复前 `File::open` 无写端即永久阻塞，
+    /// 有写端但无数据时 `read_up_to` 填满 64KB 的循环同样永久阻塞。
+    ///
+    /// 用「线程 + `recv_timeout`」判定：测试本身不会因被测函数挂死而挂死。
+    /// Windows 无 `mkfifo`，本用例 `#[cfg(unix)]` 限定；Windows 侧由
+    /// [`test_detect_encoding_rejects_non_regular_file`] 覆盖同一类型检查分支。
+    #[cfg(unix)]
+    #[test]
+    fn test_detect_encoding_does_not_block_on_fifo() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let file = write_temp_txt("r33_fifo_base", b"seed");
+        let dir = file.parent().unwrap().to_path_buf();
+        let fifo = dir.join("book.fifo");
+        let status = std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .expect("mkfifo 应可执行");
+        assert!(status.success(), "mkfifo 创建 FIFO 失败: {status:?}");
+
+        let fifo_str = fifo.to_string_lossy().into_owned();
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            // 修复前这里会永久阻塞在 open（无写端）
+            let result = TxtParser::detect_encoding(&fifo_str);
+            let _ = tx.send(result.map_err(|e| e.to_string()));
+        });
+
+        let outcome = rx.recv_timeout(Duration::from_secs(5));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        match outcome {
+            Ok(Ok(enc)) => panic!("FIFO 应被拒绝，实际返回编码: {enc}"),
+            Ok(Err(err)) => assert!(
+                err.contains("不支持读取非普通文件"),
+                "FIFO 错误信息应说明非普通文件被拒绝，实际: {err}"
+            ),
+            Err(_) => panic!("detect_encoding 对 FIFO 阻塞超过 5 秒（R33 回归）"),
+        }
+    }
+
+    /// [R33] 字符设备（`/dev/zero`）同样在读取前被拒绝
+    ///
+    /// `/dev/zero` 会立即返回数据，不会像 FIFO 那样卡死，但「读满 64KB」
+    /// 对它毫无意义（永远读不到 EOF），因此与 FIFO 同口径拒绝。
+    #[cfg(unix)]
+    #[test]
+    fn test_detect_encoding_rejects_char_device() {
+        if !std::path::Path::new("/dev/zero").exists() {
+            return; // 极简容器可能未提供 /dev/zero
+        }
+        let err = TxtParser::detect_encoding("/dev/zero").expect_err("字符设备必须被拒绝");
+        assert!(
+            err.to_string().contains("不支持读取非普通文件"),
+            "错误信息应说明非普通文件被拒绝，实际: {err}"
+        );
+    }
+
+    /// [R33 回归] 普通文件仍走原采样路径：小文件（< 64KB）按实际字节数
+    /// 检测，大文件仍能读满 64KB 窗口看见后面的中文（B21 语义不变）
+    #[test]
+    fn test_detect_encoding_regular_file_unchanged() {
+        // 小文件：正常返回编码
+        let small = write_temp_txt("r33_small", "第一章 小文件\n正文内容。\n".as_bytes());
+        assert_eq!(
+            TxtParser::detect_encoding(small.to_str().unwrap()).unwrap(),
+            "utf-8",
+            "小文件（< 64KB）应正常检测"
+        );
+        let _ = std::fs::remove_dir_all(small.parent().unwrap());
+
+        // 8KB ASCII 前言 + GBK 正文：必须读满窗口才能看到中文（B21 口径）
+        let mut bytes = vec![b'A'; 8 * 1024];
+        let (gbk_body, _, _) = encoding_rs::GBK.encode("第一章 起始\n这是正文内容。\n");
+        bytes.extend_from_slice(&gbk_body);
+        let big = write_temp_txt("r33_big", &bytes);
+        let detected = TxtParser::detect_encoding(big.to_str().unwrap()).unwrap();
+        assert!(
+            detected == "gb18030" || detected == "gbk",
+            "普通文件应仍能看见 8KB 之后的中文，实际: {detected}"
+        );
+        let _ = std::fs::remove_dir_all(big.parent().unwrap());
     }
 
     #[test]
