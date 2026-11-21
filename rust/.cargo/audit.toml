@@ -2,6 +2,16 @@
 #
 # [advisories].ignore 仅登记「无可用升级路径」的 RustSec 公告，逐条附评估结论。
 # 可升级的漏洞一律直接升级，不得进入本清单（2026-09-03 CI audit 门禁修复批次）。
+#
+# [R34 | 2026-11-21] 本清单由 2 条扩至 9 条：新增 7 条全部为
+# `informational = "unmaintained"` 且 `patched = []`（无任何可升级版本），
+# 其中 6 条属 genpdf 0.2.0 / printpdf 0.3.4 依赖链（PDF 导出），
+# 1 条为 chrono（RUSTSEC-2026-0543，2026-09-14 新公告，**不在** genpdf 链上）。
+# 依据：unmaintained ≠ 存在漏洞；`cargo audit` 对 informational 公告本就不 exit 1
+# （CI 门禁 `cargo audit` 恒 exit 0），登记目的是让 warning 归零以恢复信号价值，
+# 避免新增公告被 7 条历史噪声淹没。逐条风险边界与复审条件见下。
+# 移除条件统一为：genpdf→printpdf 0.12 重写落地（P2，见
+# docs/audit_20261113/REPORT_依赖漏洞.md §5.2），或上游发布维护版本。
 
 [advisories]
 # RUSTSEC-2026-0187 — lopdf 深度嵌套 PDF 对象栈溢出（severity high）
@@ -15,4 +25,75 @@
 #   风险接受理由：rsa 由 legado-js quickjs feature 引入，用途为书源内容加解密
 #   （对齐原版 java.* 加密桥），非身份认证/密钥托管场景；Marvin Attack 需对进程
 #   做物理级时序采样方可恢复密钥，与本应用威胁模型不匹配。P2 跟进：上游发布修复版后升级移除本条。
-ignore = ["RUSTSEC-2026-0187", "RUSTSEC-2023-0071"]
+
+# ── R34：genpdf 0.2.0 / printpdf 0.3.4 依赖链（PDF 导出写面）──────────────────
+# 共同边界：这 5 条全部只出现在 PDF **生成**路径（legado-book/src/export.rs，
+# 由 legado-ffi book_export 调用）。我方从不解析外部不可信 PDF：
+# 读 PDF 的 legado-book/src/pdf.rs 走的是直接依赖 lopdf 0.47（无本条链上的 crate）。
+# 输入为应用自身内存中的 ExportData + 本地系统字体 + 由我方下载/解码后的图片字节。
+# 因此这些 crate 的不维护状态不构成可达的信任边界缺陷。
+
+# RUSTSEC-2025-0056 — adler 1.0.2 unmaintained（建议迁 adler2）
+#   引入链：genpdf 0.2.0（images feature）/ printpdf 0.3.4 → image 0.23.14
+#           → tiff 0.6.1 → miniz_oxide 0.4.4 → adler 1.0.2
+#   接受理由：adler 仅作 DEFLATE 校验和/解压实现被 miniz_oxide 0.4 间接调用；
+#   TIFF 解码分支我方不启用（legado-book 只启用 image 的 png/jpeg，tiff 由
+#   printpdf 的默认 embedded_images 带入但无 TIFF 输入路径）。公告无 CVE。
+#   复审条件：genpdf→printpdf 0.12 重写后该链整体消失（0.12 不再依赖 image 0.23/tiff 0.6）。
+# RUSTSEC-2021-0153 — encoding 0.2.33 unmaintained（建议迁 encoding_rs）
+#   引入链：lopdf 0.26.0（genpdf 直接依赖 + printpdf 依赖）→ encoding 0.2.33
+#   接受理由：仅 PDF 字符串编码写面；公告 2021 年、无 CVE，且 lopdf 0.26 已是
+#   genpdf 0.2.0 的锁死版本（genpdf 无新版本）。我方编码转换统一走 encoding_rs。
+#   复审条件：同 RUSTSEC-2025-0056。
+# RUSTSEC-2020-0144 — lzw 0.10.0 unmaintained（建议迁 weezl）
+#   引入链：lopdf 0.26.0 → lzw 0.10.0
+#   接受理由：PDF LZW 压缩写/读路径；我方导出不启用 LZW 压缩（genpdf 默认无压缩），
+#   仅作为 lopdf 0.26 的静态依赖编入。公告无 CVE。
+#   复审条件：同 RUSTSEC-2025-0056。
+# RUSTSEC-2021-0140 — rusttype 0.8.3 unmaintained（建议迁 ab_glyph）
+#   引入链：genpdf 0.2.0 + printpdf 0.3.4 → rusttype 0.8.3
+#   接受理由：字体轮廓栅格化，输入为系统字体文件（我方白名单路径）或
+#   LEGADO_PDF_FONT 指定的本地字体，非不可信网络数据。公告无 CVE。
+#   复审条件：同 RUSTSEC-2025-0056（printpdf 0.12 已换 ttf-parser/skrifa 系）。
+# RUSTSEC-2020-0020 — stb_truetype 0.3.1 unmaintained（建议迁 ttf-parser）
+#   引入链：rusttype 0.8.3 → stb_truetype 0.3.1
+#   接受理由：随 rusttype 一并进入；rusttype 0.8.3 的 Cargo.toml 已改用 ttf-parser
+#   但本版本仍编译 stb_truetype 作为可选后端，我方未直接调用。公告无 CVE。
+#   复审条件：同 RUSTSEC-2021-0140。
+# RUSTSEC-2020-0056 — stdweb 0.4.20 unmaintained（建议迁 wasm-bindgen）
+#   引入链：lopdf 0.26.0 → time 0.2.27 →（**仅 wasm32**）stdweb 0.4.20
+#   接受理由：time 0.2 把 stdweb 声明在
+#   `[target.'cfg(target_arch = "wasm32")'.dependencies]`，本仓库无 wasm32 目标
+#   （Android aarch64/armv7、iOS、Windows/Linux/macOS 桌面），该 crate 从不参与编译，
+#   零运行时与零编译期暴露。公告无 CVE。
+#   复审条件：随 genpdf 链移除；或未来引入 wasm32 目标前必须重新评估。
+
+# ── R34 追加：非 genpdf 链 ────────────────────────────────────────────────
+# RUSTSEC-2026-0543 — chrono 0.4.45 unmaintained（建议迁 jiff / time）
+#   公告 2026-09-14，`patched = []`（全部版本受影响，无修复版本可升）。
+#   引入链（4 条独立边）：
+#     ① legado-ffi 直接依赖（read_record_api.rs 的 Local::now().format("%Y-%m-%d")）
+#     ② legado-js 直接依赖 + rquickjs `chrono` feature（time_utils.rs 时区换算）
+#     ③ lopdf 0.47.0 默认 feature `chrono-clock`（PDF 日期元数据）
+#     ④ lopdf 0.26.0 默认 feature `chrono_time`（genpdf/printpdf 链）
+#   接受理由：公告性质为「不再维护」而非漏洞，无 CVE/CVSS。chrono 在本仓用法局限于
+#   时间戳 ↔ 本地日期字符串格式化（无解析不可信输入的日期解析面：parse_time 仅在
+#   书源脚本显式调用时触发，且失败返回 Err）。替换需跨 legado-ffi/legado-js 两个 crate
+#   + 关闭 lopdf 默认 feature（会改变 PDF 日期元数据行为），属功能回归风险高于
+#   当前收益的改动；按 R34 任务口径不做强行迁移。
+#   复审条件：① chrono 发布维护版本/公告撤回；② 上游 lopdf 提供非 chrono 的日期
+#   feature 组合且我方时间工具迁移到 jiff 完成（P2，独立批次）；③ 若出现带 CVE 的
+#   chrono 公告，本条立即失效并按漏洞处理。
+ignore = [
+    "RUSTSEC-2026-0187",
+    "RUSTSEC-2023-0071",
+    # R34 — genpdf/printpdf 链 unmaintained
+    "RUSTSEC-2025-0056",
+    "RUSTSEC-2021-0153",
+    "RUSTSEC-2020-0144",
+    "RUSTSEC-2021-0140",
+    "RUSTSEC-2020-0020",
+    "RUSTSEC-2020-0056",
+    # R34 — chrono unmaintained（非 genpdf 链）
+    "RUSTSEC-2026-0543",
+]
