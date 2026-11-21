@@ -925,19 +925,45 @@ mod tests {
 
     /// ④ 超时保护：`@js:` 死循环 + 短超时 → ⚠️ 超时文本
     ///
-    /// quickjs 构建：JS 线程在沙箱 5s 截止前空转，规则 50ms 超时先触发
-    /// （孤儿线程由沙箱截止回收，不阻塞测试断言）。
+    /// quickjs 构建：JS 线程在沙箱 5s 截止前空转，规则 50ms 预算耗尽后返回
+    /// ⚠️ 超时文本（孤儿线程由沙箱截止回收，不阻塞测试断言）。
     /// 非 quickjs 构建：执行器即时 Err，同样落 ⚠️ 路径（断言前缀即可）。
+    ///
+    /// **为何断言「超时消息族」而非单条文案（R35 抖动修复）**：50ms 预算由
+    /// 三层各自感知并各自报告，谁先命中取决于调度时序（CPU 竞争下 20 次可
+    /// 复现 3 次失败）：
+    /// 1. `content_processor::preview_single_rule` 的 `recv_timeout(50ms)`
+    ///    → `规则执行超时（50ms），已跳过该规则`（content_processor.rs:750）；
+    /// 2. 执行线程内 `replace_with_js` 的 deadline 复查
+    ///    → `@js: 规则执行预算耗尽（已超时），保留原文`（content_processor.rs:823）；
+    /// 3. 沙箱 `set_execution_timeout` 收紧后的中断
+    ///    → `脚本执行超时被中断（interrupted…）`（engine.rs:561）。
+    ///
+    /// 三者都是「本规则 50ms 预算耗尽」的合法上报，属**内部实现分工**而非
+    /// 用户可见契约；固定单条文案等于断言「哪一层赢下调度竞态」。这里改为
+    /// 断言契约本身：预览必须在预算内返回 ⚠️ 且指明超时（不得挂起、不得把
+    /// 死循环结果当正文返回）。任一层提前赢下竞态都不改变契约，故不降断言。
     #[test]
     fn test_preview_timeout() {
         let json = preview_rule_json(r"(\d+)", "@js:while(true){}", true, 50);
         let out = preview_replace_rule(&json, "a12b").unwrap();
         #[cfg(feature = "quickjs")]
         {
+            // 三条超时文案（对应上注释三层）；按任一条命中即视为「预算耗尽」
+            const TIMEOUT_MARKERS: [&str; 3] = [
+                "规则执行超时（50ms）",
+                "规则执行预算耗尽",
+                "脚本执行超时被中断",
+            ];
             assert!(
-                out.starts_with("⚠️") && out.contains("规则执行超时（50ms）"),
-                "短超时 + 死循环 JS 应返回 ⚠️ 超时文本，实际: {out}"
+                out.starts_with("⚠️"),
+                "超时必须以 ⚠️ 降级文本返回（不得挂起/不得当正文），实际: {out}"
             );
+            assert!(
+                TIMEOUT_MARKERS.iter().any(|marker| out.contains(marker)),
+                "⚠️ 文本必须指明超时（三层任一），实际: {out}"
+            );
+            assert_ne!(out, "a12b", "死循环规则不得把原匹配文本当替换结果返回");
         }
         #[cfg(not(feature = "quickjs"))]
         {
