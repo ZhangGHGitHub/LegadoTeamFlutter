@@ -30,13 +30,14 @@
 //!
 //! # 容量
 //!
-//! 条目数与解码文本总字节数双上限（生产：最近 4 本 / 64 MiB），按最近使用
+//! 条目数与解码文本总字节数双上限（生产：最近 4 本 / 128 MiB），按最近使用
 //! 顺序淘汰。单条超过总上限的文本不缓存——大文件退化为修复前的逐次读取
 //! 语义（正确但不提速），避免为提速引入 OOM 风险。
 //!
 //! 注意：受章节坐标系限制（解码后文本偏移），本修复只做整书缓存，不能按
-//! 章节字节偏移做 seek 窗口读取；超大 TXT（解码后 > 64 MiB）仍逐章全文件
-//! 读取。
+//! 章节字节偏移做 seek 窗口读取；解码后超过总上限的 TXT 仍逐章全文件读取。
+//!
+//! [R32] 上限由 64 MiB 提到 128 MiB 的实测依据见 [`PROD_MAX_BYTES`]。
 
 use std::collections::hash_map::DefaultHasher;
 use std::fs::File;
@@ -71,12 +72,34 @@ const MAX_ENTRIES: usize = if cfg!(test) { 1024 } else { 4 };
 
 /// 解码文本总字节上限。
 ///
-/// 生产 64 MiB（约 2~4 本常见网文）；测试档放宽到 1 GiB（实际占用 = 各
+/// 生产 128 MiB（约 4~8 本常见网文）；测试档放宽到 1 GiB（实际占用 = 各
 /// 单测夹具总和，远小于此）。
+///
+/// [R32] 由 64 MiB 提到 128 MiB（2026-11-23）。原 64 MiB 档下，解码后文本
+/// 超限的 TXT 完全不缓存，退化为「每章读全文件 + 全量解码」：
+///
+/// - 59.6 MiB GBK（6000 章）实测 **98.5 ms/章**，而同书在 128 MiB 档下
+///   **0.111 ms/章**（约 887×）；64 MiB 档命中时也是 0.09~0.11 ms/章，
+///   即退化代价来自「未命中」而非容量档位本身。
+/// - 触发退化的原始文件门槛：GBK ≈ 42.7 MiB（GBK→UTF-8 约 1.5×）、
+///   UTF-8 ≈ 64 MiB、UTF-16 ≈ 32 MiB。批35 验收的 57.5 MiB 中文 TXT
+///   正好落在 GBK 门槛之上，属真实用户规模。
+/// - 内存代价**不升反略降**：峰值工作集由「原文件 + 解码副本」双份变为
+///   单份解码文本常驻。59.6 MiB GBK 夹具实测峰值 161.5 MiB（64 MiB 档，
+///   每章重复分配）→ 159.1 MiB（128 MiB 档，缓存命中后不再重复分配）。
+///   UTF-8 89.4 MiB 夹具同为 184.3 MiB。
+/// - 阅读器翻页还会对前后各 2 章做预载（`reader_screen.dart`
+///   `_preloadAdjacentChapters`，本地书同样生效），未命中时单次翻页实际
+///   触发 5 次全文件读取+解码（≈ 5 × 98 ms ≈ 0.5 s），放大退化影响。
+///
+/// 单条上限与总上限同值：单条超过总上限仍不缓存（`insert` 的守卫不变），
+/// 因此 128 MiB 档覆盖「解码后 ≤ 128 MiB」的书，仍保留 OOM 兜底。
+pub(crate) const PROD_MAX_BYTES: usize = 128 * 1024 * 1024;
+
 const MAX_BYTES: usize = if cfg!(test) {
     1024 * 1024 * 1024
 } else {
-    64 * 1024 * 1024
+    PROD_MAX_BYTES
 };
 
 /// 文件内容戳：任一字段变化即视为缓存失效
@@ -164,6 +187,41 @@ impl TextCache {
             last_used,
         });
         self.evict();
+    }
+
+    /// 解码前预留空间：按最久未使用顺序淘汰，直到「现有 + `need`」落回上限内。
+    ///
+    /// [R32] 动机：解码期间**原始字节与解码文本同时存在**，若缓存里已驻留
+    /// 大条目，峰值 ≈ 缓存预算 + 本次原始字节 + 解码副本。以本次原始字节数
+    /// 作为解码后大小的保守估计先淘汰，可把共存峰值压回「预算 + 单本解码」
+    /// 量级。中文主场景 GBK→UTF-8 约 1.43×、UTF-8 为 1×，原始字节数是
+    /// 解码后大小的**下界**，故此处预留偏保守（可能多淘汰，不影响正确性；
+    /// 若解码后仍超预算，[`Self::insert`] 的 `evict` 兜底稳态）。
+    ///
+    /// `need >= max_bytes` 时**直接返回不清空**：原始字节已是解码后大小的
+    /// 下界（GBK/UTF-8），这样的书解码后必然超预算、[`Self::insert`] 会放弃
+    /// 写入；若在此清空缓存，超大书的每一章读取都会白丢其他书的命中，属
+    /// 净损失。（UTF-16 的 ASCII 主体是唯一例外——解码后可能小于原始字节，
+    /// 该编码的 TXT 极罕见，宁可少淘汰也不误伤。）
+    ///
+    /// 缓存未命中时才调用；若随后因文件被改写而放弃写入，淘汰属白做，但
+    /// 仅影响命中率，不涉及正确性。
+    fn reserve(&mut self, need: usize) {
+        if self.max_bytes == 0 || need >= self.max_bytes {
+            return;
+        }
+        while self.total_bytes > self.max_bytes - need {
+            let Some((idx, _)) = self
+                .entries
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, entry)| entry.last_used)
+            else {
+                break;
+            };
+            let removed = self.entries.remove(idx);
+            self.total_bytes = self.total_bytes.saturating_sub(removed.text.len());
+        }
     }
 
     /// 淘汰最久未使用的条目，直到条目数与总字节数均回到上限内
@@ -287,6 +345,13 @@ pub(crate) fn load_decoded_text(path: &str, charset: Option<&str>) -> LegadoResu
 
     #[cfg(test)]
     test_counters::record_full_load(path);
+
+    // [R32] 解码前先按本次原始字节数预留空间：解码期间原始字节与解码文本
+    // 同时存在，缓存里若已有大条目会让峰值叠加（实测 3 本 120 MiB 解码文本
+    // 的书交替时峰值 326.8 MiB；预留后 206.8 MiB）。以原始字节数作保守
+    // 估计先行淘汰。原始字节数 ≥ 总上限的书（解码后必然更大、不会入缓存）
+    // 由 `reserve` 内部直接跳过，避免每章白丢其他书的命中。
+    with_cache(|cache| cache.reserve(opened.stamp.len as usize));
 
     // 采样读取后文件位置不在起点（小文件已在 EOF），必须显式回到起点
     opened.file.seek(SeekFrom::Start(0))?;
@@ -447,6 +512,35 @@ mod tests {
         );
     }
 
+    /// [R32] 生产容量必须覆盖批35 验收规模的大 TXT，且 64 MiB 以上的单条
+    /// 解码文本必须真的能进缓存。
+    ///
+    /// 回归保护点：若有人把 `PROD_MAX_BYTES` 调回 64 MiB，`test` 档的
+    /// `MAX_BYTES`（1 GiB）不会暴露问题——只有这条断言能拦住。
+    #[test]
+    fn test_prod_capacity_covers_oversized_books() {
+        // 批35 设备验收用的中文 TXT 为 57.5 MiB；GBK→UTF-8 约 1.43~1.5×，
+        // 解码后 ≈ 82~86 MiB。128 MiB 档留有余量，64 MiB 档完全覆盖不到。
+        // 用 const 断言（clippy::assertions_on_constants）：编译期即可失败。
+        const {
+            assert!(
+                PROD_MAX_BYTES >= 96 * 1024 * 1024,
+                "生产容量必须覆盖 57.5MiB GBK TXT 解码后的 ~86MiB"
+            )
+        };
+
+        // 用生产上限构造实例，验证 >64 MiB 的单条能进缓存并命中
+        let mut cache = TextCache::new(MAX_ENTRIES, PROD_MAX_BYTES);
+        let big = text(&"a".repeat(64 * 1024 * 1024 + 1)); // 刚过 64 MiB
+        assert!(big.len() > 64 * 1024 * 1024);
+        let s = stamp(big.len() as u64, None, 1);
+        cache.insert("big.txt", "UTF-8", s.clone(), Arc::clone(&big));
+        assert!(
+            cache.get("big.txt", "UTF-8", &s).is_some(),
+            "刚过 64 MiB 的解码文本在生产容量下必须可缓存（R32 前会被直接放弃）"
+        );
+    }
+
     #[test]
     fn test_same_key_replaces_without_double_accounting() {
         let mut cache = TextCache::new(1, 1024);
@@ -468,6 +562,78 @@ mod tests {
         cache.insert("a", "UTF-8", s.clone(), text("x"));
         assert!(cache.entries.is_empty());
         assert!(cache.get("a", "UTF-8", &s).is_none());
+    }
+
+    /// [R32] 解码前预留空间：按最久未使用顺序淘汰，腾出 `need` 字节。
+    ///
+    /// 动机是压低「解码期间原始字节 + 解码文本」与已驻留条目的叠加峰值。
+    #[test]
+    fn test_reserve_evicts_lru_until_space_available() {
+        let mut cache = TextCache::new(10, 10);
+        let s = stamp(1, None, 1);
+        cache.insert("a", "UTF-8", s.clone(), text("1234"));
+        cache.insert("b", "UTF-8", s.clone(), text("5678"));
+        assert_eq!(cache.total_bytes, 8);
+
+        // 需要 5 字节：总上限 10，必须淘汰最久未使用的 a（4 字节）
+        cache.reserve(5);
+        assert_eq!(cache.total_bytes, 4, "应只淘汰到刚好够用");
+        assert!(
+            cache.get("a", "UTF-8", &s).is_none(),
+            "最久未使用的应被淘汰"
+        );
+        assert!(cache.get("b", "UTF-8", &s).is_some(), "较新的条目应保留");
+    }
+
+    /// [R32] `need >= 总上限` 时不得清空缓存：这种书解码后必然超预算、
+    /// `insert` 会放弃写入，清空只会让超大书的每章读取白丢其他书的命中。
+    #[test]
+    fn test_reserve_skips_when_need_exceeds_capacity() {
+        let mut cache = TextCache::new(10, 10);
+        let s = stamp(1, None, 1);
+        cache.insert("a", "UTF-8", s.clone(), text("1234"));
+        cache.insert("b", "UTF-8", s.clone(), text("5678"));
+
+        // need 远超上限（模拟超大书的原始字节数）
+        cache.reserve(1000);
+        assert_eq!(cache.total_bytes, 8, "超出上限的预留不得淘汰任何条目");
+        assert!(
+            cache.get("a", "UTF-8", &s).is_some(),
+            "其他书的缓存命中不得被超大书白白挤掉"
+        );
+        assert!(cache.get("b", "UTF-8", &s).is_some());
+
+        // 边界：need 恰等于上限同样跳过
+        cache.reserve(10);
+        assert_eq!(cache.total_bytes, 8, "need == max_bytes 也应跳过");
+    }
+
+    /// [R32] 预留后 `insert` 仍按原有语义处理超限条目（放弃缓存）。
+    #[test]
+    fn test_reserve_does_not_change_insert_oversize_guard() {
+        let mut cache = TextCache::new(10, 10);
+        let s = stamp(1, None, 1);
+        cache.reserve(20); // 跳过，不清空
+        cache.insert("big", "UTF-8", s.clone(), text("12345678901")); // 11 > 10
+        assert!(
+            cache.get("big", "UTF-8", &s).is_none(),
+            "单条超上限仍不得缓存（reserve 不改变该守卫）"
+        );
+    }
+
+    /// [R32] 预留不会影响后续插入：腾出空间后新条目正常缓存。
+    #[test]
+    fn test_reserve_then_insert_caches_new_entry() {
+        let mut cache = TextCache::new(10, 10);
+        let s = stamp(1, None, 1);
+        cache.insert("a", "UTF-8", s.clone(), text("12345678"));
+        cache.reserve(9);
+        assert!(cache.entries.is_empty(), "需要 9 字节时应淘汰 8 字节条目");
+        cache.insert("b", "UTF-8", s.clone(), text("123456789"));
+        assert!(
+            cache.get("b", "UTF-8", &s).is_some(),
+            "预留腾出的空间应能被新条目使用"
+        );
     }
 
     /// [审查 P3-1] 去重键必须是 `(path, encoding)`：文件更新后旧戳条目

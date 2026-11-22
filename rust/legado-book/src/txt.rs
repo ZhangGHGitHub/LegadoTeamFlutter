@@ -2137,4 +2137,57 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
+
+    /// [R32] 解码后 >64 MiB 的 TXT 也必须命中缓存（修复前单条超限直接放弃）。
+    ///
+    /// 夹具取 70 MiB UTF-8（编码膨胀比 1×，原始 ≈ 解码后），刻意跨过旧 64 MiB
+    /// 上限而落在新 128 MiB 档内；断言「连续翻章只做 1 次全文件读取+解码」。
+    ///
+    /// **注意**：单测档 `MAX_BYTES` 是 1 GiB（`cfg!(test)`），所以本用例**不**
+    /// 保护生产常量——把 `PROD_MAX_BYTES` 调回 64 MiB 时它仍然绿。生产常量
+    /// 的守卫是 `txt_cache::tests::test_prod_capacity_covers_oversized_books`
+    /// （直接断言 `PROD_MAX_BYTES >= 96 MiB` 并用生产值构造实例）。本用例的
+    /// 职责只是覆盖「>64 MiB 的整书在真实调用链上只解码一次」这条语义。
+    #[test]
+    fn test_over_64mib_txt_chapter_reads_hit_cache() {
+        // 每章正文约 1.4 MiB，50 章 ≈ 70 MiB（UTF-8）
+        let text = build_multi_chapter_txt(50, 93_000);
+        assert!(
+            text.len() > 64 * 1024 * 1024,
+            "夹具必须解码后 >64MiB，实际 {} 字节",
+            text.len()
+        );
+        let path = write_temp_txt("cache_over_64mib", text.as_bytes());
+        let path_str = path.to_str().unwrap();
+
+        let chapters = TxtParser::get_chapters_with_charset(path_str, Some("UTF-8")).unwrap();
+        assert_eq!(chapters.len(), 50, "大文件应识别 50 章");
+        assert_eq!(
+            crate::txt_cache::full_file_loads(path_str),
+            1,
+            "目录解析应只做一次全文件读取+解码"
+        );
+
+        // 跨章跳读：首 / 中 / 末三章
+        for idx in [0usize, 25, 49] {
+            let content = TxtParser::get_chapter_content_with_charset(
+                path_str,
+                &chapters[idx],
+                Some("UTF-8"),
+            )
+            .unwrap();
+            assert!(
+                content.starts_with(&format!("第{}章 标题{}", idx + 1, idx + 1)),
+                "第 {idx} 章正文应正确: {:?}",
+                content.chars().take(12).collect::<String>()
+            );
+        }
+        assert_eq!(
+            crate::txt_cache::full_file_loads(path_str),
+            1,
+            ">64MiB 的书连续翻章也不得重复全文件读取+解码（R32 核心断言）"
+        );
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
 }
