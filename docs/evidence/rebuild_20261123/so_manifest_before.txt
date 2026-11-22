@@ -1,0 +1,8 @@
+# so_manifest_before.txt — 重建前三 ABI 产物基线（2026-11-23 01:47 采集，重建前）
+# ABI	path	size_bytes	mtime_utc	sha256
+arm64-v8a	flutter_legado\android\app\src\main\jniLibs\arm64-v8a\liblegado_ffi.so	54738864	2026-11-20T01:42:09Z	2f496a26f015b680cdcccc1f23736a2868c5ad17c9dd201bcba4ed1625a4351a
+armeabi-v7a	flutter_legado\android\app\src\main\jniLibs\armeabi-v7a\liblegado_ffi.so	36318912	2026-11-20T01:42:36Z	7b8670b9f607592c0e9a18a3afd781543a38518c93304bec225b200fa31dfaa9
+x86_64	flutter_legado\android\app\src\main\jniLibs\x86_64\liblegado_ffi.so	54896800	2026-11-20T01:43:02Z	61b23db76e44e373cd7233e1e26032bf4345b254fc6e97a15b66ab501678709c
+
+# 对应 .meta 记录的旧源码指纹：123ac91388e80b86...（三 ABI 相同）
+# 重建后三份 sha256 全部改变（见 so_manifest.txt），确认为真实重编，非缓存复用。

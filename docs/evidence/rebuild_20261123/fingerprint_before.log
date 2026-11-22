@@ -1,0 +1,15 @@
+# fingerprint_before.log — 重建前 Rust 源码树指纹检查（2026-11-23 01:47 本地时间）
+#
+# 取证说明：第 9 行 DECISION=... 为重定向捕获的真实原始输出。
+# 第 6-8 行由脚本内 Write-Host 写入 Information 流，当次 `2>&1` 未收集到；
+# 现按当次终端实测输出逐字转录（.so 已于 01:48-01:50 重建，无法复跑 REBUILD 状态）。
+# 转录内容与当次终端输出一致，并与同轮 build.log 中记录的
+# "Rust source fingerprint: ca77bee1c2e477a3..." 相互印证。
+#
+# 实测命令：
+#   pwsh -NoProfile -ExecutionPolicy Bypass -File rust/scripts/rust-fingerprint.ps1 -Check -Targets "aarch64,armv7,x86_64"
+
+[Fingerprint] arm64-v8a Rust 源码已变更（.so 指纹 123ac91388e80b86… ≠ 当前 ca77bee1c2e477a3…）→ .so 陈旧，需重编
+[Fingerprint] armeabi-v7a Rust 源码已变更（.so 指纹 123ac91388e80b86… ≠ 当前 ca77bee1c2e477a3…）→ .so 陈旧，需重编
+[Fingerprint] x86_64 Rust 源码已变更（.so 指纹 123ac91388e80b86… ≠ 当前 ca77bee1c2e477a3…）→ .so 陈旧，需重编
+DECISION=REBUILD fingerprint=ca77bee1c2e477a36695ca317f081d844a64a742c45f4f3701699c5a48781bd1

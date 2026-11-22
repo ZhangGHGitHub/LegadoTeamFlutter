@@ -1,0 +1,42 @@
+# fingerprint_drift_note.log — 指纹漂移记录与归因（2026-11-23）
+#
+# ==== 事实时间线（本地时间，均由文件 mtime / 日志时间戳核实）====
+#   01:47:xx  重建前检查 -> DECISION=REBUILD
+#             旧 .so 指纹 123ac91388e80b86...  当前源码指纹 ca77bee1c2e477a3...
+#   01:48:35  arm64-v8a  .so 产出（rust/target/aarch64-linux-android/release/）
+#   01:49:29  armeabi-v7a .so 产出
+#   01:50:27  x86_64      .so 产出
+#   01:50:28  三份 .so 复制入 jniLibs，并写入 .meta（rustFingerprint=ca77bee1...）
+#   01:50:2x  重建后检查 -> DECISION=REUSE，三 ABI 全部一致 ca77bee1...（见 fingerprint_after.log）
+#   01:51:07  并行 agent 新增 rust/legado-book/examples/tmp_r32_probe.rs（非本任务创建）
+#   01:52:48  并行 agent 新增 tmp_r32_mem.rs
+#   01:53:1x  并行 agent 新增 tmp_r32_hold.rs、tmp_r32_sleep.rs
+#   01:5x+    指纹随上述文件持续漂移：f5a89655... -> 053a745b... -> 540ccbcf...
+#
+# ==== 归因结论（已用独立复算证实）====
+#   1. 本任务交付的三份 .so 与源码树 ca77bee1... 严格对应。构建完成时校验为 REUSE，
+#      该结论已固化在 fingerprint_after.log 与三份 .meta 的 rustFingerprint 字段中。
+#   2. 用 rust-fingerprint.ps1 的同一算法、仅排除 examples/tmp_r32_* 四个探针文件复算，
+#      结果为 ca77bee1c2e477a36695ca317f081d844a64a742c45f4f3701699c5a48781bd1，
+#      与 .meta 记录值逐字符相同（复算输出：FILES=664 EXCLUDED=4）。
+#      => 漂移 100% 由并行 agent 的临时探针文件造成，与本次重建产物无关。
+#   3. tmp_r32_*.rs 位于 examples/，不参与 legado-ffi 编译，不改变 .so 内容；
+#      但只要它们留在 rust/ 树中，任何指纹校验都会判定 REBUILD（脚本按 rust/** 全量纳入）。
+#   4. 本任务未删除、未修改这些文件（不越界改动其他 agent 的工作产物），需由该文件所有者收尾删除。
+#
+# ==== 漂移过程中的各次实测输出 ====
+# 01:51（tmp_r32_probe.rs 出现后）：
+[Fingerprint] arm64-v8a Rust 源码已变更（.so 指纹 ca77bee1c2e477a3... != 当前 f5a896554fc1a755...）-> .so 陈旧，需重编
+[Fingerprint] armeabi-v7a Rust 源码已变更（.so 指纹 ca77bee1c2e477a3... != 当前 f5a896554fc1a755...）-> .so 陈旧，需重编
+[Fingerprint] x86_64 Rust 源码已变更（.so 指纹 ca77bee1c2e477a3... != 当前 f5a896554fc1a755...）-> .so 陈旧，需重编
+DECISION=REBUILD fingerprint=f5a896554fc1a7558b8df400c2fea45ca605193632915efb3ea2d1d2da597df0
+#
+# 01:52（tmp_r32_mem.rs 出现后）：
+DECISION=REBUILD fingerprint=053a745b24be14b78201e9ba3530181c7184e2c630a656deb276fd9fdccd91e4
+#
+# 最终（四个探针文件全部存在时）：
+DECISION=REBUILD fingerprint=540ccbcfd2b8caa379ea3d381264ffc7c4c5e1a496be86e146a3d8e677dae24f
+#
+# ==== 独立复算证据（排除探针后回到交付指纹）====
+FILES=664 EXCLUDED=4
+FP_EXCLUDING_PROBES=ca77bee1c2e477a36695ca317f081d844a64a742c45f4f3701699c5a48781bd1

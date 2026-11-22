@@ -1,0 +1,19 @@
+# so_manifest.txt — 重建后三 ABI 产物清单（2026-11-23）
+#
+# 构建命令：pwsh -NoProfile -ExecutionPolicy Bypass -File rust/scripts/build-android.ps1 -Mode release -Targets "aarch64,armv7,x86_64"
+# NDK：D:\Android\ndk\28.2.13676358   Rust 源码指纹：ca77bee1c2e477a36695ca317f081d844a64a742c45f4f3701699c5a48781bd1
+#
+# ABI	path	size_bytes	mtime_utc	sha256	ELF
+arm64-v8a	flutter_legado\android\app\src\main\jniLibs\arm64-v8a\liblegado_ffi.so	54801336	2026-11-22T17:48:35Z	d88026e6c3a5d34bedbc7d43075e57f498c647ff2d6f9d27d7a6271004ab8b85	ELF64 LE AArch64
+armeabi-v7a	flutter_legado\android\app\src\main\jniLibs\armeabi-v7a\liblegado_ffi.so	36424340	2026-11-22T17:49:29Z	f10a8c324549d814d68132f3ee686c382f3fe7ffb47f4d5fd4887872ff395662	ELF32 LE ARM
+x86_64	flutter_legado\android\app\src\main\jniLibs\x86_64\liblegado_ffi.so	55365880	2026-11-22T17:50:27Z	4c5a4abddff078d95e0812db1c339ca0f91fd50350522ae32923ae1f4d68f74a	ELF64 LE x86-64
+
+# 交叉核对：jniLibs 副本与 rust/target/<triple>/release/liblegado_ffi.so 的 sha256 逐一相同（三 ABI 全部 MATCH）
+
+# .meta 内容
+arm64-v8a: {"contentHash":739801980,"mode":"release","quickjs":true,"builtAt":"2026-11-23T01:50:28.5041648+08:00","rustFingerprint":"ca77bee1c2e477a36695ca317f081d844a64a742c45f4f3701699c5a48781bd1"}
+armeabi-v7a: {"contentHash":739801980,"mode":"release","quickjs":false,"builtAt":"2026-11-23T01:50:28.5373217+08:00","rustFingerprint":"ca77bee1c2e477a36695ca317f081d844a64a742c45f4f3701699c5a48781bd1"}
+x86_64: {"contentHash":739801980,"mode":"release","quickjs":true,"builtAt":"2026-11-23T01:50:28.5571039+08:00","rustFingerprint":"ca77bee1c2e477a36695ca317f081d844a64a742c45f4f3701699c5a48781bd1"}
+
+# 重建前对比（见 so_manifest_before.txt）：三份 .so 的 sha256 均已改变，确认为真实重编而非缓存复用
+# 说明：armeabi-v7a 的 quickjs=false 为脚本既定策略（P2-24/P2-25：rar 在 32 位 armv7 无法编译，按裁决不带 quickjs），非降级异常。
