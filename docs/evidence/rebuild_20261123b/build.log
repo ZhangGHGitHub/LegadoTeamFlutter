@@ -1,0 +1,46 @@
+=== Legado Rust Android Build ===
+Mode:      release
+NDK:       D:\Android\ndk\28.2.13676358
+Toolchain: D:\Android\ndk\28.2.13676358\toolchains\llvm\prebuilt\windows-x86_64\bin
+Targets:   aarch64, armv7, x86_64
+
+FRB content hash: 739801980
+Rust source fingerprint: 85f6710bf24047bf...
+>> Ensuring Rust targets installed...
+info: component rust-std for target aarch64-linux-android is up to date
+info: component rust-std for target armv7-linux-androideabi is up to date
+info: component rust-std for target x86_64-linux-android is up to date
+
+>> Building aarch64-linux-android (arm64-v8a)...
+   Compiling legado-book v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-book)
+   Compiling legado-server v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-server)
+   Compiling legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)
+    Finished `release` profile [optimized] target(s) in 1m 05s
+   OK
+
+>> Building armv7-linux-androideabi (armeabi-v7a)...
+   Compiling legado-book v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-book)
+   Compiling legado-server v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-server)
+   Compiling legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)
+    Finished `release` profile [optimized] target(s) in 48.59s
+   OK
+
+>> Building x86_64-linux-android (x86_64)...
+   Compiling legado-book v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-book)
+   Compiling legado-server v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-server)
+   Compiling legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)
+    Finished `release` profile [optimized] target(s) in 44.72s
+   OK
+
+>> Copying .so files to Flutter jniLibs...
+   arm64-v8a\liblegado_ffi.so (52.3 MB)
+   armeabi-v7a\liblegado_ffi.so (34.7 MB)
+   x86_64\liblegado_ffi.so (52.8 MB)
+
+=== Build complete! ===
+Output: D:\OH-WorkSpace\LegadoTeam\legado\flutter_legado\android\app\src\main\jniLibs
+
+Next steps:
+  cd ..\flutter_legado
+  flutter build apk --debug
+  # or: .\scripts\build-apk.ps1

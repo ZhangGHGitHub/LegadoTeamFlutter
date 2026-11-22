@@ -1,0 +1,27 @@
+== arm64-v8a  size=54801392  sha256=4109aa9bd625855be17393d347c855f27520bd74a4676e93c137a94a6beced93  ELF64 LE AArch64
+   [HIT] R42 相关书                相关书                        occurrences=5
+   [HIT] R06 仓库地址               仓库地址                       occurrences=8
+   [HIT] 批2 HLS 直播流             HLS 直播流不支持离线缓存             occurrences=1
+== armeabi-v7a  size=36425716  sha256=4c69ae8743938312bb786092f9b857c1d616e8e4482d2f0921b8ab8777eccab0  ELF32 LE ARM
+   [HIT] R42 相关书                相关书                        occurrences=5
+   [HIT] R06 仓库地址               仓库地址                       occurrences=8
+   [HIT] 批2 HLS 直播流             HLS 直播流不支持离线缓存             occurrences=1
+== x86_64  size=55366264  sha256=a1beb25c3af8f492e4981f24e2768423fd6012dc95145137660daf52922972e9  ELF64 LE x86-64
+   [HIT] R42 相关书                相关书                        occurrences=5
+   [HIT] R06 仓库地址               仓库地址                       occurrences=8
+   [HIT] 批2 HLS 直播流             HLS 直播流不支持离线缓存             occurrences=1
+
+MATRIX:
+ABI            | check               | needle                      | result | occ
+----------------------------------------------------------------------------------------------------
+arm64-v8a      | R42 相关书             | 相关书                         | HIT    | 5
+arm64-v8a      | R06 仓库地址            | 仓库地址                        | HIT    | 8
+arm64-v8a      | 批2 HLS 直播流          | HLS 直播流不支持离线缓存              | HIT    | 1
+armeabi-v7a    | R42 相关书             | 相关书                         | HIT    | 5
+armeabi-v7a    | R06 仓库地址            | 仓库地址                        | HIT    | 8
+armeabi-v7a    | 批2 HLS 直播流          | HLS 直播流不支持离线缓存              | HIT    | 1
+x86_64         | R42 相关书             | 相关书                         | HIT    | 5
+x86_64         | R06 仓库地址            | 仓库地址                        | HIT    | 8
+x86_64         | 批2 HLS 直播流          | HLS 直播流不支持离线缓存              | HIT    | 1
+
+OVERALL: ALL HIT  (9/9)

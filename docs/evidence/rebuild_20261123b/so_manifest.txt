@@ -1,0 +1,28 @@
+# so_manifest.txt — 二次重建后三 ABI 产物清单（2026-11-23，R32 指纹漂移修复）
+#
+# 构建命令：pwsh -NoProfile -ExecutionPolicy Bypass -File rust/scripts/build-android.ps1 -Mode release -Targets "aarch64,armv7,x86_64"
+# 构建脚本 pwsh 版本：7.7.0
+# NDK：D:\Android\ndk\28.2.13676358
+# Rust 源码指纹：85f6710bf24047bf9ddee6616d5077d70877513fd2f084b8262b6a99eb53ec16
+# 源码 HEAD：c5b936b6e6
+#
+# ABI	path	size_bytes	mtime_utc	sha256	ELF
+arm64-v8a	flutter_legado\android\app\src\main\jniLibs\arm64-v8a\liblegado_ffi.so	54801392	2026-11-22T18:39:48Z	4109aa9bd625855be17393d347c855f27520bd74a4676e93c137a94a6beced93	ELF64 LE AArch64
+armeabi-v7a	flutter_legado\android\app\src\main\jniLibs\armeabi-v7a\liblegado_ffi.so	36425716	2026-11-22T18:40:36Z	4c69ae8743938312bb786092f9b857c1d616e8e4482d2f0921b8ab8777eccab0	ELF32 LE ARM
+x86_64	flutter_legado\android\app\src\main\jniLibs\x86_64\liblegado_ffi.so	55366264	2026-11-22T18:41:21Z	a1beb25c3af8f492e4981f24e2768423fd6012dc95145137660daf52922972e9	ELF64 LE x86-64
+
+# 交叉核对：jniLibs 副本与 rust/target/<triple>/release/liblegado_ffi.so 的 sha256
+# arm64-v8a: MATCH  jniLibs=4109aa9bd625855b…  target=4109aa9bd625855b…
+# armeabi-v7a: MATCH  jniLibs=4c69ae8743938312…  target=4c69ae8743938312…
+# x86_64: MATCH  jniLibs=a1beb25c3af8f492…  target=a1beb25c3af8f492…
+# 结论：三 ABI 全部 MATCH
+
+# .meta 内容
+arm64-v8a: {"contentHash":739801980,"mode":"release","quickjs":true,"builtAt":"2026-11-23T02:41:22.0797797+08:00","rustFingerprint":"85f6710bf24047bf9ddee6616d5077d70877513fd2f084b8262b6a99eb53ec16"}
+armeabi-v7a: {"contentHash":739801980,"mode":"release","quickjs":false,"builtAt":"2026-11-23T02:41:22.1067093+08:00","rustFingerprint":"85f6710bf24047bf9ddee6616d5077d70877513fd2f084b8262b6a99eb53ec16"}
+x86_64: {"contentHash":739801980,"mode":"release","quickjs":true,"builtAt":"2026-11-23T02:41:22.1242227+08:00","rustFingerprint":"85f6710bf24047bf9ddee6616d5077d70877513fd2f084b8262b6a99eb53ec16"}
+
+# 与上一轮（rebuild_20261123，指纹 ca77bee1c2e477a3）对比：三份 .so 的 sha256 全部改变，
+# 确认本轮为真实重编而非缓存复用（arm64-v8a / armeabi-v7a / x86_64 均触发 legado-book 重编）。
+# 说明：armeabi-v7a 的 quickjs=false 为脚本既定策略（P2-24/P2-25：rar 在 32 位 armv7 无法编译，
+# 按裁决不带 quickjs），非降级异常。
