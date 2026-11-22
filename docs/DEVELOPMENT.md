@@ -268,7 +268,7 @@ GitHub Actions 自动执行以下检查（排除 legado-ffi，因其需要 Flutt
 |------|------|------|
 | 整体项目 | v4.0.0-alpha | Git tag 格式 |
 | Rust crates | 0.2.0 | Workspace 统一版本 |
-| Flutter app | 2.0.513+514 | pubspec.yaml |
+| Flutter app | 2.0.514+515 | pubspec.yaml |
 
 ### Git 提交规范
 

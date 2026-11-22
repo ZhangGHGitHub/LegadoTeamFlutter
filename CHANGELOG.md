@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.514] - 2026-11-23
+
+### Added
+- [Rust] 书籍详情页「相关书」区块接通真实数据（契约 §2.55 `getRelatedBooks`）：读取书源规则 `ruleBookInfo.relatedBooks` 配置的关联书单（JSON 数组 `{key,title,url}`），逐个调用既有 explore 取书并过滤当前书，按模块分组渲染。授权依据 `docs/过期文档/UI_ONE_TO_ONE_CLONE_PLAN_20260905.md` §〇（2026-09-05 用户授权）。无配置/全部失败/过滤后全空时返回空模块列表，UI 按「无数据隐藏」降级；单模块失败不影响其他模块；并发上限 8 防聚合源占满连接池。**与参考版的已知差异**：我方发现链入口不接受 `Book`，故模块 url 中 `{{bookName}}` 求值为空串（绝大多数书源用静态分类地址不受影响）；相关书条目不带 Hero 过渡（同一本书可能出现在两个模块，同路由重复 Hero tag 会崩）。
+- [UI] 相关书区块 UI 接通：新建 `providers/book_info/related_books_provider.dart`，JSON 解析全在 provider 层；`books[]` 做 snake_case→camelCase 归一后经 `SearchResult.fromSearchBook` 转 `Book`（与发现页同口径）；点击复用 `pushMainDetailNamed`；本地书短路不发 FFI；加载中也隐藏避免区块先出现再消失。
+
+### Fixed
+- [Rust] 修复设置页「已用缓存」统计偏小的问题：原仅统计章节缓存，而清理时已包含书源缓存（DB 通用 KV + JS 宿主 `cache_store`），导致用户看到「已用 10MB」但清理后释放更多。现统计口径与清理范围严格同源（复用同一 `is_kv_disk_entry` 识别函数，兄弟目录 image_cache/audio_cache/js_files 天然不计入）。
+- [Rust] 修复书源脚本 `java.downloadFile` 的 URL 选项不生效的问题：原只做选项剥离（仅用于命名与避免 404），`headers`/`method`/`body` 被完全丢弃。现按上游语义应用——`method` 仅 POST 生效（HEAD 按上游退化为 GET）、`headers` 覆盖书源同名头、`body` 随 POST 发送；保留二进制安全落盘与 32MB 上限。两份 `jsHelp.md` 已同步。
+- [Rust] 修复超大文本文件打开时可能卡死的问题：编码检测原用「填满 64KB 采样」，对 FIFO/字符设备（如命名管道）会永久阻塞。现改为在打开文件**之前**检查是否为普通文件，非普通文件明确报错（本地书场景这类文件属异常输入）。多字节截断防护（批 43）零影响。
+
+### Changed
+- [Rust] 替换规则预览超时用例的断言改为契约本身（必须返回 ⚠️ 降级文本、三层超时机制任一上报均可、不得把死循环结果当正文），修复 CPU 满载时的假红；新增断言比原来更严，专门堵「执行器悄悄返回原文却仍带 ⚠️」的伪绿。
+- [Rust] `cargo audit` 的 7 条 unmaintained 公告（genpdf 链 5 项 + `stdweb` + `chrono`）登记为已接受风险，`cargo audit` 恢复 0 漏洞 / 0 warnings。**注意**：实测是 7 项而非原登记的 6 项，`chrono`（RUSTSEC-2026-0543）是新增且不在 genpdf 链上，重写 genpdf 也清不掉它。
+- [UI] MD3 渲染矩阵补书籍详情与阅读两屏（3 调色板 × 亮暗 = 12 例），两屏此前无单测级渲染防护。
+
 ## [2.0.513] - 2026-11-20
 
 ### Added
