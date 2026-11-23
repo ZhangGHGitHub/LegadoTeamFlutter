@@ -1,0 +1,85 @@
+=== Legado Rust Android Build ===
+Mode:      release
+NDK:       D:\Android\ndk\28.2.13676358
+Toolchain: D:\Android\ndk\28.2.13676358\toolchains\llvm\prebuilt\windows-x86_64\bin
+Targets:   aarch64, armv7, x86_64
+
+FRB content hash: 192145144
+Rust source fingerprint: c5601c4bc8466f0e...
+>> Ensuring Rust targets installed...
+info: component rust-std for target aarch64-linux-android is up to date
+info: component rust-std for target armv7-linux-androideabi is up to date
+info: component rust-std for target x86_64-linux-android is up to date
+
+>> Building aarch64-linux-android (arm64-v8a)...
+[31;1m   Compiling form_urlencoded v1.2.3[0m
+[31;1m   Compiling legado-core v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-core)[0m
+[31;1m   Compiling url v2.5.9[0m
+[31;1m   Compiling serde_urlencoded v0.7.1[0m
+[31;1m   Compiling axum v0.8.9[0m
+[31;1m   Compiling cookie_store v0.22.1[0m
+[31;1m   Compiling tower-http v0.6.11[0m
+[31;1m   Compiling reqwest v0.12.28[0m
+[31;1m   Compiling legado-net v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-net)[0m
+[31;1m   Compiling legado-parser v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-parser)[0m
+[31;1m   Compiling legado-db v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-db)[0m
+[31;1m   Compiling legado-book v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-book)[0m
+[31;1m   Compiling legado-js v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-js)[0m
+[31;1m   Compiling legado-fetcher v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-fetcher)[0m
+[31;1m   Compiling legado-server v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-server)[0m
+[31;1m   Compiling legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)[0m
+[31;1m    Finished `release` profile [optimized] target(s) in 2m 17s[0m
+   OK
+
+>> Building armv7-linux-androideabi (armeabi-v7a)...
+[31;1m   Compiling form_urlencoded v1.2.3[0m
+[31;1m   Compiling legado-core v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-core)[0m
+[31;1m   Compiling url v2.5.9[0m
+[31;1m   Compiling serde_urlencoded v0.7.1[0m
+[31;1m   Compiling axum v0.8.9[0m
+[31;1m   Compiling tower-http v0.6.11[0m
+[31;1m   Compiling cookie_store v0.22.1[0m
+[31;1m   Compiling reqwest v0.12.28[0m
+[31;1m   Compiling legado-parser v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-parser)[0m
+[31;1m   Compiling legado-net v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-net)[0m
+[31;1m   Compiling legado-book v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-book)[0m
+[31;1m   Compiling legado-db v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-db)[0m
+[31;1m   Compiling legado-js v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-js)[0m
+[31;1m   Compiling legado-fetcher v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-fetcher)[0m
+[31;1m   Compiling legado-server v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-server)[0m
+[31;1m   Compiling legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)[0m
+[31;1m    Finished `release` profile [optimized] target(s) in 1m 51s[0m
+   OK
+
+>> Building x86_64-linux-android (x86_64)...
+[31;1m   Compiling form_urlencoded v1.2.3[0m
+[31;1m   Compiling legado-core v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-core)[0m
+[31;1m   Compiling url v2.5.9[0m
+[31;1m   Compiling serde_urlencoded v0.7.1[0m
+[31;1m   Compiling axum v0.8.9[0m
+[31;1m   Compiling tower-http v0.6.11[0m
+[31;1m   Compiling cookie_store v0.22.1[0m
+[31;1m   Compiling reqwest v0.12.28[0m
+[31;1m   Compiling legado-parser v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-parser)[0m
+[31;1m   Compiling legado-net v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-net)[0m
+[31;1m   Compiling legado-db v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-db)[0m
+[31;1m   Compiling legado-book v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-book)[0m
+[31;1m   Compiling legado-js v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-js)[0m
+[31;1m   Compiling legado-fetcher v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-fetcher)[0m
+[31;1m   Compiling legado-server v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-server)[0m
+[31;1m   Compiling legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)[0m
+[31;1m    Finished `release` profile [optimized] target(s) in 1m 58s[0m
+   OK
+
+>> Copying .so files to Flutter jniLibs...
+   arm64-v8a\liblegado_ffi.so (52.3 MB)
+   armeabi-v7a\liblegado_ffi.so (34.8 MB)
+   x86_64\liblegado_ffi.so (53 MB)
+
+=== Build complete! ===
+Output: D:\OH-WorkSpace\LegadoTeam\legado\flutter_legado\android\app\src\main\jniLibs
+
+Next steps:
+  cd ..\flutter_legado
+  flutter build apk --debug
+  # or: .\scripts\build-apk.ps1

@@ -1,0 +1,21 @@
+# so_manifest.txt — 三 ABI 产物清单（2026-11-23，rebuild_20261123c）
+#
+# 构建命令：pwsh -NoProfile -ExecutionPolicy Bypass -File rust/scripts/build-android.ps1 -Mode release -Targets "aarch64,armv7,x86_64"
+# 构建脚本 pwsh 版本：7.7.0
+# Rust 源码指纹：c5601c4bc8466f0e582b10aa47b3b2b52bc93eeeceb9ec1704bd8d8f1a4960ed
+# 源码 HEAD：540cf6a27b
+#
+# ABI	path	size_bytes	mtime_utc	sha256	ELF
+arm64-v8a	flutter_legado\android\app\src\main\jniLibs\arm64-v8a\liblegado_ffi.so	54858200	2026-11-23T11:05:31Z	142899768441aca6028ed1850d27a3419f514599aec69fb090e54970f036c70a	ELF64 LE AArch64
+armeabi-v7a	flutter_legado\android\app\src\main\jniLibs\armeabi-v7a\liblegado_ffi.so	36463556	2026-11-23T11:07:22Z	a0db53d8878af0e6e0a11047ab8d1b8efd82cdd0796e399acd084f69779d7ce7	ELF32 LE ARM
+x86_64	flutter_legado\android\app\src\main\jniLibs\x86_64\liblegado_ffi.so	55580000	2026-11-23T11:09:21Z	576db4f12f1726952c5beacf55768122dac8c3ed9ff92d314396c539a4212450	ELF64 LE x86-64
+
+# 交叉核对：jniLibs 副本与 rust/target/<triple>/release/liblegado_ffi.so 的 sha256
+# arm64-v8a: MATCH  jniLibs=142899768441aca6…  target=142899768441aca6…
+# armeabi-v7a: MATCH  jniLibs=a0db53d8878af0e6…  target=a0db53d8878af0e6…
+# x86_64: MATCH  jniLibs=576db4f12f172695…  target=576db4f12f172695…
+
+# .meta 内容
+arm64-v8a: {"contentHash":192145144,"mode":"release","quickjs":true,"builtAt":"2026-11-23T19:09:21.7523649+08:00","rustFingerprint":"c5601c4bc8466f0e582b10aa47b3b2b52bc93eeeceb9ec1704bd8d8f1a4960ed"}
+armeabi-v7a: {"contentHash":192145144,"mode":"release","quickjs":false,"builtAt":"2026-11-23T19:09:21.8014200+08:00","rustFingerprint":"c5601c4bc8466f0e582b10aa47b3b2b52bc93eeeceb9ec1704bd8d8f1a4960ed"}
+x86_64: {"contentHash":192145144,"mode":"release","quickjs":true,"builtAt":"2026-11-23T19:09:21.8311002+08:00","rustFingerprint":"c5601c4bc8466f0e582b10aa47b3b2b52bc93eeeceb9ec1704bd8d8f1a4960ed"}

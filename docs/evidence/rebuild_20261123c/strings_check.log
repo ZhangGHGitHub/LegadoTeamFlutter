@@ -1,0 +1,36 @@
+== UTF-8 字节序列验证（原始字节子串计数，非 `strings` 解码）
+== 判据：needle.encode('utf-8') 在 .so 原始字节中出现次数 > 0 即 HIT
+
+-- arm64-v8a  size=54858200  sha256=142899768441aca6028ed1850d27a3419f514599aec69fb090e54970f036c70a  ELF64 LE AArch64
+   [HIT] Characters 2A  needle=角色  utf8_hex=e8a792e889b2  occurrences=12
+   [HIT] R42 阶段1        needle=相关书  utf8_hex=e79bb8e585b3e4b9a6  occurrences=5
+   [HIT] R06            needle=仓库地址  utf8_hex=e4bb93e5ba93e59cb0e59d80  occurrences=8
+
+-- armeabi-v7a  size=36463556  sha256=a0db53d8878af0e6e0a11047ab8d1b8efd82cdd0796e399acd084f69779d7ce7  ELF32 LE ARM
+   [HIT] Characters 2A  needle=角色  utf8_hex=e8a792e889b2  occurrences=12
+   [HIT] R42 阶段1        needle=相关书  utf8_hex=e79bb8e585b3e4b9a6  occurrences=5
+   [HIT] R06            needle=仓库地址  utf8_hex=e4bb93e5ba93e59cb0e59d80  occurrences=8
+
+-- x86_64  size=55580000  sha256=576db4f12f1726952c5beacf55768122dac8c3ed9ff92d314396c539a4212450  ELF64 LE x86-64
+   [HIT] Characters 2A  needle=角色  utf8_hex=e8a792e889b2  occurrences=12
+   [HIT] R42 阶段1        needle=相关书  utf8_hex=e79bb8e585b3e4b9a6  occurrences=5
+   [HIT] R06            needle=仓库地址  utf8_hex=e4bb93e5ba93e59cb0e59d80  occurrences=8
+
+MATRIX（逐条 × 逐 ABI）:
+ABI            | check          | needle   | result | occ
+------------------------------------------------------------------------------
+arm64-v8a      | Characters 2A  | 角色       | HIT    | 12
+arm64-v8a      | R42 阶段1        | 相关书      | HIT    | 5
+arm64-v8a      | R06            | 仓库地址     | HIT    | 8
+armeabi-v7a    | Characters 2A  | 角色       | HIT    | 12
+armeabi-v7a    | R42 阶段1        | 相关书      | HIT    | 5
+armeabi-v7a    | R06            | 仓库地址     | HIT    | 8
+x86_64         | Characters 2A  | 角色       | HIT    | 12
+x86_64         | R42 阶段1        | 相关书      | HIT    | 5
+x86_64         | R06            | 仓库地址     | HIT    | 8
+
+OVERALL: ALL HIT  (9/9)
+
+# 对照（重建前同机同法实测，见任务汇报）：
+#   重建前 角色=0 / 相关书=5 / 仓库地址=8（三 ABI 一致）→ Characters 2A 模块此前未进 .so
+#   重建后 角色=12 / 相关书=5 / 仓库地址=8（三 ABI 一致）→ 2A 数据层已进 .so，R42/R06 未回退

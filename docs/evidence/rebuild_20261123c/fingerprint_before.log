@@ -1,0 +1,4 @@
+[Fingerprint] arm64-v8a Rust 源码已变更（.so 指纹 85f6710bf24047bf… ≠ 当前 c5601c4bc8466f0e…）→ .so 陈旧，需重编
+[Fingerprint] armeabi-v7a Rust 源码已变更（.so 指纹 85f6710bf24047bf… ≠ 当前 c5601c4bc8466f0e…）→ .so 陈旧，需重编
+[Fingerprint] x86_64 Rust 源码已变更（.so 指纹 85f6710bf24047bf… ≠ 当前 c5601c4bc8466f0e…）→ .so 陈旧，需重编
+DECISION=REBUILD fingerprint=c5601c4bc8466f0e582b10aa47b3b2b52bc93eeeceb9ec1704bd8d8f1a4960ed
