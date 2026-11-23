@@ -1,0 +1,10 @@
+=== post-build state 2026-10-26T14:25:01+08:00 ===
+-rw-r--r-- 1 admin 197608 48098736 2026-10-26 14:20:41.579009400 +0800 flutter_legado/android/app/src/main/jniLibs/arm64-v8a/liblegado_ffi.so
+-rw-r--r-- 1 admin 197608      188 2026-10-26 14:21:42.932880700 +0800 flutter_legado/android/app/src/main/jniLibs/arm64-v8a/liblegado_ffi.so.meta
+-rw-r--r-- 1 admin 197608 48135720 2026-10-26 14:21:42.522706000 +0800 flutter_legado/android/app/src/main/jniLibs/x86_64/liblegado_ffi.so
+-rw-r--r-- 1 admin 197608      188 2026-10-26 14:21:42.946921200 +0800 flutter_legado/android/app/src/main/jniLibs/x86_64/liblegado_ffi.so.meta
+--- meta ---
+{"contentHash":236894094,"mode":"release","quickjs":true,"builtAt":"2026-10-26T14:21:42.9127451+08:00","rustFingerprint":"15030f2a177fc0cd3a7aaa69a32f8c2d21f93d33a541e7e09ead0edb61dd2457"}
+{"contentHash":236894094,"mode":"release","quickjs":true,"builtAt":"2026-10-26T14:21:42.9459737+08:00","rustFingerprint":"15030f2a177fc0cd3a7aaa69a32f8c2d21f93d33a541e7e09ead0edb61dd2457"}
+--- apk ---
+-rw-r--r-- 1 admin 197608 306195930 2026-10-26 14:23:25.956866900 +0800 flutter_legado/build/app/outputs/flutter-apk/app-debug.apk

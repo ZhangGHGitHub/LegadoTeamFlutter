@@ -1,0 +1,7 @@
+text='' desc='设置' click=false long=false bounds=[48,372][156,444]
+text='' desc='外观&#10;主题配色与显示模式' click=true long=false bounds=[48,552][1032,750]
+text='' desc='高级&#10;功能相关的一些设置' click=true long=false bounds=[48,780][1032,978]
+text='' desc='阅读界面&#10;字号/背景/翻页动画/排版' click=true long=false bounds=[48,1008][1032,1209]
+text='' desc='备份与恢复&#10;WebDav 设置/导入旧版本数据' click=true long=false bounds=[48,1239][1032,1440]
+text='' desc='缓存管理&#10;书籍下载任务与缓存进度' click=true long=false bounds=[48,1470][1032,1668]
+text='' desc='书源管理&#10;新建、导入、编辑或管理书源' click=true long=false bounds=[48,1698][1032,1896]

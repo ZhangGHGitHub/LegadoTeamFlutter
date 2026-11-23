@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>QA_B2C RSS</title>
+    <link>http://192.168.100.52:8899/</link>
+    <description>QA 双栏验收 RSS 源</description>
+    <item>
+      <title>QA文章一：双栏验证</title>
+      <link>http://192.168.100.52:8899/article1.html</link>
+      <description>第一篇文章摘要，用于 RSS 右栏列表验证。</description>
+      <pubDate>Mon, 03 Nov 2026 10:00:00 +0800</pubDate>
+      <guid>http://192.168.100.52:8899/article1.html</guid>
+    </item>
+    <item>
+      <title>QA文章二：详情验证</title>
+      <link>http://192.168.100.52:8899/article2.html</link>
+      <description>第二篇文章摘要，用于文章详情右栏验证。</description>
+      <pubDate>Mon, 03 Nov 2026 11:00:00 +0800</pubDate>
+      <guid>http://192.168.100.52:8899/article2.html</guid>
+    </item>
+    <item>
+      <title>QA文章三：逐级返回</title>
+      <link>http://192.168.100.52:8899/article3.html</link>
+      <description>第三篇文章摘要，用于逐级返回验证。</description>
+      <pubDate>Mon, 03 Nov 2026 12:00:00 +0800</pubDate>
+      <guid>http://192.168.100.52:8899/article3.html</guid>
+    </item>
+  </channel>
+</rss>

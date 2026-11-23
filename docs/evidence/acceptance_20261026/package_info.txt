@@ -1,0 +1,4 @@
+    versionCode=375 minSdk=24 targetSdk=36
+    versionName=2.0.374
+    lastUpdateTime=2026-10-26 14:25:58
+      firstInstallTime=2026-09-13 13:31:44

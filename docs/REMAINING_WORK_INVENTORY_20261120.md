@@ -327,6 +327,17 @@ pwsh rust/scripts/rust-fingerprint.ps1 -Check             # → DECISION=REBUILD
 
 > 单这两张 `saf_*` 大图 + 一个 99 MB logcat 即占 178 MB（占总量的 22%），且均为可再生成的压测夹具/原始日志。
 
+### A.7 A.5 两个「无文档来源」目录处置结果（2026-11-23）
+
+> 已整目录归档并补说明，原 `tmp_debug/` 目录删除。归档前后文件数与内容逐字节一致（`diff -r` 校验通过）。
+
+| 原目录 | 归档位置 | 文件数 | 体积 | 推断用途与依据 |
+|---|---|---|---|---|
+| `device_acceptance_20261026` | `docs/evidence/acceptance_20261026/`（含 `README.md`） | 51 → 51 | 3.3 MB | **审查批 1~7 合并实机验收**（版本 **2.0.374+375**）。依据：`REFACTORING_ACTIVE_PLAN.md:831` 逐字点名该证据目录，且描述「冒烟 PASS + 6/6 针对性回归 PASS（阅读器/关于页堆转储/Web 服务+`/api/health` 200/RSS 管理页/恢复确认框）」；目录内 `package_info.txt`（2.0.374）、`pre/post_build_state.txt`（.so 重编指纹）、`smoke_skipbuild.log`（7/7 PASS）、`web_health.txt`（200 OK）、`ui_08_about.xml`（创建堆转储）、`ui_13_restore_confirm.xml`（确认恢复吗）逐项对应。`01_launch_shelf.png` 的历史崩溃 modal 解释了首轮 `smoke_build.log` 的 UI 检测失败（计划已登记的遗留 ②③） |
+| `device_acceptance_20261103_batch2b2c` | `docs/evidence/acceptance_20261103_batch2b2c/`（含 `README.md`） | 86 → 86 | 4.1 MB | **设置批 2b-2c（书架/发现/RSS list-detail 双栏）设备验收首轮**（版本推断 **2.0.443+444**，时间链：收尾提交 `b77a77dfd0` 20:30:08 → 本目录 mtime 20:32~20:41 → 下一版本收尾 21:05）。直接自证：`scripts/dev.py` docstring「QA 2b-2c 设备交互辅助脚本…扩展自 2b-2b dev.py」；`data/` 语义树逐步对应 2b-2c 场景（未读单击/长按/已读直读/发现分类书单/RSS 三级下钻），`server/` 为 mock 站（`explore.html`/`book1~3`/`feed.xml`），`logcat/http_server.log` 证明夹具链路 200。**关键价值**：`shots/24_explore_bookinfo_right.png`、`shots/27_explore_back_after_replace.png` 直接留存 P1 缺陷（宽屏发现双栏点书 → 左侧发现页整块灰色 `ErrorWidget`），与 `DEVICE_ACCEPTANCE_20261104_BATCH2B2C.md` P1-O1 同构。注：同批次 22:30 正式轮与 23:42 回修复验轮的证据目录（`device_acceptance_20261104/`、`reverify_a2/`）不在本次范围 |
+
+> 处置口径：两目录均**整目录归档、不筛选**（日志/脚本/语义树/截图/mock server 全留），保留原始 mtime；`docs/evidence/**` 已入库（`git ls-files docs/evidence` 非空），原 `tmp_debug/` 路径由 `.gitignore:49` 忽略。归档后两目录可视为「已归档」，不再计入本附录 A.2「需先归档」口径。
+
 
 ---
 

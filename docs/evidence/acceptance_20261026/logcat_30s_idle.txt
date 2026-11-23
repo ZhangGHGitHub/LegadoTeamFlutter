@@ -1,0 +1,59 @@
+--------- beginning of main
+10-26 14:26:21.010   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:21.010   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:21.010   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:21.010   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:21.010   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:22.343  3038  3052 W System  : A resource failed to call close. 
+10-26 14:26:22.343  3038  3052 W System  : A resource failed to call close. 
+10-26 14:26:23.085  3188  3188 I init    : type=1400 audit(0.0:200): avc:  denied  { entrypoint } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+10-26 14:26:23.085  3188  3188 I serial_console: type=1400 audit(0.0:201): avc:  denied  { map } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+10-26 14:26:23.085  3188  3188 I serial_console: type=1400 audit(0.0:202): avc:  denied  { read execute } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+10-26 14:26:24.013   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:24.013   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:24.013   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:24.013   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:24.013   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:27.017   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:27.017   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:27.017   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:27.017   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:27.017   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:30.022   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:30.022   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:30.022   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:30.022   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:30.022   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:33.026   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:33.026   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:33.026   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:33.026   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:33.026   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:36.028   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:36.028   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:36.028   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:36.028   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:36.029   839   979 W BestClock: java.time.DateTimeException: No network time available
+--------- beginning of system
+10-26 14:26:38.633   839   934 D ActivityManager: freezing 1897 com.android.keychain
+10-26 14:26:38.633   839   934 D ActivityManager: freezing 1995 com.android.localtransport
+10-26 14:26:39.032   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:39.033   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:39.033   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:39.033   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:39.033   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:42.036   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:42.036   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:42.037   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:42.037   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:42.037   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:45.040   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:45.040   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:45.041   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:45.041   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:45.041   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:48.045   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:48.045   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:48.045   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:48.045   839   979 W BestClock: java.time.DateTimeException: No network time available
+10-26 14:26:48.045   839   979 W BestClock: java.time.DateTimeException: No network time available
