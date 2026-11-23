@@ -1,0 +1,339 @@
+[
+  {
+    "id": "1-14",
+    "name": "toc_bookmark",
+    "root_pkg": "io.legato.kazusa",
+    "kw": "暂无书签",
+    "and": "信息",
+    "neg": "",
+    "logical": 14,
+    "phys": "4619827293253378061",
+    "status": "OK",
+    "png": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\parity_shots\\ref_dark_20261123\\r43_1-14_toc_bookmark.png",
+    "bytes": 179773,
+    "dims": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "id": "1-2",
+    "name": "home_tab",
+    "root_pkg": "io.legato.kazusa",
+    "kw": "最近阅读",
+    "and": "今日阅读目标",
+    "neg": "",
+    "logical": 7,
+    "phys": "4619827052952829958",
+    "status": "OK",
+    "png": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\parity_shots\\ref_dark_20261123\\r43_1-2_home_tab.png",
+    "bytes": 336415,
+    "dims": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "id": "1-4",
+    "name": "shelf_overflow",
+    "root_pkg": "io.legato.kazusa",
+    "kw": "远程书籍",
+    "and": "分组管理",
+    "neg": "",
+    "logical": 8,
+    "phys": "4619827621058019847",
+    "status": "OK",
+    "png": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\parity_shots\\ref_dark_20261123\\r43_1-4_shelf_overflow.png",
+    "bytes": 670762,
+    "dims": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "id": "1-5",
+    "name": "shelf_select_mode",
+    "root_pkg": "io.legato.kazusa",
+    "kw": "全选",
+    "and": "已选",
+    "neg": "",
+    "logical": 9,
+    "phys": "4619826992212769800",
+    "status": "OK",
+    "png": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\parity_shots\\ref_dark_20261123\\r43_1-5_shelf_select_mode.png",
+    "bytes": 467805,
+    "dims": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "id": "1-7",
+    "name": "search_results",
+    "root_pkg": "io.legato.kazusa",
+    "kw": "搜索结果",
+    "and": "结果",
+    "neg": "",
+    "logical": 10,
+    "phys": "4619827446303777033",
+    "status": "OK",
+    "png": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\parity_shots\\ref_dark_20261123\\r43_1-7_search_results.png",
+    "bytes": 293963,
+    "dims": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "id": "1-9",
+    "name": "toc",
+    "root_pkg": "io.legato.kazusa",
+    "kw": "信息",
+    "and": "字",
+    "neg": "",
+    "logical": 13,
+    "phys": "4619827106603731468",
+    "status": "OK",
+    "png": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\parity_shots\\ref_dark_20261123\\r43_1-9_toc.png",
+    "bytes": 237965,
+    "dims": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "id": "2-2",
+    "name": "discover_overflow",
+    "root_pkg": "io.legato.kazusa",
+    "kw": "出版书源",
+    "and": "聚合书源",
+    "neg": "",
+    "logical": 11,
+    "phys": "4619826876442645002",
+    "status": "OK",
+    "png": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\parity_shots\\ref_dark_20261123\\r43_2-2_discover_overflow.png",
+    "bytes": 186281,
+    "dims": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "id": "2-5",
+    "name": "discover_category",
+    "root_pkg": "io.legato.kazusa",
+    "kw": "玄幻",
+    "and": "最新:",
+    "neg": "",
+    "logical": 12,
+    "phys": "4619826915945327627",
+    "status": "OK",
+    "png": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\parity_shots\\ref_dark_20261123\\r43_2-5_discover_category.png",
+    "bytes": 344853,
+    "dims": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "id": "2-6",
+    "name": "change_source",
+    "root_pkg": "io.legato.kazusa",
+    "kw": "换源",
+    "and": "筛选",
+    "neg": "",
+    "logical": 15,
+    "phys": "4619827581455741454",
+    "status": "OK",
+    "png": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\parity_shots\\ref_dark_20261123\\r43_2-6_change_source.png",
+    "bytes": 193410,
+    "dims": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "id": "2-7",
+    "name": "book_source_manage",
+    "root_pkg": "io.legato.kazusa",
+    "kw": "已启用",
+    "and": "编辑",
+    "neg": "",
+    "logical": 21,
+    "phys": "4619827064234534164",
+    "status": "OK",
+    "png": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\parity_shots\\ref_dark_20261123\\r43_2-7_book_source_manage.png",
+    "bytes": 163578,
+    "dims": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "id": "2-9",
+    "name": "replace_rule_editor",
+    "root_pkg": "io.legato.kazusa",
+    "kw": "编辑替换规则",
+    "and": "规则名称",
+    "neg": "",
+    "logical": 27,
+    "phys": "4619827679833159706",
+    "status": "OK",
+    "png": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\parity_shots\\ref_dark_20261123\\r43_2-9_replace_rule_editor.png",
+    "bytes": 99543,
+    "dims": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "id": "3-2",
+    "name": "read_record",
+    "root_pkg": "io.legato.kazusa",
+    "kw": "累计阅读",
+    "and": "共阅读",
+    "neg": "",
+    "logical": 17,
+    "phys": "4619827210700952848",
+    "status": "OK",
+    "png": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\parity_shots\\ref_dark_20261123\\r43_3-2_read_record.png",
+    "bytes": 360811,
+    "dims": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "id": "3-6",
+    "name": "settings_backup",
+    "root_pkg": "io.legato.kazusa",
+    "kw": "WebDav",
+    "and": "备份",
+    "neg": "",
+    "logical": 18,
+    "phys": "4619826980576867857",
+    "status": "OK",
+    "png": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\parity_shots\\ref_dark_20261123\\r43_3-6_settings_backup.png",
+    "bytes": 156164,
+    "dims": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "id": "3-8",
+    "name": "tts_settings",
+    "root_pkg": "io.legato.kazusa",
+    "kw": "引擎与音色",
+    "and": "朗读",
+    "neg": "",
+    "logical": 19,
+    "phys": "4619827204495097106",
+    "status": "OK",
+    "png": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\parity_shots\\ref_dark_20261123\\r43_3-8_tts_settings.png",
+    "bytes": 203300,
+    "dims": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "id": "3-9",
+    "name": "group_manage",
+    "root_pkg": "io.legato.kazusa",
+    "kw": "在读",
+    "and": "分组",
+    "neg": "",
+    "logical": 20,
+    "phys": "4619827166650602771",
+    "status": "OK",
+    "png": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\parity_shots\\ref_dark_20261123\\r43_3-9_group_manage.png",
+    "bytes": 139492,
+    "dims": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "id": "4-1",
+    "name": "txt_toc_rule",
+    "root_pkg": "io.legato.kazusa",
+    "kw": "目录规则",
+    "and": "目录",
+    "neg": "",
+    "logical": 22,
+    "phys": "4619827567115228949",
+    "status": "OK",
+    "png": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\parity_shots\\ref_dark_20261123\\r43_4-1_txt_toc_rule.png",
+    "bytes": 168570,
+    "dims": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "id": "4-2",
+    "name": "dict_rule",
+    "root_pkg": "io.legato.kazusa",
+    "kw": "百度汉语",
+    "and": "字典",
+    "neg": "",
+    "logical": 23,
+    "phys": "4619826883185188630",
+    "status": "OK",
+    "png": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\parity_shots\\ref_dark_20261123\\r43_4-2_dict_rule.png",
+    "bytes": 53867,
+    "dims": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "id": "4-3",
+    "name": "file_manage",
+    "root_pkg": "io.legato.kazusa",
+    "kw": "筛选 • 文件管理",
+    "and": "root",
+    "neg": "",
+    "logical": 25,
+    "phys": "4619827888530559000",
+    "status": "OK",
+    "png": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\parity_shots\\ref_dark_20261123\\r43_4-3_file_manage.png",
+    "bytes": 38292,
+    "dims": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "id": "4-4",
+    "name": "about",
+    "root_pkg": "io.legato.kazusa",
+    "kw": "开发人员",
+    "and": "3.26.19",
+    "neg": "",
+    "logical": 26,
+    "phys": "4619827194711165721",
+    "status": "OK",
+    "png": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\parity_shots\\ref_dark_20261123\\r43_4-4_about.png",
+    "bytes": 96152,
+    "dims": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "id": "4-5",
+    "name": "home_module",
+    "status": "OK",
+    "root_pkg": "io.legato.kazusa",
+    "bytes": 265433,
+    "dims": [
+      1080,
+      1920
+    ],
+    "logical": 6,
+    "phys": "4619827203584079877",
+    "note": "独立调用采集，记录事后补记"
+  }
+]

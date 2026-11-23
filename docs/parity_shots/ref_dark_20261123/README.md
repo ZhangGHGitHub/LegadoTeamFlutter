@@ -168,3 +168,155 @@ ref_20260914_home_overflow_light.png              首页 + 溢出菜单 浅色�
 4. **台账原述「21 张参考版深色截图」不准确**：实测该批 `b3_kazusa_*.png` 共 22 张，其中**仅 6 张为深色**（lum<90：settings 28.1 / my 30.2 / my2 31.3 / appearance 30.9 / home 34.6 / home2 34.6），其余 16 张为浅色对照帧。3-3 之外的深色帧（3-1 / 1-3 / 3-4）虽有价值，但对应屏此前已用 `docs/` 内更强证据回销，故本批**实际只新增 3-3 一屏**，与 `LEDGER_VERIFICATION_20261123.md` 的结论一致。
 5. **本目录只收参考版**：同批 `b3_ours_*`（我方 `io.legado.flutter_legado`，如 `b3_ours_settings.png` / `b3_ours_highlight.png` / `b3_ours_search.png`）**一律未归档**；台账中引用它们时仍指 `.tmp/` 原路径（已标注「未归档」）。
 6. **`b3v2_*` 未归档**：10-01 14:52–14:59 的 `b3v2_*` 系列是**我方**（`b3v2_cur.xml` 实测 `package=io.legado.flutter_legado`）输入框形态对比产物，与参考版深色基线无关，不属本次归档范围。
+
+---
+
+## 九、2026-11-23 R43 补采（A 类 19 屏 + 2-9）
+
+> 采集日期：2026-11-23 18:36–18:56（本地时区 UTC+8）
+> HEAD 基线：`f8c6cf908f`（采集脚本改造基线 `0837afef4f`）
+> 目的：按 `docs/R43_REMAINING_CAPTURE_PLAN_20261123.md` §三 采集 A 类 19 屏 + 2-9 的**参考版深色实机截图**，补齐台账「❌待补采」。
+> 与 §一–§八 的关系：本节是**本轮新采**，与上文的 2026-10-01 `b3` 批无重叠（除 3-3 未重采，沿用 `b3_kazusa_settings.png`）。
+
+### 9.1 设备与端点（实测，非照抄历史）
+
+| 项 | 值 | 取证方式 |
+|---|---|---|
+| MuMu 实例 | 0「Test2」 | `MuMuManager.exe sh -v 0 -c "ip addr show wlan0"` |
+| **实测端点** | **`192.168.100.63:5555`** | 同上命令输出 `inet 192.168.100.63/24`（历史文档记载 `192.168.1.19` / `192.168.100.62`，**本轮均未使用**） |
+| 参考版 | `io.legato.kazusa` versionName **3.26.19** / versionCode 18759 | `dumpsys package io.legato.kazusa \| grep version` |
+| 分辨率 | 1080×1920（480dpi） | `dumpsys display`（mumuscreen000 / mumuscreen001 双物理屏） |
+| 深色基线路径 | **路径 B**：`adb shell cmd uimode night yes`（采完 `cmd uimode night auto` 还原） | 选择理由：路径 A 需在 kazusa 内逐屏切「主题模式→深色」，会污染 `themeMode` 持久配置；路径 B 只改设备全局状态且可完整还原，且 kazusa `themeMode=0`（跟随系统）即时生效 |
+
+### 9.2 多逻辑显示探测（每屏冷启后重探，logical id 递增）
+
+`probe_display()` 四级解析链实测可用；每屏 `am force-stop` + `am start` 后 logical id 递增（本轮实测 **6 → 27**），physical uniqueId 随之变化。**全部 20 次截图均通过 dump 落点反证**（根节点 `package="io.legato.kazusa"`）。
+
+回归自检：先跑 `--only 03_settings`（3-3）验证脚本，输出 `85KB 1080x1920 (logical=3 phys=4619826888814064386)`，形态与 `b3_kazusa_settings.png` 一致（八项纯文字行 + 右 chevron）。
+
+### 9.3 逐屏采集结果（20 屏 / 21 个文件，全部 PASS）
+
+三层校验口径：① 截图 > 1024B；② PNG 尺寸 == 1080×1920；③ dump 根节点 `package == io.legato.kazusa`。另加 ④ 灰度均值 < 90 判深色。
+
+| 屏号 | 屏名 | 文件 | logical | physical uniqueId | 字节 | lum | 三层校验 |
+|---|---|---|---|---|---|---|---|
+| 1-2 | 首页页签 | `r43_1-2_home_tab.png/.xml` | 7 | `4619827052952829958` | 336415 | 37.5 | PASS |
+| 1-4 | 书架溢出菜单 | `r43_1-4_shelf_overflow.png/.xml` | 8 | `4619827621058019847` | 670762 | 45.8 | PASS |
+| 1-5 | 书架批量多选态 | `r43_1-5_shelf_select_mode.png/.xml` | 9 | `4619826992212769800` | 467805 | 38.1 | PASS |
+| 1-7 | 搜索结果页 | `r43_1-7_search_results.png/.xml` | 10 | `4619827446303777033` | 293963 | 33.8 | PASS |
+| 1-9 | 目录页 | `r43_1-9_toc.png/.xml` | 13 | `4619827106603731468` | 237965 | 34.3 | PASS |
+| 1-14 | 目录·书签页签 | `r43_1-14_toc_bookmark.png/.xml` | 14 | `4619827293253378061` | 179773 | 31.1 | PASS |
+| 2-2 | 发现溢出菜单 | `r43_2-2_discover_overflow.png/.xml` | 11 | `4619826876442645002` | 186281 | 30.8 | PASS |
+| 2-5 | 发现分类书单 | `r43_2-5_discover_category.png/.xml` | 12 | `4619826915945327627` | 344853 | 33.5 | PASS |
+| 2-6 | 换源/书源 | `r43_2-6_change_source.png/.xml` | 15 | `4619827581455741454` | 193410 | 32.5 | PASS |
+| 2-7 | 书源管理 | `r43_2-7_book_source_manage.png/.xml` | 21 | `4619827064234534164` | 163578 | 33.1 | PASS |
+| 2-9 | 替换净化（列表页） | `r43_2-9_replace_rule.png/.xml` | 27 | `4619827679833159706` | 43085 | 22.2 | PASS |
+| 2-9 | 替换净化编辑器 | `r43_2-9_replace_rule_editor.png/.xml` | 27 | `4619827679833159706` | 99543 | 42.5 | PASS |
+| 3-2 | 阅读记录 | `r43_3-2_read_record.png/.xml` | 17 | `4619827210700952848` | 360811 | 35.4 | PASS |
+| 3-6 | 设置·备份与恢复 | `r43_3-6_settings_backup.png/.xml` | 18 | `4619826980576867857` | 156164 | 31.8 | PASS |
+| 3-8 | 朗读 | `r43_3-8_tts_settings.png/.xml` | 19 | `4619827204495097106` | 203300 | 33.9 | PASS |
+| 3-9 | 分组管理 | `r43_3-9_group_manage.png/.xml` | 20 | `4619827166650602771` | 139492 | 32.0 | PASS |
+| 4-1 | TXT 目录规则 | `r43_4-1_txt_toc_rule.png/.xml` | 22 | `4619827567115228949` | 168570 | 34.4 | PASS |
+| 4-2 | 字典规则 | `r43_4-2_dict_rule.png/.xml` | 23 | `4619826883185188630` | 53867 | 24.0 | PASS |
+| 4-3 | 文件管理 | `r43_4-3_file_manage.png/.xml` | 25 | `4619827888530559000` | 38292 | 20.0 | PASS |
+| 4-4 | 关于页 | `r43_4-4_about.png/.xml` | 26 | `4619827194711165721` | 96152 | 29.2 | PASS |
+| 4-5 | 首页模块管理 | `r43_4-5_home_module.png/.xml` | 6 | `4619827203584079877` | 265433 | 29.5 | PASS |
+
+**合计：19 个 A 类屏 + 2-9（列表页 + 编辑器 2 帧）= 20 屏 / 21 个 PNG + 21 份 XML。**
+
+机器可读记录：`_r43_capture_records.json`（每屏 logical / phys / 字节 / 尺寸 / 根包 / 断言命中词）。
+
+### 9.4 逐屏断言命中词（防错态误存）
+
+| 屏号 | 主关键词（OR） | 附加关键词（AND，OR 组内） |
+|---|---|---|
+| 1-2 | 最近阅读 / 累计阅读 / 阅读时长 | 今日阅读目标 |
+| 1-4 | 远程书籍 | 选择模式 / 分组管理 / 导出书单 |
+| 1-5 | 全选 | 已选 / 共3本 |
+| 1-7 | 搜索结果 | 结果 |
+| 1-9 | 信息 / 目录 / 书签 / 笔记 | 字 |
+| 1-14 | 暂无书签 | 信息 / 笔记 |
+| 2-2 | 出版书源 | 通常书源 / 聚合书源 |
+| 2-5 | 玄幻 | 最新: |
+| 2-6 | 换源 | 筛选 / 置顶书源 |
+| 2-7 | 已启用 | 编辑 / 菜单 |
+| 2-9 | 编辑替换规则 | 匹配规则 / 替换为 / 规则名称 |
+| 3-2 | 累计阅读 / 已读 | 共阅读 / 记录 |
+| 3-6 | WebDav / WebDAV | 备份 |
+| 3-8 | 常规 / 引擎与音色 / 角色与配乐 | 朗读 |
+| 3-9 | 在读 / 未读 / 已读 | 分组 |
+| 4-1 | 目录规则 / TXT | 规则 / 目录 |
+| 4-2 | 百度汉语 / 海词英文 | 字典 |
+| 4-3 | 文件管理 | 筛选 / root |
+| 4-4 | 开发人员 / 开源许可 | 阅读 / 版本 |
+| 4-5 | 首页模块管理 | 新建自定义集 / 浏览书源模块 |
+
+### 9.5 2-9 临时替换规则：写入与清除记录（**已清除，无残留**）
+
+为采到**非空**的替换净化编辑器（参考版 `replace_rules` 原为 0 条，空列表页无法体现编辑器形态），经用户授权后按以下步骤临时写入一条无害规则，采完立即删除：
+
+| 步骤 | 命令 / 动作 | 结果 |
+|---|---|---|
+| 1. 权限确认 | `adb shell id` → `uid=0(root)`（`adb root` 成功） | root 可用；`run-as` 不可用（`package not debuggable`），故走 root + `sqlite3` |
+| 2. 基线确认 | `sqlite3 .../legado.db "select count(*) from replace_rules;"` | **0** |
+| 3. 写入临时规则 | `INSERT INTO replace_rules (name,pattern,replacement,isEnabled,isRegex,sortOrder) VALUES ('qa_tmp','a','b',1,0,0);` | 回读 `1\|qa_tmp\|a\|b`（id=1） |
+| 4. 采集 | 冷启 → 我的 → 替换净化 → 列表页截图 → 点「编辑 qa_tmp」→ 编辑器截图 | 两帧均 PASS（见 §9.3） |
+| 5. **删除** | `DELETE FROM replace_rules WHERE name='qa_tmp';` | — |
+| 6. **清除复查** | `select count(*) from replace_rules;` → **0**；`select id,name from replace_rules where name like 'qa%';` → **空** | **无残留** |
+
+规则内容为 `name='qa_tmp'`, `pattern='a'`, `replacement='b'`（纯 ASCII 无害占位，非正则、非启用正则模式），不触达任何书籍内容。
+
+### 9.6 失败与跳过
+
+| 屏号 | 状态 | 原因 |
+|---|---|---|
+| — | 无 | 本轮 A 类 19 屏 + 2-9 **全部采集成功**，无失败、无跳过 |
+
+采集中途的两次失败均为**导航实现问题**（非产品缺陷），已修正后重采：
+
+1. **2-7 首次断言失败**：实际已正确进入书源管理页（源列表），但断言词选「书源管理」——该页标题为「书源 / 全部」，无「书源管理」节点。改断言为「已启用 + 编辑/菜单」后重采成功。
+2. **4-3 / 4-4 首次导航失败**：`tap_row()` 的「甩过保护」在长列表底部反复回滑，未能命中「文件管理」/「关于」。改用手动小步 `swipe`（3 次）到达列表底部后按文本节点点击，两屏均成功。
+
+### 9.7 设备状态还原
+
+| 项 | 动作 | 结果 |
+|---|---|---|
+| 深色基线 | `adb shell cmd uimode night auto` | 已还原 |
+| 参考版进程 | `adb shell am force-stop io.legato.kazusa` | 已停止 |
+| 设备侧临时文件 | 脚本用 `/sdcard/.parity_ref_shot.png`、`/sdcard/.parity_ref_ui.xml` 均按需覆盖/删除，无残留 | 已清理 |
+| adb 连接 | `adb disconnect 192.168.100.63:5555` | 已断开 |
+| 参考版持久配置 | 除 2-9 临时规则（已删除）外，**未改任何配置**；`themeMode` 保持原值 0（跟随系统） | 未变更 |
+
+### 9.8 本轮未采（不在本任务范围）
+
+台账中仍为「❌待补采」的 8 屏均属 **B/C 类**，不在本任务「A 类 19 屏」范围：
+
+- B 类（需交互探索/前置数据）：1-12 正文长按菜单、1-15 章节跳转、1-16 自动翻页、2-4 发现源下拉型
+- C 类（参考版无此入口，应改判）：3-7 字体、3-10 定时任务、3-11 高亮标注列表、4-6 超低频深页
+
+### 9.9 本轮文件清单（新增）
+
+```
+r43_1-2_home_tab.png / .xml
+r43_1-4_shelf_overflow.png / .xml
+r43_1-5_shelf_select_mode.png / .xml
+r43_1-7_search_results.png / .xml
+r43_1-9_toc.png / .xml
+r43_1-14_toc_bookmark.png / .xml
+r43_2-2_discover_overflow.png / .xml
+r43_2-5_discover_category.png / .xml
+r43_2-6_change_source.png / .xml
+r43_2-7_book_source_manage.png / .xml
+r43_2-9_replace_rule.png / .xml          2-9 列表页
+r43_2-9_replace_rule_editor.png / .xml   2-9 编辑器（主证据）
+r43_3-2_read_record.png / .xml
+r43_3-6_settings_backup.png / .xml
+r43_3-8_tts_settings.png / .xml
+r43_3-9_group_manage.png / .xml
+r43_4-1_txt_toc_rule.png / .xml
+r43_4-2_dict_rule.png / .xml
+r43_4-3_file_manage.png / .xml
+r43_4-4_about.png / .xml
+r43_4-5_home_module.png / .xml
+_r43_capture_records.json                机器可读采集记录
+```
