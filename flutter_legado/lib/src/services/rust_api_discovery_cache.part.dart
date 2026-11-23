@@ -574,6 +574,30 @@ mixin RustApiDiscoveryCache on RustApiDecode implements BookApi {
   Future<String> getRelatedBooks({required String bookUrl}) =>
       bridge.getRelatedBooks(bookUrl: bookUrl);
 
+  // ========== 角色卡（契约 §2.56，R42 阶段 2A） ==========
+
+  /// 直通 FFI：查重（D2=A）、limit clamp、status 过滤全在 Rust，Dart 原样透传。
+  @override
+  Future<String> getBookCharacters({
+    required String bookUrl,
+    int limit = 50,
+  }) =>
+      bridge.getBookCharacters(bookUrl: bookUrl, limit: limit);
+
+  @override
+  Future<String> saveBookCharacter({required String profileJson}) =>
+      bridge.saveBookCharacter(profileJson: profileJson);
+
+  @override
+  Future<bool> deleteBookCharacter({
+    required String bookUrl,
+    required String characterId,
+  }) =>
+      bridge.deleteBookCharacter(
+        bookUrl: bookUrl,
+        characterId: characterId,
+      );
+
   // ========== 视频弹幕（契约 §2.49，V-B1） ==========
 
   /// 查询某章弹幕数据（只读、幂等；降级路径返回 null）

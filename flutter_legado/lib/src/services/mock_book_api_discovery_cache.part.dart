@@ -501,6 +501,27 @@ mixin MockBookApiDiscoveryCache on MockBookApiStore implements BookApi {
   Future<String> getRelatedBooks({required String bookUrl}) async =>
       '{"modules":[]}';
 
+  // ========== 角色卡（契约 §2.56，R42 阶段 2A） ==========
+
+  /// mock 无角色卡 → 空数组（对齐 Rust 侧「无数据返回空不抛错」语义）
+  @override
+  Future<String> getBookCharacters({
+    required String bookUrl,
+    int limit = 50,
+  }) async =>
+      '[]';
+
+  @override
+  Future<String> saveBookCharacter({required String profileJson}) async =>
+      profileJson;
+
+  @override
+  Future<bool> deleteBookCharacter({
+    required String bookUrl,
+    required String characterId,
+  }) async =>
+      true;
+
   // ========== 视频弹幕（契约 §2.49，V-B1） ==========
 
   /// mock 查询：默认无弹幕 → null（对齐 Rust 侧「无记录降级 null」语义）

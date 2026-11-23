@@ -1350,6 +1350,32 @@ abstract class BookApi {
   /// 全部模块失败 / 过滤后全空 → `{"modules":[]}`（不抛错）**，UI 按空数据隐藏。
   Future<String> getRelatedBooks({required String bookUrl});
 
+  // ========== 角色卡（契约 §2.56，R42 阶段 2A） ==========
+
+  /// 取某本书的角色卡列表（只读、幂等）
+  ///
+  /// 返回**裸 JSON 数组**（非包装对象），按 `updatedAt DESC`、排除 `status=3`
+  /// （DELETED）。`limit` 默认 50，`<=0` 取默认、`>500` 截断到 500。
+  /// 数据源为本地表（用户手动录入），书源规则不参与。
+  Future<String> getBookCharacters({
+    required String bookUrl,
+    int limit = 50,
+  });
+
+  /// 保存角色卡（新建或更新），返回落库后的完整 JSON
+  ///
+  /// **`id` 为空时按 `(bookUrl, name)` 精确查重，命中则复用其 id 并更新该行**
+  /// （参考版手动路径不查重，会因 `UNIQUE` + `INSERT OR REPLACE` 静默删旧行，
+  /// 致关系/事件/配音绑定全部指向失效 id）。有 id 但改名撞他人 → Err。
+  /// 查重不过滤 `status`（DELETED 行仍占唯一键）。
+  Future<String> saveBookCharacter({required String profileJson});
+
+  /// 删除角色卡（**硬删**，非软删），返回是否命中
+  Future<bool> deleteBookCharacter({
+    required String bookUrl,
+    required String characterId,
+  });
+
   // ========== 章节购买 ==========
 
   /// 执行章节购买动作（契约 §2.43.2，对照 Kotlin ReadBookActivity.payAction）
