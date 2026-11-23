@@ -342,3 +342,167 @@ adb -s 192.168.100.63:5555 shell am force-stop io.legato.kazusa
 | 脚本开发 | 按 §3.4 补 3 处 display-id 能力 + §6.3 规范写注释；改完用 3-3 回归自检 |
 | 采集执行 | 按 §6.2 第三项三波采集 A 类 19 屏，输出到 `docs/parity_shots/ref_dark_20261123_b/`（建议新目录，避免与已归档的 20261123 混） |
 | 证据卫生 | 按 §7.3 建 `BLACK_PLACEHOLDER_DENYLIST.txt` + 补 RECAPTURE 说明 + 确认 14 张无引用者去留 |
+
+---
+
+## 十、脚本改造完成（§3.4 三处能力缺口已闭合）
+
+> 完成时间：2026-11-23；HEAD 基线 `84a062ca50`。
+> 范围：仅 `scripts/parity_capture_ref.py` + `scripts/parity_capture_ours.py`（不碰产品代码）。
+
+### 10.1 改动清单（§3.4 六行逐条对应）
+
+| §3.4 原条目 | 改造后位置 | 做法 |
+|---|---|---|
+| `ref.py:143` `tap()` 无 `-d` | `ref.py:386`（经 `_input()` :378） | 统一走 `_input()`，多显示时注入 `-d <logicalId>` |
+| `ref.py:194` `dump()` 无 `--display` | `ref.py:437`（经 `_ui_dump_once()` :261） | 带 `--display <logicalId>`；不支持时自动降级并缓存 |
+| `ref.py:228` `screenshot()` 无 `-d` | `ref.py:513`（经 `_capture_bytes()` :482） | `screencap -p -d <physicalUniqueId>` |
+| `ours.py:224` `tap()` | `ours.py:460`（经 `_input()` :452） | 同上 |
+| `ours.py:257` `dump()` | `ours.py:493`（经 `_ui_dump_once()` :339） | 同上 |
+| `ours.py:308` `screenshot()` | `ours.py:589`（经 `_capture_bytes()` :555） | 同上 |
+
+同一批 `swipe()` / `keyevent()` 也一并改走 `_input()`（原实现同样裸调 `input`，多显示下会把滑动与返回键发往 display 0——§3.1 表里「`input keyevent 4` 回桌面」正是这个原因）。
+
+### 10.2 新增函数（两脚本同名同实现）
+
+| 函数 | 行（ref / ours） | 职责 |
+|---|---|---|
+| `_parse_focus_display()` | 172 / 253 | `dumpsys window` 按 `Display: mDisplayId=N` 分段，取 `mCurrentFocus=` 含目标包的那段的 N |
+| `_parse_window_package_display()` | 192 / 273 | 兜底：`dumpsys window windows` 逐 `Window #n` 块找 `package=<pkg>` 块的 `mDisplayId` |
+| `_display_map()` | 213 / 294 | `dumpsys display` → `{logicalId: physicalUniqueId}`（`uniqueId "local:XXX"` 去前缀）；`mBaseDisplayInfo` 缺失时退回 `Logical Displays` 段的 `mPrimaryDisplayDevice=(local:XXX)` |
+| `_sf_phys_ids()` | 241 / 322 | `dumpsys SurfaceFlinger --display-id` 抓全部 physical id（兼容 `Display <id> :` 与 `uniqueId="local:<id>"` 两形态） |
+| `_root_pkg()` | 255 / 333 | 取 dump XML 首个 `package=` 属性，用于判定「这次 dump 到底打在谁身上」 |
+| `_ui_dump_once()` | 261 / 339 | 单次 dump（带 `--display`），遇 `unknown option` 自动降级并缓存 `_UI_DUMP_HAS_DISPLAY` |
+| `_dump_and_read()` | 279 / 356 | dump + 先删本地旧文件再 pull（防「pull 失败复用上次 dump」的静默错页） |
+| `probe_display()` | 297 / 374 | **探测主入口**：解析 logical → 映射 physical → dump 落点校验（`package` 必须等于目标包）→ 失败重试 5 轮 |
+| `_input_supports_display()` | 368 / 442 | 跑一次 `input`（无参）读 usage，判断是否支持 `-d`，缓存 |
+| `_input()` | 378 / 452 | input 统一入口，注入 `-d <logicalId>` |
+| `_png_dims()` | 471 / 546 | 读 PNG IHDR 宽高（不依赖 PIL），同时充当「是不是 PNG」的判据 |
+| `_capture_bytes()` | 482 / 555 | 抓屏：`exec-out screencap -p -d <phys>`，失败退化为「设备落盘 + pull」，主屏设备再降级无 `-d` |
+
+### 10.3 关键代码（探测与截图闸门）
+
+```python
+def probe_display(pkg: str, label: str = "", retries: int = 5,
+                  force_logical: int | None = None,
+                  force_phys: str | None = None) -> tuple[int, str]:
+    """探测 pkg 窗口所在 logical display + 其 physical uniqueId（每次冷启后必须调用）。"""
+    global LOGICAL_ID, PHYS_ID
+    ...
+    dmap = _display_map(shell("dumpsys", "display"))
+    single_display = len(dmap) <= 1
+    for i in range(retries):
+        logical = force_logical or _parse_focus_display(shell("dumpsys", "window"), pkg)
+        if logical is None:
+            logical = _parse_window_package_display(
+                shell("dumpsys", "window", "windows"), pkg)
+        if logical is None:
+            if single_display:
+                logical = 0          # 单显示设备：display 0 即应用所在屏，正常回退
+            else:
+                ...                  # 多显示设备：必须定位，否则重试
+        phys = force_phys or dmap.get(logical, "")
+        if not phys:
+            sf_ids = _sf_phys_ids(shell("dumpsys", "SurfaceFlinger", "--display-id"))
+            if len(sf_ids) == 1 and logical != 0:
+                phys = sf_ids[0]
+        # 落点校验：dump 根节点 package 必须是目标应用
+        xml = _dump_and_read(logical)
+        rp = _root_pkg(xml)
+        if rp and rp != pkg and not single_display and i < retries - 1:
+            ...                      # 落在桌面 → 视为 id 漂移，重探
+            continue
+        LOGICAL_ID, PHYS_ID = logical, phys
+        return logical, phys
+    raise RuntimeError(f"display 探测失败（{label or pkg}）：{last_reason}")
+```
+
+冷启后强制重探（两脚本 `cold_start()` 末尾，ref:559 / ours:616）：
+
+```python
+shell("am", "force-stop", PKG)
+wait(1)
+shell("am", "start", "-n", ACT)
+wait(8)
+...
+probe_display(PKG, "冷启后")     # logical id 每次冷启递增，不可缓存
+```
+
+### 10.4 截图校验逻辑（三层）
+
+1. **前置拒绝**：`LOGICAL_ID not in (None, 0) and not PHYS_ID` → 直接 `RuntimeError`。理由：不加 `-d` 时 `screencap` 取「第一个 display」= 桌面，宁可不落盘也不产坏图。
+2. **体积闸门**：`len(data) < MIN_SHOT_BYTES (1024)` → `RuntimeError`，报错信息带上 `logical`/`phys` 与「疑似 Status: -2 空图」。这是针对实测 56B 空文件的直接拦截（原实现阈值 10000B 且 pull 分支不校验，56B 也能落盘）。
+3. **格式/尺寸闸门**：`_png_dims()` 解析 IHDR，非 PNG 直接失败；尺寸不等于 1080×1920 时打 `[shot]` 警告但不失败（可能是设备分辨率变更，留人工判断）。
+
+截图成功后打印一行可审计日志：`[shot] <name> <KB>KB <W>x<H> (logical=N phys=<id>)`。
+
+### 10.5 新增命令行参数（两脚本）
+
+| 参数 | 说明 |
+|---|---|
+| `--display-id <int>` | 强制指定 logical display（默认自动探测；设备异常/调试用） |
+| `--phys-id <str>` | 强制指定截图 physical uniqueId（默认从 `dumpsys display` 解析） |
+
+启动流程（两脚本 `main()`）在设备可达性校验后先跑一次 `probe_display(..., "启动前")`；失败只告警不中止，冷启后 `cold_start()` 会重试（真失败时各屏由 `run_screen` 捕获记 FAIL，不会静默产坏图）。
+
+### 10.6 自检结果（设备不可用 → 静态检查 + 假 adb 注入）
+
+`adb devices` 返回空（MuMu 未启动，`D:/leidian/LDPlayer9/adb.exe` 可达但无设备），故未做真机重采。已做的验证：
+
+**A. 语法与入口**：`python -m py_compile` 两脚本均通过；`--help` 正确列出新增 `--display-id` / `--phys-id`。
+
+**B. 解析器回归（真实归档样本）**——`.tmp/r43_selftest/selftest_display.py`，35 项断言全过：
+
+| 用例 | 数据源 | 结果 |
+|---|---|---|
+| `_parse_focus_display` 取到我方窗口所在 display | `docs/parity_shots/verify_ui_20260922/p29b_displays.raw`（真实归档） | 7 ✓ |
+| `_parse_focus_display` 不误配非目标包 | 同上，查 `io.legato.kazusa` | None ✓ |
+| `_parse_focus_display` 合成 7→13 形态 | 合成文本（§3.1 实测形态） | 13 ✓ |
+| `_parse_window_package_display` 兜底 | `p29b_windows.raw`（真实归档） | 6 ✓ |
+| `_display_map` 三个 display 全解析 | `p29b_displays2.raw`（真实归档） | `{0:4619827820427265280, 6:4619827203584079877, 7:4619827052952829958}` ✓ |
+| `_sf_phys_ids` 两种输出形态 + 空输入 | 合成 | ✓ |
+| `_root_pkg` 应用/桌面/空 | 合成 | ✓ |
+| `_png_dims` 读归档深色图 | `docs/parity_shots/ref_dark_20261123/b3_kazusa_settings.png` | `(1080, 1920)` ✓ |
+| `_png_dims` 对 56B 垃圾数据 | 合成 | None ✓（截图闸门第一道生效） |
+
+**C. 命令注入端到端（假 adb）**——`.tmp/r43_selftest/selftest_inject.py`，22 项断言全过。用 canned `dumpsys` / `uiautomator` / `screencap` 替换 `sh()`，验证命令参数真的带上了 display：
+
+| 断言 | ref（kazusa，display 13） | ours（我方，display 12） |
+|---|---|---|
+| `probe_display` 解析 logical/phys | 13 / `4619827106603731468` ✓ | 12 / `4619827111111111111` ✓ |
+| `input -d <N> tap 972 1822` | ✓ | ✓ |
+| `input -d <N> swipe ...` | ✓ | ✓ |
+| `input -d <N> keyevent 4` | ✓ | ✓ |
+| `uiautomator dump --display <N>` | ✓ | ✓ |
+| `exec-out screencap -p -d <phys>` | ✓ | ✓ |
+| 56B 空图 → RuntimeError | ✓（报 `56B < 1024B`） | ✓ |
+| 有 logical 无 phys → 拒截图 | ✓ | ✓ |
+
+**D. 未做（需设备）**：与 `b3_kazusa_settings.png`（1080×1920，深色 lum≈28.1）的真机形态/亮度对照。设备恢复后建议命令：
+
+```bash
+# 参考版设置主页（深色）回归：应与归档 b3_kazusa_settings.png 形态一致
+python scripts/parity_capture_ref.py --device 192.168.100.63:5555 \
+  --only 03_settings --out docs/parity_shots/ref_dark_20261123_b
+# 预期日志： [display] 冷启后：logical=<N> phys=<id> dumpPkg=io.legato.kazusa
+#            [shot] 03_settings.png ...KB 1080x1920 (logical=<N> phys=<id>)
+```
+
+### 10.7 其他发现（只报不改）
+
+1. **`ours.py` 的 `_screenshot_bytes()` 原本无人调用**（HEAD 基线即如此，grep 仅命中定义处）。像素断言 `_post_04d()` 走的是 `p.read_bytes()`（读已落盘文件）。本次已把 `_screenshot_bytes()` 改为复用 `_capture_bytes()`，若将来启用像素断言可直接拿到正确显示的画面；但**该函数的死代码状态未清理**（超出本任务范围）。
+2. **`ref.py` / `ours.py` 默认设备仍是 `192.168.1.19:5555`**（§3.4 注已记），实测设备是 `192.168.100.63:5555`，每次跑都要 `--device` 覆盖。是否改默认值待裁决。
+3. **`ref.py` 的 `ensure_device()` 里 `dumpsys window | grep mCurrentFocus`** 把 `|` 作为独立 argv 传给 `adb shell`，依赖 adb 侧拼接；本次未改（原样保留），但 `probe_display()` 已改用纯 Python 解析，不再依赖 shell 管道，建议后续把 `cold_start()` 的包名守卫也一并换成 `_parse_focus_display()`。
+4. **`ref.py` 的 `probe_display()` 依赖 `dumpsys display` 里 `mBaseDisplayInfo` 与 `displayId` 同行**。实测 MuMu 该行很长且确实同行（见 `p29b_displays2.raw:346`），但若某 ROM 换行则只能走 `Logical Displays` 兜底分支——该分支已实现并有单测覆盖。
+5. **单显示设备上的行为变化**：`probe_display()` 现在会在单显示设备上正常回退 `logical=0`（不报错），因此旧的真机/模拟器流程不受影响。
+6. **`.tmp/r43_selftest/` 是本次自检的临时脚本与 canned 样本**，未纳入 git（`.tmp/` 未跟踪）；如需长期回归可考虑迁到 `scripts/` 下并加 pytest。
+
+### 10.8 门禁状态
+
+| 项 | 结果 |
+|---|---|
+| `python -m py_compile scripts/parity_capture_ref.py scripts/parity_capture_ours.py` | 0 error |
+| 解析器回归（真实归档样本，35 断言） | 35/35 通过 |
+| 命令注入端到端（假 adb，22 断言） | 22/22 通过 |
+| 真机 3-3 回归（尺寸 + 亮度对比） | **未执行**（无设备，见 §10.6 D） |
+| 产品代码 / 版本号 / CHANGELOG / ACTIVE_PLAN / 契约 | 未改动 |

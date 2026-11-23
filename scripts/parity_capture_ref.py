@@ -24,6 +24,15 @@
     每屏从确定状态起步，互不污染
   - MSYS/Git Bash 路径转换：本地落盘用 Windows 绝对路径，截图用
     exec-out screencap 二进制直写（不经 shell 重定向）
+  - **多逻辑显示（MuMu multi-display）**：应用窗口常挂在独立 logical display
+    （每次冷启递增，如 7→13），而 `input` / `uiautomator dump` 默认打 display 0
+    （桌面）、`screencap` 无 `-d` 默认取「第一个 display」= 桌面。故：
+      * `input tap/swipe/keyevent` 一律带 `-d <logicalId>`；
+      * `uiautomator dump` 一律带 `--display <logicalId>`；
+      * `screencap` 一律带 `-d <physicalUniqueId>`（logical id 返回 Status: -2）；
+      * 每次 `am force-stop` 后**重探**（id 递增不可缓存）；
+      * 截图 < 1KB 硬失败（防 56B 空图静默通过）。
+    依据：docs/R43_REMAINING_CAPTURE_PLAN_20261123.md §3.1/§3.2/§6.3。
 
 用法：
   python scripts/parity_capture_ref.py                      # 全 9 屏 + 明暗最佳努力屏 + 批 4 4 屏
@@ -118,6 +127,18 @@ def resolve_adb() -> str:
 ADB = resolve_adb()
 DEV = DEFAULT_DEVICE
 
+# ===== 多逻辑显示（MuMu multi-display）状态 =====
+# logical_id：应用窗口所在 logical display（`input -d` / `uiautomator dump --display`）
+# phys_id：该 display 的 physical uniqueId（`screencap -d`，无 "local:" 前缀）
+# 两者均由 probe_display() 从设备实时解析；每次冷启后必须重探（logical id 递增）。
+LOGICAL_ID: int | None = None
+PHYS_ID: str | None = None
+# 命令行强制钉死（--display-id / --phys-id，调试或设备异常时用；None/"" = 自动探测）
+FORCE_LOGICAL: int | None = None
+FORCE_PHYS: str | None = None
+# 截图体积下限（字节）：56B 空图（screencap Status: -2）必须被拦下
+MIN_SHOT_BYTES = 1024
+
 
 def rec(msg: str) -> None:
     print(f"[ref3] {msg}", flush=True)
@@ -140,16 +161,238 @@ def wait(s: float) -> None:
     time.sleep(s)
 
 
+# ===== 多逻辑显示探测（MuMu multi-display） =====
+# 依据 docs/R43_REMAINING_CAPTURE_PLAN_20261123.md §3.1/§3.2：
+#   - 应用窗口落在 logical display N（每次冷启递增），input/uiautomator 默认打 0；
+#   - screencap 必须用 physical uniqueId（logical id 返回 Status: -2，产物 56B）。
+_INPUT_HAS_D: bool | None = None      # input 子命令是否支持 -d（探测一次缓存）
+_UI_DUMP_HAS_DISPLAY: bool | None = None  # uiautomator dump 是否支持 --display
+
+
+def _parse_focus_display(dumpsys_window: str, pkg: str) -> int | None:
+    """从 `dumpsys window` 解析 pkg 前台窗口所在 logical display id。
+
+    输出形态（Android 11+ / MuMu 多显示）：
+        Display: mDisplayId=7 (organized)
+          ...
+          mCurrentFocus=Window{... u0 io.legato.kazusa/...MainActivity}
+    即「Display: mDisplayId=N」分段后跟该 display 的焦点窗口。返回 None 表示未找到。
+    """
+    cur: int | None = None
+    for line in dumpsys_window.splitlines():
+        m = re.search(r"Display:\s*mDisplayId=(\d+)", line)
+        if m:
+            cur = int(m.group(1))
+            continue
+        if "mCurrentFocus=" in line and pkg in line and cur is not None:
+            return cur
+    return None
+
+
+def _parse_window_package_display(dumpsys_windows: str, pkg: str) -> int | None:
+    """兜底：从 `dumpsys window windows` 逐窗口块解析 `mDisplayId=N ... package=pkg`。
+
+    形态：
+        Window #0 Window{... io.legato.kazusa/...MainActivity}:
+          mDisplayId=6 taskId=87 mSession=... package=io.legato.kazusa ...
+    """
+    cur: int | None = None
+    cur_is_pkg = False
+    for line in dumpsys_windows.splitlines():
+        if re.match(r"\s*Window #\d+ ", line):
+            cur, cur_is_pkg = None, pkg in line
+            continue
+        if not cur_is_pkg:
+            continue
+        m = re.search(r"mDisplayId=(\d+)", line)
+        if m:
+            return int(m.group(1))
+    return cur if cur_is_pkg else None
+
+
+def _display_map(dumpsys_display: str) -> dict[int, str]:
+    """解析 `dumpsys display`，返回 {logicalId: physicalUniqueId}（去掉 "local:" 前缀）。
+
+    首选 mBaseDisplayInfo=DisplayInfo{... displayId N ... uniqueId "local:XXX" ...}；
+    该行缺失时退回 Logical Displays 段（`Display N:` + `mPrimaryDisplayDevice=名称(local:XXX)`）。
+    """
+    out: dict[int, str] = {}
+    for line in dumpsys_display.splitlines():
+        if "DisplayInfo{" not in line:
+            continue
+        m_disp = re.search(r"displayId (\d+),", line)
+        m_uid = re.search(r'uniqueId "local:(\d+)"', line)
+        if m_disp and m_uid:
+            out.setdefault(int(m_disp.group(1)), m_uid.group(1))
+    if out:
+        return out
+    cur: int | None = None
+    for line in dumpsys_display.splitlines():
+        m = re.match(r"\s*Display (\d+):", line)
+        if m:
+            cur = int(m.group(1))
+            continue
+        m2 = re.search(r"mPrimaryDisplayDevice=.*?\(local:(\d+)\)", line)
+        if m2 and cur is not None:
+            out.setdefault(cur, m2.group(1))
+    return out
+
+
+def _sf_phys_ids(sf_dump: str) -> list[str]:
+    """从 `dumpsys SurfaceFlinger --display-id` 抓所有 physical uniqueId（按出现序去重）。
+
+    兼容 `Display 4619827106603731468 :` / `Display Id=...` / `uniqueId="local:..."`。
+    """
+    ids: list[str] = []
+    pat = re.compile(r'uniqueId="local:(\d{10,})"|Display\s+(?:Id\s*[=:]\s*)?(\d{10,})')
+    for m in pat.finditer(sf_dump):
+        v = m.group(1) or m.group(2)
+        if v and v not in ids:
+            ids.append(v)
+    return ids
+
+
+def _root_pkg(xml: str) -> str:
+    """取 dump XML 首个 package 属性（用于确认 dump 落到目标应用而非桌面）。"""
+    m = re.search(r'package="([^"]+)"', xml)
+    return m.group(1) if m else ""
+
+
+def _ui_dump_once(logical: int | None) -> str:
+    """单次 uiautomator dump（多显示时带 --display）。返回命令输出（含错误信息）。"""
+    shell(f"rm -f {REMOTE_UI}")
+    global _UI_DUMP_HAS_DISPLAY
+    if logical is not None and _UI_DUMP_HAS_DISPLAY is not False:
+        out = shell("uiautomator", "dump", "--display", str(logical), REMOTE_UI)
+        low = out.lower()
+        if "unknown option" in low or "usage: uiautomator" in low:
+            _UI_DUMP_HAS_DISPLAY = False
+            rec("  [display] uiautomator dump 不支持 --display，退回默认 display")
+            shell(f"rm -f {REMOTE_UI}")
+            out = shell("uiautomator", "dump", REMOTE_UI)
+        else:
+            _UI_DUMP_HAS_DISPLAY = True
+        return out
+    return shell("uiautomator", "dump", REMOTE_UI)
+
+
+def _dump_and_read(logical: int | None) -> str:
+    """单次 dump + pull + 读取；失败返回 ''。"""
+    _ui_dump_once(logical)
+    if TMP_UI.exists():
+        try:
+            TMP_UI.unlink()          # 防「pull 失败复用上次 dump」的静默错页
+        except OSError:
+            pass
+    sh("pull", REMOTE_UI, str(TMP_UI))
+    if TMP_UI.exists() and TMP_UI.stat().st_size > 0:
+        try:
+            x = TMP_UI.read_text(encoding="utf-8", errors="replace")
+            return x if "<node" in x else ""
+        except OSError:
+            return ""
+    return ""
+
+
+def probe_display(pkg: str, label: str = "", retries: int = 5,
+                  force_logical: int | None = None,
+                  force_phys: str | None = None) -> tuple[int, str]:
+    """探测 pkg 窗口所在 logical display + 其 physical uniqueId（每次冷启后必须调用）。
+
+    返回 (logicalId, physicalUniqueId)。探测失败的语义：
+      - 始终解析不到 logical：抛 RuntimeError（调用方决定是否中止）；
+      - logical 解析到但 physical 解析不到：返回空 phys 字符串并告警，
+        截图环节会硬失败（宁可失败也不产出桌面图）。
+    force_logical / force_phys 用于命令行显式钉死（调试用）。
+    """
+    global LOGICAL_ID, PHYS_ID
+    if force_logical is None:
+        force_logical = FORCE_LOGICAL
+    if force_phys is None:
+        force_phys = FORCE_PHYS
+    last_reason = ""
+    dmap = _display_map(shell("dumpsys", "display"))
+    single_display = len(dmap) <= 1
+    for i in range(retries):
+        logical = force_logical
+        if logical is None:
+            logical = _parse_focus_display(shell("dumpsys", "window"), pkg)
+        if logical is None:
+            logical = _parse_window_package_display(
+                shell("dumpsys", "window", "windows"), pkg)
+        if logical is None:
+            if single_display:
+                # 单显示设备（非 MuMu 多显示）：display 0 即应用所在屏，属正常回退
+                logical = 0
+                rec(f"  [display] {label}：单显示设备，回退 logical=0")
+            else:
+                last_reason = f"未解析到 {pkg} 窗口的 mDisplayId（多显示设备必须定位）"
+                rec(f"  [display] {label}：{last_reason}（第 {i + 1}/{retries} 轮）")
+                wait(1.5)
+                continue
+
+        phys = force_phys or ""
+        if not phys:
+            phys = dmap.get(logical, "")
+        if not phys:
+            # 交叉校验：SF 列表里若恰好有 1 个非 0 id，且 logical != 0，可视为候选
+            sf_ids = _sf_phys_ids(shell("dumpsys", "SurfaceFlinger", "--display-id"))
+            if len(sf_ids) == 1 and logical != 0:
+                phys = sf_ids[0]
+                rec(f"  [display] {label}：dumpsys display 未映射，按 SF 唯一 id 兜底 {phys}")
+            elif sf_ids:
+                rec(f"  [display] {label}：dumpsys display 未映射 logical={logical}"
+                    f"（SF 可见 {len(sf_ids)} 个 id）")
+        elif logical != 0:
+            sf_ids = _sf_phys_ids(shell("dumpsys", "SurfaceFlinger", "--display-id"))
+            if sf_ids and phys not in sf_ids:
+                rec(f"  [display] 警告：phys={phys} 不在 SurfaceFlinger --display-id "
+                    f"输出中（{sf_ids}），截图可能失败")
+
+        # 落点校验：dump 根节点 package 必须是目标应用，否则说明仍打在桌面/别的显示
+        xml = _dump_and_read(logical)
+        rp = _root_pkg(xml)
+        if rp and rp != pkg and not single_display and i < retries - 1:
+            last_reason = f"dump 落在 {rp}（非 {pkg}），display 可能已漂移"
+            rec(f"  [display] {label}：{last_reason}，重探")
+            wait(1.5)
+            continue
+        LOGICAL_ID, PHYS_ID = logical, phys
+        rec(f"  [display] {label}：logical={logical} phys={phys or '(未解析)'} "
+            f"dumpPkg={rp or '(空)'}")
+        return logical, phys
+
+    raise RuntimeError(f"display 探测失败（{label or pkg}）：{last_reason}")
+
+
+def _input_supports_display() -> bool:
+    """input 子命令是否支持 -d（Android 8+ 一般支持；探测一次缓存）。"""
+    global _INPUT_HAS_D
+    if _INPUT_HAS_D is None:
+        usage = shell("input")
+        _INPUT_HAS_D = ("-d DISPLAY_ID" in usage) or ("[-d " in usage)
+        rec(f"  [display] input -d 支持：{_INPUT_HAS_D}")
+    return _INPUT_HAS_D
+
+
+def _input(*args: str) -> None:
+    """input 统一入口：多显示时注入 `-d <logicalId>`（否则事件打到 display 0 桌面）。"""
+    if LOGICAL_ID is not None and _input_supports_display():
+        sh("shell", "input", "-d", str(LOGICAL_ID), *args)
+    else:
+        sh("shell", "input", *args)
+
+
 def tap(x: int, y: int) -> None:
-    sh("shell", "input", "tap", str(x), str(y))
+    _input("tap", str(x), str(y))
 
 
 def swipe(x1: int, y1: int, x2: int, y2: int, ms: int = 350) -> None:
-    sh("shell", "input", "swipe", str(x1), str(y1), str(x2), str(y2), str(ms))
+    _input("swipe", str(x1), str(y1), str(x2), str(y2), str(ms))
 
 
 def keyevent(code: str) -> None:
-    sh("shell", "input", "keyevent", code)
+    _input("keyevent", code)
 
 
 def swipe_up(ms: int = 600) -> None:
@@ -192,18 +435,26 @@ def center_of(b: list[int]) -> tuple[int, int]:
 
 
 def dump(tag: str = "") -> str:
-    """uiautomator dump + pull。偶发段错误/空文件 → sleep 2 重试（最多 6 次）。"""
+    """uiautomator dump + pull（多显示时带 --display <logicalId>）。
+
+    偶发段错误/空文件 → sleep 2 重试（最多 6 次）。若 LOGICAL_ID 已知，
+    每次都带 --display；若 dump 根节点 package 与目标包不符（落到桌面），
+    重探一次 display 再试（防冷启后 id 漂移导致的静默错页）。
+    """
+    global LOGICAL_ID
     for i in range(6):
-        shell(f"rm -f {REMOTE_UI}")
-        shell("uiautomator", "dump", REMOTE_UI)  # 可能打印 Segmentation fault，忽略
-        sh("pull", REMOTE_UI, str(TMP_UI))
-        if TMP_UI.exists() and TMP_UI.stat().st_size > 0:
-            try:
-                x = TMP_UI.read_text(encoding="utf-8", errors="replace")
-                if "<node" in x:
-                    return x
-            except OSError:
-                pass
+        x = _dump_and_read(LOGICAL_ID)
+        if x:
+            rp = _root_pkg(x)
+            if rp and rp != PKG and LOGICAL_ID is not None and i < 2:
+                rec(f"  [dump] {tag or 'dump'}：落在 {rp}（非 {PKG}），重探 display")
+                try:
+                    probe_display(PKG, f"{tag or 'dump'}重探")
+                except RuntimeError as e:
+                    rec(f"  [dump] 重探失败：{e}")
+                wait(1.5)
+                continue
+            return x
         wait(2)
     return ""
 
@@ -217,26 +468,80 @@ def has_kw(x: str, kws: tuple[str, ...]) -> str:
     return ""
 
 
+def _png_dims(data: bytes) -> tuple[int, int] | None:
+    """读 PNG IHDR 尺寸（不依赖 PIL）；非 PNG 返回 None。"""
+    if len(data) < 24 or data[:8] != b"\x89PNG\r\n\x1a\n":
+        return None
+    if data[12:16] != b"IHDR":
+        return None
+    w = int.from_bytes(data[16:20], "big")
+    h = int.from_bytes(data[20:24], "big")
+    return w, h
+
+
+def _capture_bytes(phys: str | None) -> bytes:
+    """抓屏：有 physical uniqueId 时用 `-d <phys>`（logical id 会 Status: -2）。
+
+    单显示设备（logical 0）且 `screencap -d` 不被支持时，安全降级为无 `-d`
+    （此时「第一个 display」就是主屏，不存在抓到桌面的风险）。
+    """
+    args = ["screencap", "-p"] + (["-d", phys] if phys else [])
+    r = sh("exec-out", *args, binary=True)
+    data = r.stdout or b""
+    if data and len(data) >= MIN_SHOT_BYTES and _png_dims(data):
+        return data
+    # 退化：先落设备再 pull（同样带 -d，避免抓到桌面）
+    remote = "/sdcard/.parity_ref_shot.png"
+    shell("rm", "-f", remote)
+    shell(*args, remote)
+    tmp = Path(os.environ.get("TEMP", "/tmp")) / f"parity_ref_shot_{os.getpid()}.png"
+    if tmp.exists():
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+    sh("pull", remote, str(tmp))
+    if tmp.exists() and tmp.stat().st_size > 0:
+        return tmp.read_bytes()
+    if phys and LOGICAL_ID in (None, 0):
+        rec("  [shot] 带 -d 抓屏失败，主屏设备降级为无 -d 重试")
+        r2 = sh("exec-out", "screencap", "-p", binary=True)
+        return r2.stdout or b""
+    return data
+
+
 def screenshot(name: str, out_dir: Path | None = None) -> Path:
-    """exec-out screencap -p 二进制直写本地（不经 shell 重定向，规避 MSYS 问题）。
+    """按 physical uniqueId 抓屏并落盘（多显示下唯一可靠方式）。
 
     out_dir=None 时用全局 OUT_DIR（批 3 行为不变）；批 4 屏传入 OUT_DIR_B4
-    （docs/parity_shots/ref_batch4/，自动建）。"""
+    （docs/parity_shots/ref_batch4/，自动建）。
+
+    硬约束（R43 §3.2/§6.3）：
+      - `screencap -d <logicalId>` 在本 ROM 返回 `Status: -2` 产出 56B 空文件，
+        必须用 `dumpsys SurfaceFlinger --display-id` 的 physical uniqueId；
+      - 不加 `-d` 时默认抓「第一个 display」= 桌面 —— 故 LOGICAL_ID != 0
+        且 PHYS_ID 未知时直接失败，绝不落桌面图；
+      - 产出 < 1KB 或非 PNG 一律 RuntimeError（防 56B 空图静默通过）。
+    """
     out = out_dir or OUT_DIR
     out.mkdir(parents=True, exist_ok=True)
     p = out / name
-    r = sh("exec-out", "screencap", "-p", binary=True)
-    data = r.stdout or b""
-    if not data or len(data) < 10_000:
-        # 退化：pull 方式
-        shell("screencap", "-p", "/sdcard/.parity_ref_shot.png")
-        sh("pull", "/sdcard/.parity_ref_shot.png", str(p))
-        if not p.exists():
-            raise RuntimeError("截图失败（exec-out 与 pull 均失败）")
-        return p
+    if LOGICAL_ID not in (None, 0) and not PHYS_ID:
+        raise RuntimeError(
+            f"截图失败：应用在 logical display {LOGICAL_ID} 但未解析到 physical uniqueId"
+            f"（不加 -d 会抓到桌面）")
+    data = _capture_bytes(PHYS_ID)
+    if not data or len(data) < MIN_SHOT_BYTES:
+        raise RuntimeError(f"截图过小（{len(data)}B < {MIN_SHOT_BYTES}B），"
+                           f"疑似 Status: -2 空图/黑屏（logical={LOGICAL_ID} phys={PHYS_ID}）")
+    dims = _png_dims(data)
+    if dims is None:
+        raise RuntimeError(f"截图非 PNG（{len(data)}B），logical={LOGICAL_ID} phys={PHYS_ID}")
     p.write_bytes(data)
-    if len(data) < 10_000:
-        raise RuntimeError(f"截图过小（{len(data)}B），疑似黑屏/失败")
+    if dims != (W, H):
+        rec(f"  [shot] 警告：{name} 尺寸 {dims[0]}x{dims[1]} 与基准 {W}x{H} 不符")
+    rec(f"  [shot] {name} {len(data) // 1024}KB {dims[0]}x{dims[1]} "
+        f"(logical={LOGICAL_ID} phys={PHYS_ID})")
     return p
 
 
@@ -256,6 +561,9 @@ def cold_start() -> None:
 
     包名守卫（2026-09-16 抢设备事故修复）：冷启后必须确认前台包是 kazusa，
     否则我方应用（同为「我的」tab 文案、同坐标）会误判通过。
+
+    多显示（R43 §6.3 硬规范第 1 条）：`am force-stop` 后 logical display
+    会递增（实测 7→13），**必须重探**；否则后续 tap/dump 全打 display 0。
     """
     shell("am", "force-stop", PKG)
     wait(1)
@@ -264,6 +572,7 @@ def cold_start() -> None:
     focus = shell("dumpsys", "window", "|", "grep", "mCurrentFocus")
     if PKG not in focus:
         raise RuntimeError(f"冷启后前台非 {PKG}（mCurrentFocus={focus.strip()[:80]}）——疑似设备被占用")
+    probe_display(PKG, "冷启后")
     tap(*TAB_MINE)
     wait(3)
 
@@ -813,7 +1122,7 @@ SCREENS_B4: list[tuple[str, "callable", tuple[str, ...], tuple[str, ...],
 
 
 def main() -> int:
-    global DEV, OUT_DIR, OUT_DIR_B4
+    global DEV, OUT_DIR, OUT_DIR_B4, FORCE_LOGICAL, FORCE_PHYS
     ap = argparse.ArgumentParser(
         description="参考版 kazusa 批 3 设置域（9 屏 + 明暗最佳努力屏）+ "
                     "批 4 长尾深页 4 屏批量截图采集")
@@ -827,9 +1136,15 @@ def main() -> int:
                          "批 4 docs/parity_shots/ref_batch4；指定时两批均落此目录）")
     ap.add_argument("--no-dark", action="store_true",
                     help="跳过明暗最佳努力屏（04_appearance_dark/05_theme_dark）")
+    ap.add_argument("--display-id", type=int, default=None,
+                    help="强制指定 logical display id（默认自动探测；MuMu 多显示调试用）")
+    ap.add_argument("--phys-id", default="",
+                    help="强制指定截图用 physical uniqueId（默认从 dumpsys display 自动解析）")
     args = ap.parse_args()
 
     DEV = args.device
+    FORCE_LOGICAL = args.display_id
+    FORCE_PHYS = args.phys_id or None
     OUT_DIR = (Path(args.out) if args.out
                else ROOT / "docs" / "parity_shots" / "ref_batch3")
     if not OUT_DIR.is_absolute():
@@ -862,6 +1177,13 @@ def main() -> int:
     if not ensure_device():
         rec("设备不可达，整体中止（exit 1）")
         return 1
+
+    # 首次 display 探测（冷启前先探一次，拿到可用 logical/phys 供日志与后续兜底）
+    try:
+        probe_display(PKG, "启动前", force_logical=args.display_id,
+                      force_phys=args.phys_id or None)
+    except RuntimeError as e:
+        rec(f"display 探测失败：{e}——继续，冷启后会重试（若仍失败各屏将记 FAIL）")
 
     results: list[ScreenResult] = []
 
