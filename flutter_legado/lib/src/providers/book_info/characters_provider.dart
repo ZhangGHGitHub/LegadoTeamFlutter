@@ -34,6 +34,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../providers.dart';
+import '../../l10n/app_strings.dart';
 
 /// 角色定位 → 排序权重（参考版 `roleOrder`，未知角色排最后）
 const Map<String, int> _roleOrder = {
@@ -102,13 +103,11 @@ class BookCharacter {
   ///
   /// 参考版经 `when(role)` 映射 `R.string.role_male_lead` 等 4 个中文
   /// （`strings.xml:2987-2990`）。
-  // TODO(l10n): 待 AppStrings 补 roleMaleLead/roleFemaleLead/roleMaleSupporting/
-  // roleFemaleSupporting 后替换（本轮按约束不改 app_strings.dart）。
   String get roleLabel => switch (role) {
-    'male_lead' => '男主',
-    'female_lead' => '女主',
-    'male_supporting' => '男配',
-    'female_supporting' => '女配',
+    'male_lead' => AppStrings.roleMaleLead,
+    'female_lead' => AppStrings.roleFemaleLead,
+    'male_supporting' => AppStrings.roleMaleSupporting,
+    'female_supporting' => AppStrings.roleFemaleSupporting,
     _ => '',
   };
 

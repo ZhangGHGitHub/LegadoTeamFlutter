@@ -5834,4 +5834,33 @@ class AppStrings {
         'transparent' => _get('透明', 'Transparent'),
         _ => _get('默认', 'Default'),
       };
+
+  // ----- 角色卡（契约 §2.56，R42 阶段 2A） -----
+  static String get roleMaleLead => _get('男主', 'Male Lead');
+  static String get roleFemaleLead => _get('女主', 'Female Lead');
+  static String get roleMaleSupporting => _get('男配', 'Male Supporting');
+  static String get roleFemaleSupporting => _get('女配', 'Female Supporting');
+  static String get characterManageTitle => _get('角色管理', 'Manage Characters');
+  static String get characterAddTitle => _get('新增角色', 'Add Character');
+  static String get characterEditTitle => _get('编辑角色', 'Edit Character');
+  static String get characterNameLabel => _get('角色名', 'Name');
+  static String get characterNameRequired => _get('请输入角色名', 'Name is required');
+  static String get characterRoleLabel => _get('定位', 'Role');
+  static String get characterRoleUnset => _get('未设置', 'Not set');
+  static String get characterAliasesLabel => _get('别名', 'Aliases');
+  static String get characterAliasesHint =>
+      _get('多个别名用「、」分隔', 'Separate aliases with "、"');
+  static String get characterTagsLabel => _get('标签', 'Tags');
+  static String get characterTagsHint =>
+      _get('多个标签用「|」分隔', 'Separate tags with "|"');
+  static String get characterPersonalityLabel => _get('性格', 'Personality');
+  static String get characterSummaryLabel => _get('简介', 'Summary');
+  static String get characterEmptyHint => _get('还没有人物档案', 'No character profiles yet');
+  static String get characterLoadFailed => _get('角色加载失败', 'Failed to load characters');
+  static String get characterSaveFailed => _get('保存失败', 'Failed to save');
+  static String get characterDeleteFailed => _get('删除失败', 'Failed to delete');
+  static String characterDeleteConfirm(String name) =>
+      _get('确定删除角色「$name」？', 'Delete character "$name"?');
+  static String get characterManageEntryDesc =>
+      _get('手动建档，详情页展示角色卡', 'Add characters manually; shown on book details');
 }
