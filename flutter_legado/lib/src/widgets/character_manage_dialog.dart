@@ -24,29 +24,10 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../providers/book_info/characters_provider.dart';
 import '../providers/providers.dart';
 import '../utils/error_message.dart';
-
-// TODO(l10n): 本轮按约束不改 app_strings.dart；以下文案待 AppStrings 补 key 后替换
-// （清单见交付汇报）。
-const String _title = '角色管理';
-const String _addTitle = '新增角色';
-const String _editTitle = '编辑角色';
-const String _nameLabel = '角色名';
-const String _nameRequired = '请输入角色名';
-const String _roleLabel = '定位';
-const String _roleUnset = '未设置';
-const String _aliasesLabel = '别名';
-const String _aliasesHint = '多个别名用「、」分隔';
-const String _tagsLabel = '标签';
-const String _tagsHint = '多个标签用「|」分隔';
-const String _personalityLabel = '性格';
-const String _summaryLabel = '简介';
-const String _emptyHint = '还没有人物档案';
-const String _loadFailed = '角色加载失败';
-const String _saveFailed = '保存失败';
-const String _deleteFailed = '删除失败';
 
 /// 角色卡管理对话框
 ///
@@ -124,7 +105,11 @@ class _CharacterManageDialogState extends ConsumerState<CharacterManageDialog> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$_saveFailed：${errorMessage(e)}')),
+        SnackBar(
+          content: Text(
+            '${AppStrings.characterSaveFailed}：${errorMessage(e)}',
+          ),
+        ),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -135,15 +120,15 @@ class _CharacterManageDialogState extends ConsumerState<CharacterManageDialog> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        content: Text('确定删除角色「${character.name}」？'),
+        content: Text(AppStrings.characterDeleteConfirm(character.name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('删除'),
+            child: Text(AppStrings.delete),
           ),
         ],
       ),
@@ -162,7 +147,11 @@ class _CharacterManageDialogState extends ConsumerState<CharacterManageDialog> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$_deleteFailed：${errorMessage(e)}')),
+        SnackBar(
+          content: Text(
+            '${AppStrings.characterDeleteFailed}：${errorMessage(e)}',
+          ),
+        ),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -175,7 +164,7 @@ class _CharacterManageDialogState extends ConsumerState<CharacterManageDialog> {
     final ts = Theme.of(context).textTheme;
     final characters = _characters ?? const <BookCharacter>[];
     return AlertDialog(
-      title: Text(_title),
+      title: Text(AppStrings.characterManageTitle),
       contentPadding: const EdgeInsets.fromLTRB(0, 12, 0, 0),
       content: SizedBox(
         width: 360,
@@ -188,7 +177,7 @@ class _CharacterManageDialogState extends ConsumerState<CharacterManageDialog> {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
                       child: Text(
-                        _loadFailed,
+                        AppStrings.characterLoadFailed,
                         style: ts.bodySmall?.copyWith(color: cs.error),
                       ),
                     ),
@@ -196,7 +185,7 @@ class _CharacterManageDialogState extends ConsumerState<CharacterManageDialog> {
                     Expanded(
                       child: Center(
                         child: Text(
-                          _emptyHint,
+                          AppStrings.characterEmptyHint,
                           style: ts.bodyMedium?.copyWith(
                             color: cs.onSurfaceVariant,
                           ),
@@ -225,7 +214,7 @@ class _CharacterManageDialogState extends ConsumerState<CharacterManageDialog> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 IconButton(
-                                  tooltip: _editTitle,
+                                  tooltip: AppStrings.characterEditTitle,
                                   onPressed: _busy
                                       ? null
                                       : () => _openEditor(c),
@@ -235,7 +224,7 @@ class _CharacterManageDialogState extends ConsumerState<CharacterManageDialog> {
                                   ),
                                 ),
                                 IconButton(
-                                  tooltip: '删除',
+                                  tooltip: AppStrings.delete,
                                   onPressed: _busy
                                       ? null
                                       : () => _confirmDelete(c),
@@ -257,12 +246,12 @@ class _CharacterManageDialogState extends ConsumerState<CharacterManageDialog> {
       actions: [
         TextButton(
           onPressed: _busy ? null : () => Navigator.pop(context),
-          child: const Text('关闭'),
+          child: Text(AppStrings.dialogClose),
         ),
         FilledButton.icon(
           onPressed: _busy ? null : () => _openEditor(),
           icon: const Icon(Symbols.add_rounded, size: 18),
-          label: const Text(_addTitle),
+          label: Text(AppStrings.characterAddTitle),
         ),
       ],
     );
@@ -340,7 +329,7 @@ class _CharacterEditDialogState extends State<_CharacterEditDialog> {
   void _submit() {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) {
-      setState(() => _nameError = _nameRequired);
+      setState(() => _nameError = AppStrings.characterNameRequired);
       return;
     }
     final initial = widget.initial;
@@ -364,7 +353,11 @@ class _CharacterEditDialogState extends State<_CharacterEditDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.initial == null ? _addTitle : _editTitle),
+      title: Text(
+        widget.initial == null
+            ? AppStrings.characterAddTitle
+            : AppStrings.characterEditTitle,
+      ),
       content: SizedBox(
         width: 360,
         child: SingleChildScrollView(
@@ -375,7 +368,7 @@ class _CharacterEditDialogState extends State<_CharacterEditDialog> {
                 controller: _nameCtrl,
                 autofocus: true,
                 decoration: InputDecoration(
-                  labelText: _nameLabel,
+                  labelText: AppStrings.characterNameLabel,
                   errorText: _nameError,
                 ),
                 textInputAction: TextInputAction.next,
@@ -386,15 +379,29 @@ class _CharacterEditDialogState extends State<_CharacterEditDialog> {
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: _role,
-                decoration: const InputDecoration(labelText: _roleLabel),
-                items: const [
-                  DropdownMenuItem(value: '', child: Text(_roleUnset)),
-                  DropdownMenuItem(value: 'male_lead', child: Text('男主')),
-                  DropdownMenuItem(value: 'female_lead', child: Text('女主')),
-                  DropdownMenuItem(value: 'male_supporting', child: Text('男配')),
+                decoration: InputDecoration(
+                  labelText: AppStrings.characterRoleLabel,
+                ),
+                items: [
+                  DropdownMenuItem(
+                    value: '',
+                    child: Text(AppStrings.characterRoleUnset),
+                  ),
+                  DropdownMenuItem(
+                    value: 'male_lead',
+                    child: Text(AppStrings.roleMaleLead),
+                  ),
+                  DropdownMenuItem(
+                    value: 'female_lead',
+                    child: Text(AppStrings.roleFemaleLead),
+                  ),
+                  DropdownMenuItem(
+                    value: 'male_supporting',
+                    child: Text(AppStrings.roleMaleSupporting),
+                  ),
                   DropdownMenuItem(
                     value: 'female_supporting',
-                    child: Text('女配'),
+                    child: Text(AppStrings.roleFemaleSupporting),
                   ),
                 ],
                 onChanged: (v) => setState(() => _role = v ?? ''),
@@ -402,31 +409,33 @@ class _CharacterEditDialogState extends State<_CharacterEditDialog> {
               const SizedBox(height: 12),
               TextField(
                 controller: _aliasesCtrl,
-                decoration: const InputDecoration(
-                  labelText: _aliasesLabel,
-                  hintText: _aliasesHint,
+                decoration: InputDecoration(
+                  labelText: AppStrings.characterAliasesLabel,
+                  hintText: AppStrings.characterAliasesHint,
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _tagsCtrl,
-                decoration: const InputDecoration(
-                  labelText: _tagsLabel,
-                  hintText: _tagsHint,
+                decoration: InputDecoration(
+                  labelText: AppStrings.characterTagsLabel,
+                  hintText: AppStrings.characterTagsHint,
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _personalityCtrl,
-                decoration: const InputDecoration(labelText: _personalityLabel),
+                decoration: InputDecoration(
+                  labelText: AppStrings.characterPersonalityLabel,
+                ),
                 minLines: 1,
                 maxLines: 3,
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _summaryCtrl,
-                decoration: const InputDecoration(
-                  labelText: _summaryLabel,
+                decoration: InputDecoration(
+                  labelText: AppStrings.characterSummaryLabel,
                   alignLabelWithHint: true,
                 ),
                 minLines: 2,
@@ -439,9 +448,9 @@ class _CharacterEditDialogState extends State<_CharacterEditDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
-        FilledButton(onPressed: _submit, child: const Text('保存')),
+        FilledButton(onPressed: _submit, child: Text(AppStrings.save)),
       ],
     );
   }
