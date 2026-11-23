@@ -1,0 +1,2 @@
+installed apk .so CRC (x86_64): b39418a8 (host app-release.apk 与设备 base.apk 一致)
+host jniLibs md5: bbd82eb1957f7bb29bc1ecb93963846c *flutter_legado/android/app/src/main/jniLibs/x86_64/liblegado_ffi.so

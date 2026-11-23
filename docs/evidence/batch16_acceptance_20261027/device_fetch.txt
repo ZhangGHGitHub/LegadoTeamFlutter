@@ -1,0 +1,30 @@
+HTTP/1.1 200 OK
+Server: BaseHTTP/0.6 Python/3.11.9
+Date: Mon, 26 Oct 2026 21:39:07 GMT
+Content-Type: application/rss+xml; charset=utf-8
+Content-Length: 946
+Access-Control-Allow-Origin: *
+
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>MockRSS</title>
+    <link>http://127.0.0.1:18080/rss.xml</link>
+    <description>验收用 mock RSS 源</description>
+    <language>zh-cn</language>
+    <item>
+      <title>Mock 文章一：RSS 引擎解析验证</title>
+      <link>http://127.0.0.1:18080/rss_article_1.html</link>
+      <guid>http://127.0.0.1:18080/rss_article_1.html</guid>
+      <pubDate>Mon, 26 Oct 2026 10:00:00 +0800</pubDate>
+      <description><![CDATA[<div class="content">正文一</div>]]></description>
+    </item>
+    <item>
+      <title>Mock 文章二：分页与正文规则验证</title>
+      <link>http://127.0.0.1:18080/rss_article_2.html</link>
+      <guid>http://127.0.0.1:18080/rss_article_2.html</guid>
+      <pubDate>Tue, 27 Oct 2026 09:30:00 +0800</pubDate>
+      <description><![CDATA[<div class="content">正文二</div>]]></description>
+    </item>
+  </channel>
+</rss>

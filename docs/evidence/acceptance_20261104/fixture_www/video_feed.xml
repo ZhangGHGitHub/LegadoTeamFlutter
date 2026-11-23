@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel>
+<title>QA B2C VIDEO</title><link>http://192.168.100.52:8899/</link><description>QA video feed</description>
+<item><title>QA视频文章一</title><link>http://192.168.100.52:8899/video.mp4</link><description>视频文章简介</description><pubDate>Mon, 03 Nov 2026 10:00:00 GMT</pubDate></item>
+<item><title>QA视频文章二</title><link>http://192.168.100.52:8899/video2.mp4</link><description>视频文章二简介</description><pubDate>Mon, 03 Nov 2026 09:00:00 GMT</pubDate></item>
+</channel></rss>

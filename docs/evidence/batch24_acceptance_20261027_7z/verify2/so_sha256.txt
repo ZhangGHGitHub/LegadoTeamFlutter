@@ -1,0 +1,3 @@
+1275ed879366bd281d19e54af129ef3db2eff60467e80cf20b5debdbbf33e9fc *flutter_legado/android/app/src/main/jniLibs/x86_64/liblegado_ffi.so
+df536d93fc9041942ed553bb2681f040cd2b5ee4a5255f2cb63ec6ed19478324 *flutter_legado/android/app/src/main/jniLibs/arm64-v8a/liblegado_ffi.so
+9c56fb2449775031fff3a27bc29ad814e5291a2b629a9cbfb4d6cd07d7395c43 *flutter_legado/android/app/src/main/jniLibs/armeabi-v7a/liblegado_ffi.so

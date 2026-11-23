@@ -1,0 +1,3 @@
+    versionCode=438 minSdk=24 targetSdk=36
+    versionName=2.0.437
+ls: /data/data/io.legado.flutter_legado/files/nav_icons: No such file or directory

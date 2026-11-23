@@ -1,0 +1,27 @@
+23
+total 96
+drwxrwsrwx 3 u0_a66 u0_a66 4096 2026-11-03 22:56 .
+drwxrwsrwx 3 u0_a66 u0_a66 4096 2026-11-03 22:56 ..
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 22:56 0604d5aed42e5748.png
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 22:56 06de5f6cdc7f13a0.png
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 22:56 0c015f3c58ef0ff1.png
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 22:56 13215ae056712b8c.png
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 22:56 1676f4b9ed96490d.png
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 22:56 1b7fb8fdd42f93f3.png
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 22:56 483a32634560ed4c.png
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 22:56 507397c6af39d4ee.png
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 22:56 52b3823caad9d29f.png
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 22:56 74e1f214e3014a59.png
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 22:56 8368c18c8ea26e9b.png
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 22:56 9861d35e415a67b5.png
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 22:56 9d9490b7efdd3e92.png
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 22:56 ad881dddddb7fd3a.png
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 22:56 b79d411a24d1b1b2.png
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 22:56 c300d464f66c2b19.png
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 22:56 deadbeefdeadbeef.png
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 22:56 e2119a1935580b33.png
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 22:56 fa9a5e1dc2baac10.png
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 22:56 ffffffffffffffff.png
+drwxrws--x 2 u0_a66 u0_a66 4096 2026-11-03 22:56 nested
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 22:56 notimage.png
+lrwxrwxrwx 1 u0_a66 u0_a66   20 2026-11-03 22:56 symlink.png -> c300d464f66c2b19.png

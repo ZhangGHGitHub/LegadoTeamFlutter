@@ -1,0 +1,8 @@
+[package]
+name = "probe"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+legado-book = { path = "../../../rust/legado-book" }
+sevenz-rust2 = { version = "0.24.1", default-features = false }

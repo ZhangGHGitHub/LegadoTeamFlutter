@@ -1,0 +1,5 @@
+/data/data/io.legado.flutter_legado/cache/file_picker/1790677652815/manga_sources_clean_36.json
+/data/data/io.legado.flutter_legado/cache/file_picker/1790677762405/video_sources_9.json
+/data/data/io.legado.flutter_legado/cache/file_picker/1793051988872/legado_backup_1793051898410.json
+/data/data/io.legado.flutter_legado/cache/file_picker/1793052032596/legacy_backup_min.zip
+/data/data/io.legado.flutter_legado/cache/js_cache/26e73bffd7fc0c6c59d1a6972aaf06b81a6d15f19730f2ac3776a9418f456133.json

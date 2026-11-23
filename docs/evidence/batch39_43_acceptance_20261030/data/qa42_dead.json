@@ -1,0 +1,18 @@
+[
+ {
+  "bookSourceUrl": "http://qa42-dead.invalid:1",
+  "bookSourceName": "QA42死域名源",
+  "bookSourceGroup": "QA42",
+  "bookSourceType": 0,
+  "enabled": true,
+  "enabledExplore": false,
+  "searchUrl": "http://qa42-dead.invalid:1/search?q={{key}}",
+  "ruleSearch": {
+   "bookList": "$[*]",
+   "name": "$.name",
+   "author": "$.author",
+   "bookUrl": "$.bookUrl",
+   "checkKeyWord": "QA42"
+  }
+ }
+]

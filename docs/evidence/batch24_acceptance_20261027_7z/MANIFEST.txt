@@ -1,0 +1,230 @@
+# batch24_acceptance_20261027_7z <- tmp_debug/device_acceptance_20261027_7z
+# action	bytes	source_rel	note
+copy	312582	bomb.7z	1fd808404cc9fc9b051d878662eb437627b8d6adc0ba14f38494c0c18cf6aeb8
+copy	64	corrupt.7z	fc759c09b21806519daee719225ed7a661525b2f6413799808e6ea9fd60d3751
+copy	182	corrupt_crc.7z	ff3423aae3ca905e72b0f25494fba1cb59971260d9996cd9efb5f65ec52624b5
+copy	274432	db/legado.db.orig	677072864dabbdaf7cb072982399594f53abf6502f25e00d60d03987619d29dd
+copy	201	encrypted.7z	10435d63d97bdc28816d3e5daa72380cd3ee79c334a1fe6bf9c49bf29809d38c
+copy	4993	fixture_gen/Cargo.lock	d4e114b35fb0e11c42417c484070042cb556c646bf7789b4e3a9f7db8a4f3b83
+copy	171	fixture_gen/Cargo.toml	3c6f1b818951791be46ce37c4bc8efec7b7cf9fca8304a3ae0aaf645ef542bca
+copy	747	fixture_gen/src/main.rs	3204a2532d85c4a64f2576619454af0b14af7cbeef5d3682d8700b56a3a8b60f
+copy	60	fixtures_src/crc_payload.txt	fe96ac86de7b72af1ce474689e02dfa60d0a413217eb9a17070844ac5ae8e88e
+copy	246	fixtures_src/epub_src/META-INF/container.xml	991f50fee0d5952ea2c88fc7b2c1b4cb32ae8076de24c62530cdb9458a302126
+copy	197	fixtures_src/epub_src/OEBPS/chapter1.xhtml	9fc3c30f804a5a56149bc169bab2d139a56f67f0a9cc436c9f7d3f7b903f2f59
+copy	481	fixtures_src/epub_src/OEBPS/content.opf	24b9816f4fbbb92d09e99a6c18bf337d3750355b0a06ba79aa315f093d4ddcbf
+copy	20	fixtures_src/epub_src/mimetype	e468e350d1143eb648f60c7b0bd6031101ec0544a361ca74ecef256ac901f48b
+copy	1404	fixtures_src/中文目录/book.epub	a6a2198f1ddea312e9bebde2fbc7175b88c0b24f877796392c6f0e81c4fec489
+copy	50	fixtures_src/中文目录/readme.md	7f702702e605d2e9f3d0d690ccb1ba0dc774a86cbc1a46bb05b8bc46ec9f7cd8
+copy	137	fixtures_src/中文目录/嵌套/novel.txt	e483788d8b86e6c4b4933102886ca3e5964e906710a7b31e6a268b512694298d
+copy	225	nested_py7zr.7z	8aed9b81817d80c790e01c7d995d13596a4d96bad2ce85cb21ed871d8bd90486
+copy	18	nested_src/dir1/one.txt	9d5459c9cfeed5f0543a6af884c70d5548c6fec8abf6a8baf21093c2a2085945
+copy	18	nested_src/dir2/two.txt	2b7e3005e48a80d6cff58a21bfa2819ea9f72a0d057f25421a500cff44c79856
+copy	1022	normal.7z	9f72b76e8382c9368b083c652972dcb76975f01ce3e2a78b32fadca14c36d114
+copy	1025	normal_py7zr.7z	c2c743cd7cd20d9a2ecd84dee426492b0871fc89293cc2add5a9b2281d61226a
+copy	56873	probe/Cargo.lock	b010e524eb21adf34c6e1ac0334dc4ed867943b8e5b35d0ceaf7defc80f006ee
+copy	193	probe/Cargo.toml	892ac5576418371a13f34a0bbc2e0c58872855bc16f75326c5d913731bea6e47
+copy	1076	probe/src/main.rs	a3ee7fa5178e2e2e472771a498f88a7cdee1d9d84f3778fc0ab00ae6820ddc52
+copy	195	regression.zip	bacc34d700dbcdde052633ca8dab033f90d99cce211cf29de88a734e45b676fb
+copy	79260	screens/00_launch.png	06de042c8bd60c43ca25bb0c193f48f1305d8e3a7aa77351df762b5bc220ccdb
+copy	83540	screens/01_s1_open_normal.png	4508e375f2c971f9d7fb2462aafc57b68b42cb0361e0ccb55527990e11bc6f58
+copy	83540	screens/02_s2_detect_encoding.png	4508e375f2c971f9d7fb2462aafc57b68b42cb0361e0ccb55527990e11bc6f58
+copy	84045	screens/02b_s2_detect_t04.png	1f6a9d2ae6f4fb37c90ffee8ade6b22d7df6ee5ecb8424de1b27fb70aa865ecd
+copy	83901	screens/02c_s2_detect_t19.png	025c88685beae5d848bf7906b5d1eac8664f0015d978114baba434b21d70b937
+copy	83901	screens/02d_s2_detect_t49.png	025c88685beae5d848bf7906b5d1eac8664f0015d978114baba434b21d70b937
+copy	82942	screens/02e_s2_after_uncheck.png	6a1d42d4be669edf56818159ea3617a0933f6633d79495511fab3c97960cc6d9
+copy	75269	screens/03_s1_after_import.png	cf0416f5b5d00f758e90289f4c38648249c4aa2fdb18defcd0d964e31477bcc3
+copy	83893	screens/04_s1_normal_list.png	269031cedfcd143ae3cd9eb43c2f4e603cb1aed70ad20bf82b41042674dd3766
+copy	89704	screens/05_s2_detect_utf8.png	da74a6699b84e8a9b932eba3062c41fcefb31ceddab0f8cec243c5468d23f439
+copy	180594	screens/06_s1_shelf_after_import.png	1af4682ceda8a6090064f5b0213552d898d898bf4dcaaf52e84c7fcb7990ab0a
+copy	76232	screens/07_s1_open_novel.png	45b2a843fa70103c8a518a94555552b90bc642af262acecc0bb9d8747a372169
+copy	199326	screens/08_defect_py7zr_only_epub.png	5c458f0d5e686bccac435b0e6870702c46dd7f6df65b686024569dc1f203f971
+copy	165482	screens/09_s3_encrypted_error.png	2722592cda51005868a334e2535a7ec94fdcd48563d66a24c609a5baffd3739e
+copy	163038	screens/10_s4_traversal_error.png	00a513037106193dfb80edc4367bbae74c52f40ff022baeef811dce163ce9a23
+copy	172472	screens/11_s5_bomb_error.png	7ea7e247edcc3f24c63d3b6ed9d98959ef122ea3a6be4613d36d638a5941be8b
+copy	55945	screens/12_s5_ui_responsive_discover.png	985615603136482c3b39c67696cbba29af514de688f6bb4a826ac3f13ed37d81
+copy	163322	screens/13_s6_corrupt_truncated_error.png	89d7bcd7afddc68cc88d0f8d807dba1924dcb81a5b4029a8564a0e55da5213c4
+copy	156613	screens/14_s6_crc_import_error.png	c498a6ea1b36acb57db01fdfae957d678c1e37a10993416536e6d0d779ed485b
+copy	179141	screens/15_s6_crc_import_error.png	0079bed44fde4e73b2cfa78e6a0bba1f2b6dae33ba4697019930001c44bb0a40
+copy	142720	screens/16_s7_surface_list.png	4552207018d55dfc8c896cf493bd8957bc3ed0aca371efe5cd6ad6003aa9a150
+copy	279731	screens/17_s7_surface_shelf.png	c568f6732fad61165b9bbe976c4107d78cea994119b04f849bc1361eb0b0ec5e
+copy	279731	screens/19_s8_zip_shelf.png	c568f6732fad61165b9bbe976c4107d78cea994119b04f849bc1361eb0b0ec5e
+copy	202777	screens/20_s8_rar_unsupported.png	b505566241a812a60c4410fb5038a5079b844710f8b01291a2dcf574dbf056ce
+copy	71829	screens/21_s8_rss_tab.png	2a22c339a3212437a9ab3c6b16d4026df33a7b81afe50a8219cc14b49be34023
+copy	53720	screens/23_s8_zip_reader.png	ccd51d64ad0cb19cfa5986702deb7431030f8b28973e9e320b29da98741ea25e
+copy	193160	screens/24_defect_nested_list.png	ee7e4cc40d3618ddd10b5ab687b007bf7189237c70dea926f45bd1150b6d9eb9
+copy	280308	screens/25_defect_nested_shelf.png	fb647cfd31c5ab4e701e1d38ecd4a31489f4141387f90cb296f7751113a8fadc
+copy	76784	screens/26_restored_empty_shelf.png	623018e483a2c6a7ade4aac4b2fc835d0edfd934547eb3072ed71d4a4060b08b
+copy	83283	screens/27_boundary_multivolume.png	e2d0995e0b8b045e4348fff06e9a6399f375b5aecc3cb62a70d2b970017cad55
+copy	11273	screens/ui_00_launch.xml	c5ca651e6e95195897be97263f3a3cceb80663b35a3c6af2b91c1ea11e59d754
+copy	9049	screens/ui_01_s1_open_normal.xml	6d727b866af8c96f26d3f240d9beeefc422e412b27cb7de8077213513b615b7d
+copy	9049	screens/ui_02_s2_detect_encoding.xml	6d727b866af8c96f26d3f240d9beeefc422e412b27cb7de8077213513b615b7d
+copy	9049	screens/ui_02d_s2_detect.xml	6d727b866af8c96f26d3f240d9beeefc422e412b27cb7de8077213513b615b7d
+copy	9050	screens/ui_02e_s2_after_uncheck.xml	7948457ed6fe9a7fd71d7a36ecac12e3e0ec1b43b861b9de184f1932b14eb0d3
+copy	11279	screens/ui_03_s1_after_import.xml	331bc6652b4a34e11be2584c414b7d6a26c682c763e1879d9bb5cb93b570322c
+copy	9049	screens/ui_04_s1_normal_list.xml	6d727b866af8c96f26d3f240d9beeefc422e412b27cb7de8077213513b615b7d
+copy	9074	screens/ui_05_s2_detect_utf8.xml	6989e990e0660e8bc69b9b0be3db10c01c698d1747e563ed90b4e9bee9f47360
+copy	11930	screens/ui_06_s1_shelf_after_import.xml	16b593f3db976d920ecec31bae67a194773fca063a1ef4b97ade5164e1383dc6
+copy	5074	screens/ui_07_s1_open_novel.xml	f675fcb502c9f25de63c366bbc19d8d1180730593b5bdc710cd12c972e568ddd
+copy	9055	screens/ui_07b_py7zr_list.xml	cb1407ce3f6d639c80766188db4095d8a72f9e710d1b310ed31de2579450a57d
+copy	8069	screens/ui_09_s3_encrypted_error.xml	6f65afb678b001c7f98173258beebd415bcd3cbc9889fb97d8da15a5d69a5186
+copy	8068	screens/ui_10_s4_traversal_error.xml	e817cb46572eea2e3782320afb87ee8d1cda1f47bb796679073f9eee160099cc
+copy	8095	screens/ui_11_s5_bomb_error.xml	25c825595dc77db626ebd1fa624c57c1a2501564b1a73b4a88266632c63e941a
+copy	7715	screens/ui_12_s5_ui_responsive_discover.xml	c6c8e571e58497d753914e79dc9fa38f7ea8a396c587ed89fe720f62b3ddb709
+copy	8064	screens/ui_13_s6_corrupt_truncated_error.xml	0fefb3e8d336f9259fe8bad88b84ced99dccd5533c87559e1d3639cb79fd23b8
+copy	9054	screens/ui_14_s6_crc_import_error.xml	d2ceca3a706eb92babe9b526281014090d1ee28081b8fd2f4816085b6a666870
+copy	9054	screens/ui_14_s6_crc_list.xml	d2ceca3a706eb92babe9b526281014090d1ee28081b8fd2f4816085b6a666870
+copy	8342	screens/ui_15_s6_crc_list.xml	24bbeddd77ec5111ca4e5b93ea38bef85703f53e4cc3d58687f1d42d58758f61
+copy	8342	screens/ui_15b_s6_crc_import_error.xml	24bbeddd77ec5111ca4e5b93ea38bef85703f53e4cc3d58687f1d42d58758f61
+copy	9042	screens/ui_16_s7_surface_list.xml	caf3a14e8640f95784c2d70dc62ce568687f700bbbcd6a70e0ecebeb2a2e197f
+copy	13419	screens/ui_17_s7_surface_shelf.xml	74ad19e1a150d71b4a1c317f500eff379d3188a38c83a1ece643628c26f59940
+copy	8341	screens/ui_18_s8_zip_list.xml	754aacddabab01fd8e6aa4bb3c8cbe07aed0146cde2d36fe5d69dc7e887132a4
+copy	8428	screens/ui_20_s8_rar_unsupported.xml	0c82b03ecbef4fe10b81ad263c3436a9e5eed55c4ae6237f4b402875dd3018ec
+copy	10570	screens/ui_21_s8_rss_tab.xml	18fdd8d8c7e452014ca1651dae7d18d04b9269751fb2af8b2fd4a7207ac548bc
+copy	13419	screens/ui_22_s8_shelf.xml	fc5042b22eb74dc93d254aff5ecc27c6e05b69732eab38f07a9e5fa4c98adec5
+copy	13419	screens/ui_22b_s8_shelf_full.xml	fc5042b22eb74dc93d254aff5ecc27c6e05b69732eab38f07a9e5fa4c98adec5
+copy	13060	screens/ui_22c_s8_shelf_scrolled.xml	95a284fbbeff3311ae039fee183f35e91b0b6e0b0e7290301a8016edd754b954
+copy	5638	screens/ui_23_s8_zip_reader.xml	42c4ce5a4c4872cea4946d5bcba79237b11ef87af3e49fc55640d8eb1e839446
+copy	9051	screens/ui_24_defect_nested_list.xml	000fe09b4bfc9ed6e1fefee38467403c21371342af327e3b06e8e4ef2421279d
+copy	11273	screens/ui_26_restored_empty_shelf.xml	9eea550406cc3e6aa54827db6aeb5e8181445876f1fe75c9c6048a6ef3222382
+copy	6218	screens/ui_27_boundary_multivolume.xml	aef9339fab99ce43bda844d2be9ea0cc028f58548481c4d62d661f01f7eb9813
+copy	17935	screens/ui_pre_install.xml	90ac28b27483a2b7cc56aac37273faf38e26905d91fed1708a4cef6a2f87e171
+copy	189	surface.7z	d7e6a28e7608f609be986c8857a6d9c1e5392f543256f1177ae49678df4deca2
+copy	186	traversal.7z	b3421a5aab1b8338b57f15b9bdd34dc63409c00329025abff44ef857c18618d8
+copy	6088	ui.py	858cb3e5726f700900136082538c5d00d8971fd0a956a65810afc43bd8da194a
+copy	112	verify2/apk_sha256.txt	f635cb309fd3281c3e0bf52eba39f48d06dbd86dc8b3cc783889ce55dbc3bb5f
+copy	331	verify2/cleanup.txt	85349495a06eaf32a22698a3c24b868fb40971c069a1b28b23321ac5b98fcce0
+copy	485	verify2/content_and_cleanliness.txt	c34b6c12e4b47f66108e27491e43fcf5639f829a5af052f36c8158fa209b2371
+copy	52	verify2/db_books.txt	a840d3194643444d355e78094129968893881cc64f7252a71e411758ea459ad2
+copy	36	verify2/import_dir.txt	eca040269720213442cc5ebb268e97071cf1003fefd55886e8e3fdb32829a3fe
+copy	73	verify2/install_apk.txt	7355c80b28cec61a72a4a25cfae71bded2a9242ff42bb78bbb8d919168de3188
+copy	235	verify2/normal_import_dir.txt	9b50b5bbeb66bb3ff3915b8d576b5f6a1b0140714a1409ad3bfa4fb8b937bb1d
+copy	80490	verify2/screens/01_after_intent.png	38322376bea03e00f2496ddc9ae14122b0ec03d59288f3ab1428f434bde05790
+copy	171249	verify2/screens/02_after_import.png	1b287ab20f0d1f776476e1457bd7b3ea75992323f0221973f6faa57420d604a2
+copy	32407	verify2/screens/03_open_two_reader.png	7838c6f7be5089976dfbe748c1c6f9338048ff53636f0c5e4b63d9263353593a
+copy	144041	verify2/screens/04_normal_dialog.png	2babce5b6dfb06387c424bc4d28b0b4c179e60c525615e0d49105cc05e93a39a
+copy	271976	verify2/screens/05_normal_after_import.png	dcea5ed8c24ea453bffd11824a161054c791fb49a71c7f29b03804fea5c0a27c
+copy	271976	verify2/screens/06_normal_shelf.png	dcea5ed8c24ea453bffd11824a161054c791fb49a71c7f29b03804fea5c0a27c
+copy	73787	verify2/screens/07_restored_empty_shelf.png	64ec3f1b081f5f518d1bf4cd2590917d0a30040fb90ca379fd7f956b99bb5f33
+copy	410	verify2/so_sha256.txt	ab8ec38958824281d050912a8314cb277e1a88ba56938c69bdcee924af413b49
+copy	9051	verify2/ui_01_dialog.xml	000fe09b4bfc9ed6e1fefee38467403c21371342af327e3b06e8e4ef2421279d
+copy	4114	verify2/ui_03_reader.xml	c5e02b8c362b6488cacc80f5b446e1770731c9ed480e294dbfcea8e5675a5902
+already-archived	104	fixtures/regression.rar	docs/materials_1112b/fixtures/regression.rar
+already-archived	104	regression.rar	docs/materials_1112b/fixtures/regression.rar
+dup-within-dir	312582	fixtures/bomb.7z	
+dup-within-dir	64	fixtures/corrupt.7z	
+dup-within-dir	182	fixtures/corrupt_crc.7z	
+dup-within-dir	201	fixtures/encrypted.7z	
+dup-within-dir	225	fixtures/nested_py7zr.7z	
+dup-within-dir	1022	fixtures/normal.7z	
+dup-within-dir	1025	fixtures/normal_py7zr.7z	
+dup-within-dir	195	fixtures/regression.zip	
+dup-within-dir	189	fixtures/surface.7z	
+dup-within-dir	186	fixtures/traversal.7z	
+dup-within-dir	1404	probe_out/book.epub	
+dup-within-dir	1022	volume_test.7z.001	
+discard-log	6585	logs/build_apk.log	
+discard-log	11319	logs/build_rust.log	
+discard-log	5465	verify2/build_apk.log	
+discard-log	7937	verify2/build_rust.log	
+discard-log	256773	verify2/cargo_test_workspace.log	
+discard-log	6243	verify2/flutter_ffi_7z_runtime.log	
+discard-log	601153	verify2/flutter_test.log	
+discard-log-txt	305	logs/apk_sha256.txt	
+discard-log-txt	5400	logs/cache_poll.txt	
+discard-log-txt	520	logs/cleanup.txt	
+discard-log-txt	411	logs/db_books_after_all.txt	
+discard-log-txt	489	logs/db_books_final_before_cleanup.txt	
+discard-log-txt	185	logs/db_dir_before.txt	
+discard-log-txt	173	logs/defect_nested_import_dir.txt	
+discard-log-txt	2075	logs/defect_py7zr_iteration.txt	
+discard-log-txt	2637	logs/device_download_before.txt	
+discard-log-txt	1384	logs/device_fixtures_sha256.txt	
+discard-log-txt	194	logs/device_fixtures_sha256_normal.txt	
+discard-log-txt	1224	logs/final_env_check.txt	
+discard-log-txt	1754	logs/final_logcat_counts.txt	
+discard-log-txt	101	logs/final_process_state.txt	
+discard-log-txt	696	logs/fixture_sha256_host.txt	
+discard-log-txt	968	logs/fixture_sha256_host_final.txt	
+discard-log-txt	1412	logs/host_probe_errors.txt	
+discard-log-txt	73	logs/install_apk.txt	
+discard-log-txt	1074882	logs/logcat_all.txt	
+discard-log-txt	175	logs/s1_py7zr_import_dir.txt	
+discard-log-txt	44	logs/s3_encrypted_timing.txt	
+discard-log-txt	233	logs/s4_traversal_fs_check.txt	
+discard-log-txt	66	logs/s5_bomb_timing.txt	
+discard-log-txt	0	logs/s5_crash_check.txt	
+discard-log-txt	114	logs/s6_crc_archive_dir.txt	
+discard-log-txt	0	logs/s6_crc_error_text.txt	
+discard-log-txt	227	logs/s7_surface_import_dir.txt	
+discard-log-txt	180	logs/s8_zip_import_dir.txt	
+discard-log-txt	480	logs/s9_cleanliness.txt	
+discard-log-txt	69	logs/version_after_restore.txt	
+discard-log-txt	203	logs/version_info.txt	
+discard-log-txt	92	verify2/final_logcat_counts.txt	
+discard-log-txt	762	verify2/final_state.txt	
+discard-log-txt	698	verify2/green_host_test.txt	
+discard-log-txt	178713	verify2/logcat_verify2.txt	
+discard-log-txt	6	verify2/process_state.txt	
+discard-log-txt	642	verify2/red_host_test.txt	
+discard-log-txt	3026	verify2/summary.txt	
+excluded-build	1389	fixture_gen/target/.rustc_info.json	
+excluded-build	177	fixture_gen/target/CACHEDIR.TAG	
+excluded-build	0	fixture_gen/target/release/.cargo-artifact-lock	
+excluded-build	0	fixture_gen/target/release/.cargo-build-lock	
+excluded-build	0	fixture_gen/target/release/.cargo-lock	
+excluded-build	14	fixture_gen/target/release/.fingerprint/cfg-if-31b76aa922c9e021/dep-lib-cfg_if	
+excluded-build	48	fixture_gen/target/release/.fingerprint/cfg-if-31b76aa922c9e021/invoked.timestamp	
+excluded-build	16	fixture_gen/target/release/.fingerprint/cfg-if-31b76aa922c9e021/lib-cfg_if	
+excluded-build	381	fixture_gen/target/release/.fingerprint/cfg-if-31b76aa922c9e021/lib-cfg_if.json	
+excluded-build	16	fixture_gen/target/release/.fingerprint/crc32fast-83d3a932af39bc87/build-script-build-script-build	
+excluded-build	426	fixture_gen/target/release/.fingerprint/crc32fast-83d3a932af39bc87/build-script-build-script-build.json	
+excluded-build	14	fixture_gen/target/release/.fingerprint/crc32fast-83d3a932af39bc87/dep-build-script-build-script-build	
+excluded-build	48	fixture_gen/target/release/.fingerprint/crc32fast-83d3a932af39bc87/invoked.timestamp	
+excluded-build	16	fixture_gen/target/release/.fingerprint/crc32fast-9d405237f631e45a/run-build-script-build-script-build	
+excluded-build	255	fixture_gen/target/release/.fingerprint/crc32fast-9d405237f631e45a/run-build-script-build-script-build.json	
+excluded-build	14	fixture_gen/target/release/.fingerprint/crc32fast-a1b034642828e343/dep-lib-crc32fast	
+excluded-build	48	fixture_gen/target/release/.fingerprint/crc32fast-a1b034642828e343/invoked.timestamp	
+excluded-build	16	fixture_gen/target/release/.fingerprint/crc32fast-a1b034642828e343/lib-crc32fast	
+excluded-build	535	fixture_gen/target/release/.fingerprint/crc32fast-a1b034642828e343/lib-crc32fast.json	
+excluded-build	16	fixture_gen/target/release/.fingerprint/fixture_gen-dfaa2e8dd9284168/bin-fixture_gen	
+excluded-build	421	fixture_gen/target/release/.fingerprint/fixture_gen-dfaa2e8dd9284168/bin-fixture_gen.json	
+excluded-build	31	fixture_gen/target/release/.fingerprint/fixture_gen-dfaa2e8dd9284168/dep-bin-fixture_gen	
+excluded-build	48	fixture_gen/target/release/.fingerprint/fixture_gen-dfaa2e8dd9284168/invoked.timestamp	
+excluded-build	14	fixture_gen/target/release/.fingerprint/lzma-rust2-86319d7de6f78704/dep-lib-lzma_rust2	
+excluded-build	48	fixture_gen/target/release/.fingerprint/lzma-rust2-86319d7de6f78704/invoked.timestamp	
+excluded-build	16	fixture_gen/target/release/.fingerprint/lzma-rust2-86319d7de6f78704/lib-lzma_rust2	
+excluded-build	474	fixture_gen/target/release/.fingerprint/lzma-rust2-86319d7de6f78704/lib-lzma_rust2.json	
+excluded-build	14	fixture_gen/target/release/.fingerprint/sevenz-rust2-343e6d595955ae16/dep-lib-sevenz_rust2	
+excluded-build	48	fixture_gen/target/release/.fingerprint/sevenz-rust2-343e6d595955ae16/invoked.timestamp	
+excluded-build	16	fixture_gen/target/release/.fingerprint/sevenz-rust2-343e6d595955ae16/lib-sevenz_rust2	
+excluded-build	655	fixture_gen/target/release/.fingerprint/sevenz-rust2-343e6d595955ae16/lib-sevenz_rust2.json	
+excluded-build	253952	fixture_gen/target/release/build/crc32fast-83d3a932af39bc87/build-script-build.exe	
+excluded-build	630	fixture_gen/target/release/build/crc32fast-83d3a932af39bc87/build_script_build-83d3a932af39bc87.d	
+excluded-build	253952	fixture_gen/target/release/build/crc32fast-83d3a932af39bc87/build_script_build-83d3a932af39bc87.exe	
+excluded-build	1568768	fixture_gen/target/release/build/crc32fast-83d3a932af39bc87/build_script_build-83d3a932af39bc87.pdb	
+excluded-build	1568768	fixture_gen/target/release/build/crc32fast-83d3a932af39bc87/build_script_build.pdb	
+excluded-build	48	fixture_gen/target/release/build/crc32fast-9d405237f631e45a/invoked.timestamp	
+excluded-build	178	fixture_gen/target/release/build/crc32fast-9d405237f631e45a/output	
+excluded-build	137	fixture_gen/target/release/build/crc32fast-9d405237f631e45a/root-output	
+excluded-build	0	fixture_gen/target/release/build/crc32fast-9d405237f631e45a/stderr	
+excluded-build	784	fixture_gen/target/release/deps/cfg_if-31b76aa922c9e021.d	
+excluded-build	2874	fixture_gen/target/release/deps/crc32fast-a1b034642828e343.d	
+excluded-build	283	fixture_gen/target/release/deps/fixture_gen.d	
+excluded-build	486912	fixture_gen/target/release/deps/fixture_gen.exe	
+excluded-build	1503232	fixture_gen/target/release/deps/fixture_gen.pdb	
+excluded-build	6892	fixture_gen/target/release/deps/libcfg_if-31b76aa922c9e021.rlib	
+excluded-build	5862	fixture_gen/target/release/deps/libcfg_if-31b76aa922c9e021.rmeta	
+excluded-build	89486	fixture_gen/target/release/deps/libcrc32fast-a1b034642828e343.rlib	
+excluded-build	55803	fixture_gen/target/release/deps/libcrc32fast-a1b034642828e343.rmeta	
+excluded-build	1929482	fixture_gen/target/release/deps/liblzma_rust2-86319d7de6f78704.rlib	
+excluded-build	1329499	fixture_gen/target/release/deps/liblzma_rust2-86319d7de6f78704.rmeta	
+excluded-build	1608270	fixture_gen/target/release/deps/libsevenz_rust2-343e6d595955ae16.rlib	
+excluded-build	15679	fixture_gen/target/release/deps/lzma_rust2-86319d7de6f78704.d	
+excluded-build	8535	fixture_gen/target/release/deps/sevenz_rust2-343e6d595955ae16.d	
+excluded-build	107008	fixture_gen/target/release/deps/sevenz_rust2-343e6d595955ae16.dll	
+excluded-build	877	fixture_gen/target/release/deps/sevenz_rust2-343e6d595955ae16.dll.exp	
+excluded-build	1872	fixture_gen/target/release/deps/sevenz_rust2-343e6d595955ae16.dll.lib	
+excluded-build	1150976	fixture_gen/target/release/deps/sevenz_rust2-343e6d595955ae16.pdb	
+excluded-build	216	fixture_gen/target/release/fixture_gen.d	
+excluded-build	486912	fixture_gen/target/release/fixture_gen.exe	
+excluded-build	1503232	fixture_gen/target/release/fixture_gen.pdb	

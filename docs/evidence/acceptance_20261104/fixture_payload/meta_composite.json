@@ -1,0 +1,24 @@
+{
+  "book": "http://192.168.100.52:8899/comic/qa9b3c",
+  "dir": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\tmp_debug\\device_acceptance_20261104\\fixture_payload\\images_composite",
+  "keep": [
+    "425a06f4f803fa48.jpg",
+    "30f7b0cc1e84270c.jpg",
+    "9ab189680bea0015.png"
+  ],
+  "drop": [
+    "4a18ee285d000253.png",
+    "36d96926678956e3.png",
+    "outside.png",
+    "425a06f4f803fa48.png"
+  ],
+  "files": {
+    "425a06f4f803fa48.jpg": "keep-full0",
+    "30f7b0cc1e84270c.jpg": "keep-full1",
+    "9ab189680bea0015.png": "keep-plain3",
+    "4a18ee285d000253.png": "drop-trunc0",
+    "36d96926678956e3.png": "drop-trunc1",
+    "outside.png": "drop-outside",
+    "425a06f4f803fa48.png": "drop-mismatch"
+  }
+}

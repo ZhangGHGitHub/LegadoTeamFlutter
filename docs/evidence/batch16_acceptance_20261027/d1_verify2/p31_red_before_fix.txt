@@ -1,0 +1,7 @@
+00:00 +0 -1: errorMessage D4 锚定匹配（P3-1） 业务文案含 timeout 不被吞（中文业务前缀跳过映射） [E]
+  Expected: '上传超时，请重试（timeout）'
+    Actual: '网络连接超时'
+     Which: is different.
+            Expected: 上传超时，请重试（t ...
+              Actual: 网络连接超时
+00:00 +0 -1: Some tests failed.

@@ -1,0 +1,15 @@
+[
+  {
+    "sourceUrl": "http://192.168.100.52:18090/rss",
+    "sourceName": "QA9B4-RSS",
+    "sourceGroup": "QA9B4",
+    "enabled": true,
+    "singleUrl": false,
+    "ruleArticles": "//item",
+    "ruleTitle": "title",
+    "ruleLink": "link",
+    "rulePubDate": "pubDate",
+    "ruleDescription": "description",
+    "ruleContent": "//div[@id='content']"
+  }
+]

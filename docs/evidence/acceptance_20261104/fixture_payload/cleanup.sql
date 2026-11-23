@@ -1,0 +1,14 @@
+BEGIN;
+DELETE FROM cached_chapters;
+DELETE FROM chapters;
+DELETE FROM books;
+DELETE FROM readRecord;
+DELETE FROM readRecordDaily;
+DELETE FROM bookmarks;
+DELETE FROM searchBooks;
+DELETE FROM rssArticles;
+DELETE FROM rssReadRecords;
+DELETE FROM download_tasks;
+DELETE FROM rssSources WHERE sourceName='QA_B2C_VIDEO';
+UPDATE rssSources SET searchUrl='' WHERE sourceName='QA_B2C_RSS';
+COMMIT;

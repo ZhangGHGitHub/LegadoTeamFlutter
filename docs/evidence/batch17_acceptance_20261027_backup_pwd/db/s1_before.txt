@@ -1,0 +1,5 @@
+=== 场景1 恢复前 DB 基线 09:48:45 ===
+servers|0
+cookies|218
+caches|56
+book_sources|534

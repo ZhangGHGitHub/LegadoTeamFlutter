@@ -1,0 +1,19 @@
+{
+  "type": "highlightRule",
+  "rules": [
+    {
+      "id": 1,
+      "uuid": "a8929d1c-2495-4f7d-a3b5-bd6908daf2d7",
+      "name": "QA26",
+      "pattern": "QA26",
+      "isRegex": false,
+      "applyToTitle": false,
+      "scope": null,
+      "isEnabled": true,
+      "style": "{\"textColor\":4294630099}",
+      "timeoutMillisecond": 3000,
+      "applyToBody": true,
+      "order": 0
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+/sdcard/Download/bookSource_QA本地音频B2 (1).json
+/sdcard/Download/bookSource_QA本地音频B2 (2).json
+/sdcard/Download/bookSource_QA本地音频B2 (5).json
+/sdcard/Download/bookSource_QA本地音频B2 (7).json
+/sdcard/Download/bookSource_QA本地音频B2 (9).json
+/sdcard/Download/HighlightRules (1).json
+/sdcard/Download/manga-1790780351361.jpg
+/sdcard/Download/manga-1790780625652.jpg

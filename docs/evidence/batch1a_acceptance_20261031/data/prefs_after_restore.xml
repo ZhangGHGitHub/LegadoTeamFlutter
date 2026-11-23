@@ -1,0 +1,114 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <boolean name="flutter.useZhLayout" value="false" />
+    <long name="flutter.reader_adv_left_action" value="1" />
+    <boolean name="flutter.reader_adv_auto_page_turn" value="false" />
+    <string name="flutter.reader_adv_margin_right">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu20.0</string>
+    <boolean name="flutter.hideNavigationBar" value="false" />
+    <long name="flutter.reader_adv_paragraph_indent_chars" value="2" />
+    <string name="flutter.reader_layout_day_letter_spacing">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu0.1</string>
+    <long name="flutter.titleSize" value="0" />
+    <string name="flutter.reader_layout_day_footer_padding_right">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu16.0</string>
+    <long name="flutter.footerMode" value="0" />
+    <long name="flutter.reader_adv_custom_text_color" value="4278190080" />
+    <long name="flutter.tipFooterRight" value="6" />
+    <boolean name="flutter.shareLayout" value="false" />
+    <string name="flutter.reader_font_size">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu24.0</string>
+    <boolean name="flutter.showBrightnessView" value="false" />
+    <boolean name="flutter.reader_adv_show_chapter_name" value="false" />
+    <boolean name="flutter.reader_layout_is_night" value="false" />
+    <long name="flutter.keep_light" value="0" />
+    <boolean name="flutter.autoChangeSource" value="true" />
+    <boolean name="flutter.settingsMigrated_v271" value="true" />
+    <string name="flutter.reader_adv_margin_bottom">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu24.0</string>
+    <boolean name="flutter.volumeKeyPageOnPlay" value="false" />
+    <boolean name="flutter.reader_adv_text_full_justify" value="true" />
+    <boolean name="flutter.showFooterLine" value="true" />
+    <string name="flutter.check_source_keyword">我的</string>
+    <boolean name="flutter.hangingPunctuation" value="false" />
+    <string name="flutter.reader_theme_list">[{&quot;type&quot;:&quot;legado.readerTheme&quot;,&quot;schema&quot;:1,&quot;id&quot;:&quot;theme-1793292014848143-35&quot;,&quot;name&quot;:&quot;QA38备份往返&quot;,&quot;style&quot;:{&quot;fontSize&quot;:20.0,&quot;lineHeight&quot;:1.7,&quot;backgroundColor&quot;:&quot;#FFFFFFFF&quot;,&quot;textColor&quot;:&quot;#FF000000&quot;,&quot;fontFamily&quot;:&quot;&quot;,&quot;titleFont&quot;:&quot;&quot;,&quot;letterSpacing&quot;:0.1,&quot;paragraphIndent&quot;:2,&quot;paragraphSpacing&quot;:2.0,&quot;marginTop&quot;:24.0,&quot;marginBottom&quot;:24.0,&quot;marginLeft&quot;:20.0,&quot;marginRight&quot;:20.0,&quot;textBold&quot;:0,&quot;italic&quot;:false,&quot;bgImage&quot;:&quot;&quot;}}]</string>
+    <long name="flutter.txtTocRuleVersion" value="1" />
+    <string name="flutter.reader_layout_day_header_padding_bottom">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu0.0</string>
+    <boolean name="flutter.blockSourceBrowser" value="false" />
+    <string name="flutter.reader_layout_day_paragraph_spacing">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu2.0</string>
+    <string name="flutter.reader_layout_day_footer_padding_top">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu6.0</string>
+    <boolean name="flutter.showHeaderLine" value="false" />
+    <string name="flutter.sync_webdav_remote_dir">/legado/</string>
+    <long name="flutter.reader_layout_day_paragraph_indent_chars" value="2" />
+    <boolean name="flutter.reader_adv_auto_forward" value="true" />
+    <string name="flutter.progressBarBehavior">page</string>
+    <string name="flutter.reader_adv_paragraph_spacing">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu2.0</string>
+    <boolean name="flutter.reader_bg_use_custom" value="false" />
+    <string name="flutter.reader_layout_day_margin_left">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu20.0</string>
+    <boolean name="flutter.readBodyToLh" value="true" />
+    <string name="flutter.reader_layout_day_header_padding_left">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu16.0</string>
+    <boolean name="flutter.reader_adv_show_battery" value="false" />
+    <long name="flutter.themeGridColumns" value="4" />
+    <long name="flutter.titleTopSpacing" value="0" />
+    <string name="flutter.titleFont"></string>
+    <long name="flutter.flip_mode" value="1" />
+    <boolean name="flutter.reader_layout_day_show_header_line" value="false" />
+    <boolean name="flutter.selectVibrator" value="false" />
+    <string name="flutter.app_theme_mode">light</string>
+    <boolean name="flutter.paddingTopBottomLinked" value="false" />
+    <string name="flutter.reader_adv_auto_interval">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu10.0</string>
+    <string name="flutter.reader_layout_day_footer_padding_bottom">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu6.0</string>
+    <string name="flutter.reader_line_height">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu1.7</string>
+    <boolean name="flutter.readBarStyleFollowPage" value="false" />
+    <string name="flutter.reader_layout_day_margin_top">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu24.0</string>
+    <string name="flutter.sync_webdav_device_name"></string>
+    <boolean name="flutter.reader_adv_italic" value="false" />
+    <string name="flutter.reader_adv_margin_top">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu24.0</string>
+    <long name="flutter.titleBottomSpacing" value="0" />
+    <boolean name="flutter.disableReturnKey" value="false" />
+    <long name="flutter.tipFooterMiddle" value="0" />
+    <long name="flutter.pageTouchClick" value="0" />
+    <string name="flutter.reader_layout_day_margin_bottom">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu24.0</string>
+    <string name="flutter.reader_layout_day_header_padding_right">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu16.0</string>
+    <long name="flutter.screenOrientation" value="0" />
+    <long name="flutter.reader_custom_bg_color" value="4282006074" />
+    <boolean name="flutter.showReadTitleAddition" value="true" />
+    <boolean name="flutter.volumeKeyPage" value="true" />
+    <boolean name="flutter.source_rule_help_shown" value="true" />
+    <long name="flutter.reader_layout_day_textBold" value="0" />
+    <long name="flutter.reader_bg_color_index" value="0" />
+    <long name="flutter.reader_layout_day_flip_mode" value="1" />
+    <string name="flutter.reader_layout_day_header_padding_top">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu0.0</string>
+    <boolean name="flutter.reader_adv_show_progress" value="false" />
+    <long name="flutter.textBold" value="0" />
+    <boolean name="flutter.exploreMainContent" value="false" />
+    <string name="flutter.reader_adv_letter_spacing">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu0.1</string>
+    <string name="flutter.exploreMainSourceUrl">http://192.168.100.52:18090</string>
+    <long name="flutter.tipHeaderRight" value="3" />
+    <boolean name="flutter.coverRestrictRatio" value="true" />
+    <string name="flutter.app_backup_path">/storage/emulated/0/Download/legado</string>
+    <long name="flutter.pageTouchSlop" value="8" />
+    <long name="flutter.httpTtsSeedVersion" value="1" />
+    <long name="flutter.headerMode" value="0" />
+    <long name="flutter.lastBackup" value="1793395072279" />
+    <long name="flutter.doubleHorizontalPage" value="0" />
+    <boolean name="flutter.selectText" value="true" />
+    <boolean name="flutter.webdav_servers_migrated" value="true" />
+    <long name="flutter.lastCheckUpdate" value="1793395503061" />
+    <boolean name="flutter.reader_adv_letter_spacing_migrated" value="true" />
+    <string name="flutter.reader_layout_day_footer_padding_left">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu16.0</string>
+    <boolean name="flutter.paddingDisplayCutouts" value="false" />
+    <boolean name="flutter.crash_last_crash" value="true" />
+    <long name="flutter.reader_adv_center_action" value="3" />
+    <boolean name="flutter.noAnimScrollPage" value="false" />
+    <string name="flutter.reader_layout_day_margin_right">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu20.0</string>
+    <long name="flutter.tipHeaderMiddle" value="0" />
+    <boolean name="flutter.mouseWheelPage" value="true" />
+    <boolean name="flutter.reader_layout_day_show_footer_line" value="true" />
+    <boolean name="flutter.sliderVibrator" value="false" />
+    <long name="flutter.tipHeaderLeft" value="2" />
+    <long name="flutter.tipFooterLeft" value="7" />
+    <long name="flutter.titleMode" value="0" />
+    <boolean name="flutter.reader_adv_show_time" value="false" />
+    <string name="flutter.reader_theme_current_id">theme-1793292014848143-35</string>
+    <boolean name="flutter.remote_servers_migrated" value="true" />
+    <string name="flutter.reader_adv_margin_left">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu20.0</string>
+    <boolean name="flutter.hideStatusBar" value="false" />
+    <long name="flutter.rssSourceVersion" value="6" />
+    <long name="flutter.reader_adv_right_action" value="2" />
+</map>

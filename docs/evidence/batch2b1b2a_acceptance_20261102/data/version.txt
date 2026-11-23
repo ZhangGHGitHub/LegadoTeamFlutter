@@ -1,0 +1,4 @@
+    versionCode=437 minSdk=24 targetSdk=36
+    versionName=2.0.436
+    lastUpdateTime=2026-11-02 20:09:39
+      firstInstallTime=2026-11-01 00:32:58

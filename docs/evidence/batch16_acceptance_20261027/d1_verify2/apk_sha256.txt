@@ -1,0 +1,1 @@
+2efca8dc04a175480630a75c11fb649aeabe2efa8e2a91adeb173b29363ff1df *flutter_legado/build/app/outputs/flutter-apk/app-release.apk

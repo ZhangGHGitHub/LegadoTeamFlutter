@@ -1,0 +1,1 @@
+{"uploadUrl":"http://127.0.0.1:18080/upload,{\"body\":{\"file\":\"fileRequest\"}}","downloadUrlRule":"$.url","summary":"验收","compress":false}

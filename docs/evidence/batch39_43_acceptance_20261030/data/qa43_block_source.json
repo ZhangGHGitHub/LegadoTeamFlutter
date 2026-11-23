@@ -1,0 +1,18 @@
+{
+ "bookSourceUrl": "https://qa43-block.example.com/source",
+ "bookSourceName": "QA43拦截源",
+ "bookSourceGroup": "QA43",
+ "bookSourceType": 0,
+ "enabled": true,
+ "enabledExplore": true,
+ "loginUi": "{\"version\":2}",
+ "loginUrl": "https://qa43-block.example.com/login",
+ "mainJs": "function loginUi(state) {\n  return java.startBrowser('https://qa43-block.example.com/login', 'QA43 登录');\n}\nfunction loginAction(action, state, form) {\n  return {state: state};\n}",
+ "searchUrl": "https://qa43-block.example.com/search?q={{key}}",
+ "ruleSearch": {
+  "bookList": "$..books[*]",
+  "name": "$.name",
+  "author": "$.author",
+  "bookUrl": "$.url"
+ }
+}

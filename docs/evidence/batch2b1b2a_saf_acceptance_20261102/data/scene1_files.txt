@@ -1,0 +1,8 @@
+total 28
+drwxrwx--x 5 u0_a66 u0_a66 4096 2026-11-02 21:19 .
+drwx------ 7 u0_a66 u0_a66 4096 2026-11-02 20:51 ..
+drwx------ 2 u0_a66 u0_a66 4096 2026-11-02 20:51 bottomBarSkins
+-rw------- 1 u0_a66 u0_a66   24 2026-11-02 21:17 profileInstalled
+drwx------ 3 u0_a66 u0_a66 4096 2026-11-02 21:19 theme_backgrounds
+drwx------ 2 u0_a66 u0_a66 4096 2026-11-02 20:51 tts_cache
+/data/data/io.legado.flutter_legado/files/theme_backgrounds/large_light/d5935fa607fe0f960879a3ca1a3c54ec.png

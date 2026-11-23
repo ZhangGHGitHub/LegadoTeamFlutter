@@ -1,0 +1,25 @@
+user_version = 116
+books = 1
+chapters = 6
+cached = 6
+rules = 7
+Traceback (most recent call last):
+  File "D:\OH-WorkSpace\LegadoTeam\legado\tmp_debug\device_acceptance_20261028_batch34\seed_batch34.py", line 150, in <module>
+    for row in c.execute('SELECT "index", title, length(content) FROM cached_chapters WHERE book_url=? ORDER BY chapter_index', (BOOK,)):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+sqlite3.OperationalError: no such column: title
+chapter (0, '第1章 基础渲染', 472)
+chapter (1, '第2章 分页对照', 1572)
+chapter (2, '第3章 重叠优先级', 284)
+chapter (3, '第4章 正则与大小写', 263)
+chapter (4, '第5章 长章性能', 343106)
+chapter (5, '第6章 回归阅读', 301)
+rule (3, 'QA34重叠蓝(高)', 30, '重叠', '{"fill":4280391411,"textColor":0,"bold":false,"italic":false}')
+rule (4, 'QA34重叠绿(低)', 20, '重叠命中区域测试', '{"fill":4283215696,"textColor":0,"bold":false,"italic":false}')
+rule (2, 'QA34基础规则', 10, '关键词测试', '{"fill":4294967040,"textColor":4294901760,"bold":false,"italic":false,"underline":{"kind":"SOLID","color":0,"width":1.5,"distance":0}}')
+rule (5, 'QA34正则规则', 5, '关键词\\w*', '{"fill":4294940672,"textColor":0,"bold":false,"italic":false}')
+rule (6, 'QA34空规则', 5, '', '{"fill":4288423856,"textColor":0,"bold":false,"italic":false}')
+rule (7, 'QA34非法正则', 5, '(', '{"fill":4288423856,"textColor":0,"bold":false,"italic":false}')
+rule (8, 'QA34大小写规则', 5, 'KeyWord', '{"fill":4288423856,"textColor":0,"bold":false,"italic":false}')
+rule (1, 'QA26', 0, 'QA26', '{"textColor":4294630099}')
+bytes total cached: 1008690

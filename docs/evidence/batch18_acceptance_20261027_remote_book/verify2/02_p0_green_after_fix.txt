@@ -1,0 +1,5 @@
+=== P0 绿测试（修复后）: cargo test -p legado-ffi test_webdav_list_dir_loopback_runtime_alive ===
+date: 2026-10-27 11:50:45
+running 1 test
+test api::webdav_api::tests::test_webdav_list_dir_loopback_runtime_alive ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 563 filtered out; finished in 0.00s

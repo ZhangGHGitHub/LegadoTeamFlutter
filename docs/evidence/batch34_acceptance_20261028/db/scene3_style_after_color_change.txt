@@ -1,0 +1,1 @@
+2|QA34基础规则|{"fill":4294967040,"textColor":4293970317,"bold":false,"italic":false,"underline":{"kind":"SOLID","color":0,"width":1.5,"distance":0}}

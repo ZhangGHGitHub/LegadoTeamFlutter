@@ -1,0 +1,7 @@
+[package]
+name = "fixture_gen"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sevenz-rust2 = { version = "0.24.1", default-features = false, features = ["compress"] }

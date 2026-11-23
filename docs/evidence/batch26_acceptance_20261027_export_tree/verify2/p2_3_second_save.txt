@@ -1,0 +1,15 @@
+== pid ==
+8190
+== file ==
+-rwxrwxrwx 1 root root 1710 2026-10-28 00:58 /sdcard/Download/legado/bookSource_批25口令源 (1).json
+-rwxrwxrwx 1 root root 1710 2026-10-28 01:02 /sdcard/Download/legado/bookSource_批25口令源 (2).json
+-rwxrwxrwx 1 root root 1710 2026-10-28 01:03 /sdcard/Download/legado/bookSource_批25口令源 (3).json
+-rwxrwxrwx 1 root root 1710 2026-10-28 12:25 /sdcard/Download/legado/bookSource_批25口令源 (4).json
+-rwxrwxrwx 1 root root 1710 2026-10-28 12:26 /sdcard/Download/legado/bookSource_批25口令源 (5).json
+-rwxrwxrwx 1 root root 1710 2026-10-28 00:57 /sdcard/Download/legado/bookSource_批25口令源.json
+== logcat ==
+--------- beginning of main
+10-28 12:26:23.034  8190  8320 I SaveFileBridge: 目录树建文件：tree=content://com.android.externalstorage.documents/tree/primary%3ADownload%2Flegado, doc=content://com.android.externalstorage.documents/tree/primary%3ADownload%2Flegado/document/primary%3ADownload%2Flegado%2FbookSource_%E6%89%B925%E5%8F%A3%E4%BB%A4%E6%BA%90%20(5).json, name=bookSource_批25口令源.json
+10-28 12:26:23.050  8190  8320 I SaveFileBridge: 目录树写入成功：uri=content://com.android.externalstorage.documents/tree/primary%3ADownload%2Flegado/document/primary%3ADownload%2Flegado%2FbookSource_%E6%89%B925%E5%8F%A3%E4%BB%A4%E6%BA%90%20(5).json, name=bookSource_批25口令源 (5).json, display=下载/legado
+== top activity ==
+    topResumedActivity=ActivityRecord{148428975 u0 io.legado.flutter_legado/io.legado.flutter.MainActivity t698}

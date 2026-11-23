@@ -1,0 +1,7 @@
+677072864dabbdaf7cb072982399594f53abf6502f25e00d60d03987619d29dd  /data/data/io.legado.flutter_legado/app_flutter/legado.db
+0
+total 280
+drwxrwx--x  2 u0_a62 u0_a62   4096 2026-10-28 00:02 .
+drwx------ 10 u0_a62 u0_a62   4096 2026-10-27 19:12 ..
+-rw-------  1 u0_a62 u0_a62 274432 2026-10-28 00:02 legado.db
+fixtures removed

@@ -1,0 +1,1 @@
+{"reverseToc":false,"reverseTocDisplay":true,"reSegment":false,"delTag":0,"splitLongChapter":true,"readSimulating":false,"dailyChapters":3,"openCredits":0,"closeCredits":0,"playMode":0,"playSpeed":1.0,"useGlobalAudioSkip":false}

@@ -1,0 +1,19 @@
+{
+  "type": "highlightRule",
+  "rules": [
+    {
+      "id": 2,
+      "uuid": "54b32a35-448f-4a25-92bb-369a72db86f9",
+      "name": "验收高亮",
+      "pattern": "关键词",
+      "isRegex": false,
+      "applyToTitle": true,
+      "scope": null,
+      "isEnabled": true,
+      "style": "{\"textColor\":4294630099}",
+      "timeoutMillisecond": 3000,
+      "applyToBody": true,
+      "order": 0
+    }
+  ]
+}

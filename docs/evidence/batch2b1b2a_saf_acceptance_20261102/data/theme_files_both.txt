@@ -1,0 +1,2 @@
+/data/data/io.legado.flutter_legado/files/theme_backgrounds/large_light/d5935fa607fe0f960879a3ca1a3c54ec.png
+/data/data/io.legado.flutter_legado/files/theme_backgrounds/large_dark/b8bf21a7c320cc4d978e24c8db52f280.png

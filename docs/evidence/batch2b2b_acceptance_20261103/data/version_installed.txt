@@ -1,0 +1,4 @@
+    versionCode=443 minSdk=24 targetSdk=36
+    versionName=2.0.442
+package:/data/app/~~fO2t1aVtT5GSH9nP9nZCaQ==/io.legado.flutter_legado-fl6QExl4jFnqoqOoZ-10zw==/base.apk
+4041be1fc1c1a18e710ef05fcc555958aa80dea1f84208d79003eb09b86fde49  /data/app/~~fO2t1aVtT5GSH9nP9nZCaQ==/io.legado.flutter_legado-fl6QExl4jFnqoqOoZ-10zw==/base.apk

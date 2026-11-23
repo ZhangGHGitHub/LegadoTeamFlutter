@@ -1,0 +1,2 @@
+-rwxrwxrwx 1 root root       409 2026-10-27 05:55 HighlightRules.json
+-rwxrwxrwx 1 root root      2100 2026-10-27 06:37 bookSource_QA本地音频B2.json

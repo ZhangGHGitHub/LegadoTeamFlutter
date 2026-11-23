@@ -1,0 +1,11 @@
+=== 场景4 正确密码恢复后 09:50:17 ===
+servers|1
+cookies|219
+caches|57
+book_sources|535
+--- servers
+-1|验收DAV|WEBDAV|{"url":"https://dav.example/"}
+--- cookie example.com
+example.com|sid=abc; theme=dark
+--- caches
+sourceVariable_demo|v1|0

@@ -1,0 +1,17 @@
+{
+  "version": 3,
+  "backupTime": 1793070000000,
+  "books": [],
+  "servers": [
+    {
+      "id": -1,
+      "name": "默认 WebDAV",
+      "type": "WEBDAV",
+      "config": "{\"url\": \"http://192.168.100.52:18081/dav/\", \"username\": \"u\", \"password\": \"p\"}",
+      "sortNumber": 0
+    }
+  ],
+  "appPrefs": {
+    "remote_servers": "[{\"id\": 123456, \"name\": \"旧偏好服务器\", \"url\": \"http://192.168.100.52:18081/dav/\", \"username\": \"u\", \"password\": \"legacy-pass\"}, {\"id\": -1, \"name\": \"旧默认不应迁移\", \"url\": \"http://127.0.0.1:9/should-not-migrate/\", \"username\": \"x\", \"password\": \"y\"}]"
+  }
+}

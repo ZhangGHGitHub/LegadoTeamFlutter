@@ -1,0 +1,24 @@
+{
+  "type": "legado.readerTheme",
+  "schema": 1,
+  "id": "theme-1793291459481402-3",
+  "name": "QA38_BOM导入",
+  "style": {
+    "fontSize": 23.0,
+    "lineHeight": 2.1,
+    "backgroundColor": "#FF7A4E2A",
+    "textColor": "#FFFFF4E0",
+    "fontFamily": "",
+    "titleFont": "",
+    "letterSpacing": 0.3,
+    "paragraphIndent": 1,
+    "paragraphSpacing": 8.0,
+    "marginTop": 30.0,
+    "marginBottom": 30.0,
+    "marginLeft": 16.0,
+    "marginRight": 16.0,
+    "textBold": 0,
+    "italic": false,
+    "bgImage": ""
+  }
+}

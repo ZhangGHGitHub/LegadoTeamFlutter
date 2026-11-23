@@ -1,0 +1,15 @@
+total 560
+drwxrwx--x  3 u0_a66 u0_a66   4096 2026-11-03 20:38 .
+drwx------ 10 u0_a66 u0_a66   4096 2026-11-03 20:40 ..
+drwx------  2 u0_a66 u0_a66   4096 2026-11-03 01:34 backup
+-rw-------  1 u0_a66 u0_a66   9655 2026-11-03 20:41 crash_log.txt
+-rw-------  1 u0_a66 u0_a66 327680 2026-11-03 20:36 legado.db
+-rw-------  1 u0_a66 u0_a66  32768 2026-11-03 20:40 legado.db-shm
+-rw-------  1 u0_a66 u0_a66 181312 2026-11-03 20:40 legado.db-wal
+===
+3.44.3 2024-03-24 21:15:01 d68fb8b5dbb8305e00d2dd14d8fe6b3d9f67e2459102ff160d956a6b75ddc18e (64-bit)
+Error: in prepare, no such column: id
+  select id,name,book_type,latest_chapter_title,total_chapter_num from books;
+         ^--- error here
+Error: in prepare, no such table: rss_sources
+1

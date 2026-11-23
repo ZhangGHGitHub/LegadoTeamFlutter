@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <boolean name="flutter.overrideBaseCardCornerRadius" value="true" />
+    <string name="flutter.app_theme_mode">light</string>
+    <long name="flutter.itemDividerColor" value="0" />
+    <long name="flutter.lastBackup" value="1793544896108" />
+    <long name="flutter.lastCheckUpdate" value="1793544901084" />
+    <long name="flutter.baseCardBorderColorNight" value="4281558783" />
+    <boolean name="flutter.remote_servers_migrated" value="true" />
+    <long name="flutter.baseCardBorderWidth" value="3" />
+    <long name="flutter.baseCardCornerRadius" value="0" />
+    <boolean name="flutter.enableItemDivider" value="true" />
+    <long name="flutter.itemDividerLength" value="50" />
+    <long name="flutter.itemDividerWidth" value="1" />
+    <long name="flutter.baseCardBorderColor" value="4294914918" />
+    <boolean name="flutter.disableSplicedColumnGroupCornerRadius" value="true" />
+    <boolean name="flutter.overrideBaseCardBorder" value="true" />
+</map>

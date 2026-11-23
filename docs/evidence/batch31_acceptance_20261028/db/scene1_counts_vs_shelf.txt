@@ -1,0 +1,6 @@
+book | QA批31临时书 | http://qa.local/a | 1024
+book | QA批31书A1 | http://qa.local/a | 0
+book | QA批31书A2 | http://qa.local/a | 0
+book | QA批31书B1 | http://qa.local/b | 0
+origin_count | http://qa.local/a | 2
+origin_count | http://qa.local/b | 1

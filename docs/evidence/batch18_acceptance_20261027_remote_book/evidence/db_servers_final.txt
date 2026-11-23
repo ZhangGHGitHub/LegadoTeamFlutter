@@ -1,0 +1,3 @@
+-1|默认 WebDAV|WEBDAV|0|{"url": "http://192.168.100.52:18081/dav/", "username": "u", "password": "p"}
+123456|旧偏好服务器|WEBDAV|0|{"url":"http://192.168.100.52:18081/dav/","username":"u","password":"p"}
+123456789|恢复可见性|WEBDAV|0|{"url": "http://127.0.0.1:18081/dav/", "username": "u", "password": "p"}

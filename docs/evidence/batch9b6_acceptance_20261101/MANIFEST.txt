@@ -1,0 +1,85 @@
+# batch9b6_acceptance_20261101 <- tmp_debug/device_acceptance_20261101_batch9b6
+# action	bytes	source_rel	note
+copy	1894	data/locks.py	1027a50df9e226bc8913873fabc62e682fc1b132433985e0d6a5ce57dff5b65e
+copy	169	data/qa9b6.txt	928de1b5a0e5bed28c120e0c5836b22d58a2bd792b0e484b02439bbcfa5f6860
+copy	880	data/s5_probe.sh	bb986ac5ea60d94fbc3656daf6db121b906876b2bfffee7f1e5f98c08f462358
+copy	11283	data/ui_current.xml	7f64e00c9d265b2012a0362d43d853e64d94cc5307c06946661587c95565f9db
+copy	11285	data/ui_launch.xml	1c16472ec99ea625e06d29b2e5062b07185938356786894014e0792e31b0d0a2
+copy	3769	data/uia.py	6f3600333ab8ccc6dbd42b8a5f377d7f866cab3d2524d077f1d44420444d802f
+copy	75277	shots/00_launch.png	408b1c5d70d37f191ec52af0d3116640b791ad1b8c2e8d7bfde81125a46f5a9d
+copy	165192	shots/01_wakelock_on.png	51c039558ce7d70fc0d0897a354f3accd57946c7792a2ce22005b8bc8966317f
+copy	138632	shots/02_webservice_running.png	c37eb70265676e0493747b0ceb436829ce8784b691f314e24c7785a82190ddb5
+copy	186716	shots/03_wakelock_off_running.png	ac3712e17ef1c0c724fb834543748e1be34df923e39e828d6b6a5007dbc3e950
+copy	72219	shots/04_rotate_landscape.png	8fe3db9447593250aadcc8702f1b59194bd193e01f771b3553e286a946bc3cdb
+copy	71832	shots/05_rotate_portrait.png	22798d19cd8460806d92216f2363a58b0639b67a90ad2a56527577a3ba515358
+copy	71800	shots/06_after_rotate_state.png	a7e13c0ecd07076df46a1dde3a26678d34074ef7914db37e6548752d13b4b5d6
+copy	74363	shots/07_launcher1_reopened.png	c5041b2e4477636aa67571071dd20c86c24d15e85f802b9bd07b49038d2fbc69
+copy	137992	shots/08_launcher1_my_reconcile.png	160916c2605d8d79611516bcc201d88f059ae0ac7c5e3107273625d28c606ab1
+copy	75168	shots/09_wake_after_lock.png	c03c64ee942ad2b8d1ad570fead574b9dc9ce3afbded98fbeebf9ecf8d330f36
+copy	75168	shots/10_back_foreground.png	c03c64ee942ad2b8d1ad570fead574b9dc9ce3afbded98fbeebf9ecf8d330f36
+copy	74360	shots/11_reader_ch1.png	2d937f5c15bcbf71b2c413f81f847f1cfc01a8a0621c8deebb224c482df0a334
+copy	24394	shots/12_reader_ch2.png	fae9ca4e3bc584affb2b6c981e01ce7415ec71559dbb1f9cb5f9d4eb9049bc36
+copy	25179	shots/13_shelf_after_reading.png	4998aff78c2e49f62f10c5bf59cd80cf7ebe3b9952842bb1f1afda29868b4187
+copy	145490	shots/14_cold_start_after_forcestop.png	cb75891e24cb3707f91ea5e120758529a8903b56877dd8d7a794d1575992e4a0
+copy	75084	shots/15_clean_empty_shelf.png	09245952eb721b2a46dce5bec0c0fe9f2f8c075f972a3ee1822327c765adc504
+discard-log	4034402	logcat/final_session_9b6.log	
+discard-log	1077445	logcat/full_session_9b6.log	
+discard-log	1550	logcat/s5_lock_screen_series.log	
+discard-log-txt	65113	logcat/netpolicy_background.txt	
+discard-log-txt	65138	logcat/netpolicy_foreground.txt	
+discard-log-txt	65035	logcat/netpolicy_screenoff_verify.txt	
+discard-log-txt	157923	logcat/power_s1_on.txt	
+discard-log-txt	160298	logcat/power_s1_running.txt	
+discard-log-txt	160173	logcat/power_s2_cycle1_off.txt	
+discard-log-txt	160294	logcat/power_s2_cycle1_on.txt	
+discard-log-txt	160176	logcat/power_s2_cycle2_off.txt	
+discard-log-txt	160293	logcat/power_s2_cycle2_on.txt	
+discard-log-txt	160174	logcat/power_s2_pref_on_stopped.txt	
+discard-log-txt	160099	logcat/power_s2_prefoff_running.txt	
+discard-log-txt	160172	logcat/power_s2_service_stopped.txt	
+discard-log-txt	160101	logcat/power_s2_switch_off.txt	
+discard-log-txt	160296	logcat/power_s2_switch_on_again.txt	
+discard-log-txt	160304	logcat/power_s3_icon_switch_home.txt	
+discard-log-txt	160297	logcat/power_s3_landscape.txt	
+discard-log-txt	160304	logcat/power_s3_launcher1_reconcile.txt	
+discard-log-txt	160304	logcat/power_s3_launcher1_reopened.txt	
+discard-log-txt	160302	logcat/power_s3_launcher6_reopened.txt	
+discard-log-txt	160230	logcat/power_s3_my_reenter.txt	
+discard-log-txt	160298	logcat/power_s3_portrait.txt	
+discard-log-txt	160293	logcat/power_s3_started.txt	
+discard-log-txt	160152	logcat/power_s4_after_forcestop.txt	
+discard-log-txt	160248	logcat/power_s4_before_forcestop.txt	
+discard-log-txt	160194	logcat/power_s4_cold_start_no_service.txt	
+discard-log-txt	160248	logcat/power_s7_reading.txt	
+discard-log-txt	160313	logcat/power_s7_restart_service.txt	
+discard-log-txt	160193	logcat/power_s8_final_clean.txt	
+discard-log-txt	160196	logcat/power_s8_service_stopped.txt	
+discard-log-txt	157714	logcat/power_screenoff_verify.txt	
+discard-log-txt	162681	logcat/processes_s5_screenoff.txt	
+discard-log-txt	678336	logcat/wifi_baseline.txt	
+discard-log-txt	695199	logcat/wifi_s1_on.txt	
+discard-log-txt	718522	logcat/wifi_s1_running.txt	
+discard-log-txt	718406	logcat/wifi_s2_cycle1_off.txt	
+discard-log-txt	718148	logcat/wifi_s2_cycle1_on.txt	
+discard-log-txt	714059	logcat/wifi_s2_cycle2_off.txt	
+discard-log-txt	714108	logcat/wifi_s2_cycle2_on.txt	
+discard-log-txt	713054	logcat/wifi_s2_pref_on_stopped.txt	
+discard-log-txt	713724	logcat/wifi_s2_prefoff_running.txt	
+discard-log-txt	717995	logcat/wifi_s2_service_stopped.txt	
+discard-log-txt	718709	logcat/wifi_s2_switch_off.txt	
+discard-log-txt	718324	logcat/wifi_s2_switch_on_again.txt	
+discard-log-txt	740566	logcat/wifi_s3_icon_switch_home.txt	
+discard-log-txt	728705	logcat/wifi_s3_landscape.txt	
+discard-log-txt	733664	logcat/wifi_s3_launcher1_reconcile.txt	
+discard-log-txt	740527	logcat/wifi_s3_launcher1_reopened.txt	
+discard-log-txt	746360	logcat/wifi_s3_launcher6_reopened.txt	
+discard-log-txt	739044	logcat/wifi_s3_my_reenter.txt	
+discard-log-txt	738855	logcat/wifi_s3_portrait.txt	
+discard-log-txt	717841	logcat/wifi_s3_started.txt	
+discard-log-txt	737568	logcat/wifi_s4_after_forcestop.txt	
+discard-log-txt	730634	logcat/wifi_s4_before_forcestop.txt	
+discard-log-txt	742013	logcat/wifi_s4_cold_start_no_service.txt	
+discard-log-txt	731446	logcat/wifi_s7_reading.txt	
+discard-log-txt	742076	logcat/wifi_s7_restart_service.txt	
+discard-log-txt	736234	logcat/wifi_s8_final_clean.txt	
+discard-log-txt	742031	logcat/wifi_s8_service_stopped.txt	

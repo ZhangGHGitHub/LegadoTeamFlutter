@@ -1,0 +1,2 @@
+before(旧实现): {"count":0,"actions":[]}
+after(修复后): {"count":2,"actions":[{"message":"RED_LOG","action":"log"},{"message":"RED_TOAST","long":false,"action":"toast"}]}

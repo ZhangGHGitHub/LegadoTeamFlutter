@@ -1,0 +1,8 @@
+0|id|INTEGER|0||1
+1|book_url|TEXT|1||0
+2|chapter_index|INTEGER|1||0
+3|chapter_title|TEXT|1|''|0
+4|chapter_url|TEXT|1||0
+5|content|TEXT|1|''|0
+6|cached_at|INTEGER|1||0
+7|size_bytes|INTEGER|1|0|0

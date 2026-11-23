@@ -1,0 +1,1 @@
+/data/data/io.legado.flutter_legado/app_flutter/books/dav_legacy_test.txt|DAV旧前缀测试书|dav:http://127.0.0.1:18081/dav/books/txt-sample.txt|txt-sample.txt|0

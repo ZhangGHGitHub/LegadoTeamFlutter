@@ -1,0 +1,6 @@
+== before force-stop ==
+7927
+== after force-stop ==
+Starting: Intent { cmp=io.legado.flutter_legado/io.legado.flutter.MainActivity }
+== after restart ==
+8190

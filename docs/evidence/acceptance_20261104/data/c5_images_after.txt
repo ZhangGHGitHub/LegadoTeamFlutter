@@ -1,0 +1,5 @@
+total 16
+drwxrwsrwx 2 u0_a66 u0_a66 4096 2026-11-03 23:05 .
+drwxrwsrwx 3 u0_a66 u0_a66 4096 2026-11-03 23:05 ..
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 23:05 keep.png
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 23:05 outside.png

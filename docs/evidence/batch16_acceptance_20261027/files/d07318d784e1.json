@@ -1,0 +1,11 @@
+{
+  "from": "highlightRule.json",
+  "meta": {
+    "name": "file",
+    "filename": "highlightRule.json",
+    "content_type": "application/json",
+    "size": 409,
+    "sha1": "d07318d784e11b5abe21f536a1edfde2f06fb87d",
+    "head256": "{\n  \"type\": \"highlightRule\",\n  \"rules\": [\n    {\n      \"id\": 1,\n      \"uuid\": \"54b32a35-448f-4a25-92bb-369a72db86f9\",\n      \"name\": \"验收高亮\",\n      \"pattern\": \"关键词\",\n      \"isRegex\": false,\n      \"applyToTitle\": true,\n      \"scope\": null,\n      "
+  }
+}

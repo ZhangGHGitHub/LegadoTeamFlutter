@@ -1,0 +1,6 @@
+=== 批18c 复验安装包身份（最终构建） ===
+host apk: 38645592  Stored 38645592   0% 1981-01-01 01:01 3b992d13  lib/x86_64/liblegado_ffi.so
+device apk: 38645592  Stored 38645592   0% 1981-01-01 01:01 3b992d13  lib/x86_64/liblegado_ffi.so
+jniLibs md5: 54023907d41acb3cc01d0850e657061e *flutter_legado/android/app/src/main/jniLibs/x86_64/liblegado_ffi.so
+versionName/Code:     versionCode=395 minSdk=24 targetSdk=36     versionName=2.0.394 
+git HEAD: 9e305a0efc

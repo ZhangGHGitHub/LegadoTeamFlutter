@@ -57,6 +57,14 @@ scripts/_tmp_*
 *.db-wal
 !**/test/fixtures/**/*.db
 !**/tests/fixtures/**/*.db
+# 设备验收证据里的 DB 升级前后快照是唯一副本（tmp_debug 原目录已删除），必须入库。
+# 仅限 `*acceptance*` 归档目录，避免把其它「保留在磁盘不入库」的 DB 一并解禁。
+!docs/evidence/*acceptance*/*.db
+!docs/evidence/*acceptance*/**/*.db
+!docs/evidence/*acceptance*/*.db-shm
+!docs/evidence/*acceptance*/**/*.db-shm
+!docs/evidence/*acceptance*/*.db-wal
+!docs/evidence/*acceptance*/**/*.db-wal
 
 # 本地调试证据与截图（不入库）
 docs/gate_evidence_*/

@@ -1,0 +1,35 @@
+        bookUrl = /storage/emulated/0/Download/qa37_gbk.txt
+        charset = GBK
+totalChapterNum = 3
+durChapterTitle = 全文
+durChapterIndex = 0
+     readConfig = {"reverseTocDisplay":true,"tocExpanded":true,"manualReplaceRuleIds":[7,8],"useGlobalAudioSkip":true}
+  lastCheckTime = 1793300000000
+          order = 2
+
+        bookUrl = /storage/emulated/0/Download/qa37_utf8.txt
+        charset = 
+totalChapterNum = 0
+durChapterTitle = 
+durChapterIndex = 0
+     readConfig = {"reverseTocDisplay":true,"tocExpanded":true,"manualReplaceRuleIds":[7,8],"useGlobalAudioSkip":true}
+  lastCheckTime = 1793300000000
+          order = 3
+
+        bookUrl = /storage/emulated/0/Download/qa37_utf8.epub
+        charset = 
+totalChapterNum = 2
+durChapterTitle = Chapter 1
+durChapterIndex = 0
+     readConfig = {"reverseTocDisplay":true,"tocExpanded":true,"manualReplaceRuleIds":[7,8],"useGlobalAudioSkip":true}
+  lastCheckTime = 1793300000000
+          order = 4
+
+        bookUrl = /storage/emulated/0/Download/qa37_dav.epub
+        charset = 
+totalChapterNum = 0
+durChapterTitle = 
+durChapterIndex = 0
+     readConfig = {"reverseTocDisplay":true,"tocExpanded":true,"manualReplaceRuleIds":[7,8],"useGlobalAudioSkip":true}
+  lastCheckTime = 1793300000000
+          order = 5

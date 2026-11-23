@@ -1,0 +1,55 @@
+Applications Memory Usage (in Kilobytes):
+Uptime: 493350898 Realtime: 493350898
+
+** MEMINFO in pid 36321 [io.legado.flutter_legado] **
+                   Pss  Private  Private     Swap      Rss     Heap     Heap     Heap
+                 Total    Dirty    Clean    Dirty    Total     Size    Alloc     Free
+                ------   ------   ------   ------   ------   ------   ------   ------
+  Native Heap    20093    20008        0        0    22720    34152    28595     1836
+  Dalvik Heap     1888     1560        0        0     9216     4838     2419     2419
+ Dalvik Other      980      960        0        0     1640                           
+        Stack      836      836        0        0      844                           
+       Ashmem       33        4        0        0      636                           
+    Other dev       16        0       16        0      412                           
+     .so mmap     5319      728     2544        0    36028                           
+    .jar mmap     8272        0     2252        0    37688                           
+    .apk mmap    35819     1632    33832        0    36916                           
+    .ttf mmap     9244        0     9072        0     9576                           
+    .dex mmap     5217        4     4920        0     5768                           
+    .oat mmap      938        0      140        0    11216                           
+    .art mmap     2033     1076        8        0    32028                           
+   Other mmap     7686       36     6568        0    10228                           
+      Unknown    23963    22144     1776        0    25160                           
+        TOTAL   122337    48988    61128        0   240076    38990    31014     4255
+ 
+ App Summary
+                       Pss(KB)                        Rss(KB)
+                        ------                         ------
+           Java Heap:     2644                          41244
+         Native Heap:    20008                          22720
+                Code:    55140                         137208
+               Stack:      836                            844
+            Graphics:        0                              0
+       Private Other:    31488
+              System:    12221
+             Unknown:                                   38060
+ 
+           TOTAL PSS:   122337            TOTAL RSS:   240076      TOTAL SWAP (KB):        0
+ 
+ Objects
+               Views:        6         ViewRootImpl:        1
+         AppContexts:        7           Activities:        1
+              Assets:        8        AssetManagers:        0
+       Local Binders:       22        Proxy Binders:       57
+       Parcel memory:        6         Parcel count:       26
+    Death Recipients:        0             WebViews:        0
+ 
+ SQL
+         MEMORY_USED:        0
+  PAGECACHE_OVERFLOW:        0          MALLOC_SIZE:        0
+ 
+ 
+ Asset Allocations
+    : 466K
+    : 15K
+    : 21K

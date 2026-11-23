@@ -1,0 +1,30 @@
+{
+  "book_c": "/data/user/0/io.legado.flutter_legado/cache/file_picker/qa_c/qa_b2c_book_c.txt",
+  "comic_url": "http://192.168.100.52:8899/comic/qa9b3",
+  "book_dir": "http___192.168.100.52_8899_comic_qa9b3_9f9d0124",
+  "image_names": [
+    "c300d464f66c2b19.png",
+    "1b7fb8fdd42f93f3.png",
+    "0604d5aed42e5748.png",
+    "0c015f3c58ef0ff1.png",
+    "b79d411a24d1b1b2.png",
+    "9d9490b7efdd3e92.png",
+    "8368c18c8ea26e9b.png",
+    "fa9a5e1dc2baac10.png",
+    "1676f4b9ed96490d.png",
+    "507397c6af39d4ee.png",
+    "52b3823caad9d29f.png",
+    "74e1f214e3014a59.png",
+    "483a32634560ed4c.png",
+    "ad881dddddb7fd3a.png",
+    "9861d35e415a67b5.png",
+    "e2119a1935580b33.png",
+    "06de5f6cdc7f13a0.png",
+    "13215ae056712b8c.png"
+  ],
+  "counts": {
+    "chapters": 18,
+    "cached": 13,
+    "images": 18
+  }
+}

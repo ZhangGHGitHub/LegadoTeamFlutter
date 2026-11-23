@@ -1,0 +1,20 @@
+Physical size: 1080x1920
+Override size: 1920x1200
+Physical density: 480
+Override density: 240
+0
+0
+  mCurrentFocus=Window{ebc5574 u0 io.legado.flutter_legado/io.legado.flutter.MainActivity}
+  mFocusedApp=ActivityRecord{21759637 u0 io.legado.flutter_legado/io.legado.flutter.MainActivity t1032}
+    versionCode=444 minSdk=24 targetSdk=36
+    versionName=2.0.443
+total 92
+drwxrwxrwx 1 root root  8192 2026-11-01 00:32 .
+drwxrwxrwx 1 root root  8192 2026-11-03 20:34 ..
+-rwxrwxrwx 1 root root     0 2026-10-27 07:45 HighlightRules (1).json
+-rwxrwxrwx 1 root root   409 2026-10-27 07:45 HighlightRules (2).json
+-rwxrwxrwx 1 root root   397 2026-10-28 01:08 HighlightRules (3).json
+-rwxrwxrwx 1 root root   409 2026-10-27 06:38 HighlightRules.json
+-rwxrwxrwx 1 root root     0 2026-10-27 07:44 bookSource_QA本地音频B2 (1).json
+-rwxrwxrwx 1 root root  2100 2026-10-27 07:44 bookSource_QA本地音频B2 (2).json
+-rwxrwxrwx 1 root root     0 2026-10-27 07:48 bookSource_QA本地音频B2 (3).json

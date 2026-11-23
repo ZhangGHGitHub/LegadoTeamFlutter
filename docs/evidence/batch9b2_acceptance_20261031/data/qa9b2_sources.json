@@ -1,0 +1,258 @@
+[
+ {
+  "bookSourceUrl": "http://192.168.100.52:18092/a",
+  "bookSourceName": "QA9B2-A",
+  "bookSourceGroup": "QA9B2",
+  "bookSourceType": 0,
+  "enabled": true,
+  "enabledExplore": false,
+  "searchUrl": "http://192.168.100.52:18092/a/search?q={{key}}",
+  "ruleSearch": {
+   "bookList": "$[*]",
+   "name": "$.name",
+   "author": "$.author",
+   "intro": "$.intro",
+   "bookUrl": "$.bookUrl",
+   "coverUrl": "$.coverUrl"
+  },
+  "ruleBookInfo": {
+   "name": "$.name",
+   "author": "$.author",
+   "intro": "$.intro",
+   "coverUrl": "$.coverUrl",
+   "tocUrl": "$.tocUrl"
+  },
+  "ruleToc": {
+   "chapterList": "$.chapters[*]",
+   "chapterName": "$.title",
+   "chapterUrl": "$.url"
+  },
+  "ruleContent": {
+   "content": "$.content"
+  }
+ },
+ {
+  "bookSourceUrl": "http://192.168.100.52:18092/b",
+  "bookSourceName": "QA9B2-B",
+  "bookSourceGroup": "QA9B2",
+  "bookSourceType": 0,
+  "enabled": true,
+  "enabledExplore": false,
+  "searchUrl": "http://192.168.100.52:18092/b/search?q={{key}}",
+  "ruleSearch": {
+   "bookList": "$[*]",
+   "name": "$.name",
+   "author": "$.author",
+   "intro": "$.intro",
+   "bookUrl": "$.bookUrl",
+   "coverUrl": "$.coverUrl"
+  },
+  "ruleBookInfo": {
+   "name": "$.name",
+   "author": "$.author",
+   "intro": "$.intro",
+   "coverUrl": "$.coverUrl",
+   "tocUrl": "$.tocUrl"
+  },
+  "ruleToc": {
+   "chapterList": "$.chapters[*]",
+   "chapterName": "$.title",
+   "chapterUrl": "$.url"
+  },
+  "ruleContent": {
+   "content": "$.content"
+  }
+ },
+ {
+  "bookSourceUrl": "http://192.168.100.52:18092/s1",
+  "bookSourceName": "QA9B2-S1",
+  "bookSourceGroup": "QA9B2",
+  "bookSourceType": 0,
+  "enabled": true,
+  "enabledExplore": false,
+  "searchUrl": "http://192.168.100.52:18092/s1/search?q={{key}}",
+  "ruleSearch": {
+   "bookList": "$[*]",
+   "name": "$.name",
+   "author": "$.author",
+   "intro": "$.intro",
+   "bookUrl": "$.bookUrl",
+   "coverUrl": "$.coverUrl"
+  },
+  "ruleBookInfo": {
+   "name": "$.name",
+   "author": "$.author",
+   "intro": "$.intro",
+   "coverUrl": "$.coverUrl",
+   "tocUrl": "$.tocUrl"
+  },
+  "ruleToc": {
+   "chapterList": "$.chapters[*]",
+   "chapterName": "$.title",
+   "chapterUrl": "$.url"
+  },
+  "ruleContent": {
+   "content": "$.content"
+  }
+ },
+ {
+  "bookSourceUrl": "http://192.168.100.52:18092/s2",
+  "bookSourceName": "QA9B2-S2",
+  "bookSourceGroup": "QA9B2",
+  "bookSourceType": 0,
+  "enabled": true,
+  "enabledExplore": false,
+  "searchUrl": "http://192.168.100.52:18092/s2/search?q={{key}}",
+  "ruleSearch": {
+   "bookList": "$[*]",
+   "name": "$.name",
+   "author": "$.author",
+   "intro": "$.intro",
+   "bookUrl": "$.bookUrl",
+   "coverUrl": "$.coverUrl"
+  },
+  "ruleBookInfo": {
+   "name": "$.name",
+   "author": "$.author",
+   "intro": "$.intro",
+   "coverUrl": "$.coverUrl",
+   "tocUrl": "$.tocUrl"
+  },
+  "ruleToc": {
+   "chapterList": "$.chapters[*]",
+   "chapterName": "$.title",
+   "chapterUrl": "$.url"
+  },
+  "ruleContent": {
+   "content": "$.content"
+  }
+ },
+ {
+  "bookSourceUrl": "http://192.168.100.52:18092/s3",
+  "bookSourceName": "QA9B2-S3",
+  "bookSourceGroup": "QA9B2",
+  "bookSourceType": 0,
+  "enabled": true,
+  "enabledExplore": false,
+  "searchUrl": "http://192.168.100.52:18092/s3/search?q={{key}}",
+  "ruleSearch": {
+   "bookList": "$[*]",
+   "name": "$.name",
+   "author": "$.author",
+   "intro": "$.intro",
+   "bookUrl": "$.bookUrl",
+   "coverUrl": "$.coverUrl"
+  },
+  "ruleBookInfo": {
+   "name": "$.name",
+   "author": "$.author",
+   "intro": "$.intro",
+   "coverUrl": "$.coverUrl",
+   "tocUrl": "$.tocUrl"
+  },
+  "ruleToc": {
+   "chapterList": "$.chapters[*]",
+   "chapterName": "$.title",
+   "chapterUrl": "$.url"
+  },
+  "ruleContent": {
+   "content": "$.content"
+  }
+ },
+ {
+  "bookSourceUrl": "http://192.168.100.52:18092/s4",
+  "bookSourceName": "QA9B2-S4",
+  "bookSourceGroup": "QA9B2",
+  "bookSourceType": 0,
+  "enabled": true,
+  "enabledExplore": false,
+  "searchUrl": "http://192.168.100.52:18092/s4/search?q={{key}}",
+  "ruleSearch": {
+   "bookList": "$[*]",
+   "name": "$.name",
+   "author": "$.author",
+   "intro": "$.intro",
+   "bookUrl": "$.bookUrl",
+   "coverUrl": "$.coverUrl"
+  },
+  "ruleBookInfo": {
+   "name": "$.name",
+   "author": "$.author",
+   "intro": "$.intro",
+   "coverUrl": "$.coverUrl",
+   "tocUrl": "$.tocUrl"
+  },
+  "ruleToc": {
+   "chapterList": "$.chapters[*]",
+   "chapterName": "$.title",
+   "chapterUrl": "$.url"
+  },
+  "ruleContent": {
+   "content": "$.content"
+  }
+ },
+ {
+  "bookSourceUrl": "http://192.168.100.52:18092/s5",
+  "bookSourceName": "QA9B2-S5",
+  "bookSourceGroup": "QA9B2",
+  "bookSourceType": 0,
+  "enabled": true,
+  "enabledExplore": false,
+  "searchUrl": "http://192.168.100.52:18092/s5/search?q={{key}}",
+  "ruleSearch": {
+   "bookList": "$[*]",
+   "name": "$.name",
+   "author": "$.author",
+   "intro": "$.intro",
+   "bookUrl": "$.bookUrl",
+   "coverUrl": "$.coverUrl"
+  },
+  "ruleBookInfo": {
+   "name": "$.name",
+   "author": "$.author",
+   "intro": "$.intro",
+   "coverUrl": "$.coverUrl",
+   "tocUrl": "$.tocUrl"
+  },
+  "ruleToc": {
+   "chapterList": "$.chapters[*]",
+   "chapterName": "$.title",
+   "chapterUrl": "$.url"
+  },
+  "ruleContent": {
+   "content": "$.content"
+  }
+ },
+ {
+  "bookSourceUrl": "http://192.168.100.52:18092/s6",
+  "bookSourceName": "QA9B2-S6",
+  "bookSourceGroup": "QA9B2",
+  "bookSourceType": 0,
+  "enabled": true,
+  "enabledExplore": false,
+  "searchUrl": "http://192.168.100.52:18092/s6/search?q={{key}}",
+  "ruleSearch": {
+   "bookList": "$[*]",
+   "name": "$.name",
+   "author": "$.author",
+   "intro": "$.intro",
+   "bookUrl": "$.bookUrl",
+   "coverUrl": "$.coverUrl"
+  },
+  "ruleBookInfo": {
+   "name": "$.name",
+   "author": "$.author",
+   "intro": "$.intro",
+   "coverUrl": "$.coverUrl",
+   "tocUrl": "$.tocUrl"
+  },
+  "ruleToc": {
+   "chapterList": "$.chapters[*]",
+   "chapterName": "$.title",
+   "chapterUrl": "$.url"
+  },
+  "ruleContent": {
+   "content": "$.content"
+  }
+ }
+]

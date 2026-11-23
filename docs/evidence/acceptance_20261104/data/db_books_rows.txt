@@ -1,0 +1,4 @@
+bookUrl                                                                                  name           type  totalChapterNum  durChapterIndex
+---------------------------------------------------------------------------------------  -------------  ----  ---------------  ---------------
+/data/user/0/io.legado.flutter_legado/cache/file_picker/1793709352092/qa_b2c_book_a.txt  qa_b2c_book_a  4096  3                0              
+/data/user/0/io.legado.flutter_legado/cache/file_picker/1793709376888/qa_b2c_book_b.txt  qa_b2c_book_b  4096  2                1              

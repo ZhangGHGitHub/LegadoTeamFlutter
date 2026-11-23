@@ -1,0 +1,21 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <long name="flutter.containerOpacity" value="100" />
+    <boolean name="flutter.overrideBaseCardCornerRadius" value="false" />
+    <string name="flutter.app_theme_mode">system</string>
+    <long name="flutter.backgroundImageBlurring" value="0" />
+    <long name="flutter.lastBackup" value="1793623215925" />
+    <boolean name="flutter.showBottomView" value="true" />
+    <long name="flutter.lastCheckUpdate" value="1793547887501" />
+    <boolean name="flutter.remote_servers_migrated" value="true" />
+    <long name="flutter.baseCardBorderWidth" value="3" />
+    <boolean name="flutter.eyeProtectionEnabled" value="false" />
+    <long name="flutter.baseCardCornerRadius" value="40" />
+    <boolean name="flutter.enableItemDivider" value="false" />
+    <long name="flutter.appColumnBackgroundOpacity" value="100" />
+    <long name="flutter.itemDividerWidth" value="3" />
+    <boolean name="flutter.enableContainerBackgroundImage" value="false" />
+    <string name="flutter.app_backup_path">/storage/emulated/0/Download/legado_qa_1102</string>
+    <boolean name="flutter.overrideBaseCardBorder" value="false" />
+    <string name="flutter.restoreIgnore">{&quot;readConfig&quot;:false,&quot;themeMode&quot;:false,&quot;themeConfig&quot;:false,&quot;coverConfig&quot;:false,&quot;bookshelfLayout&quot;:false,&quot;showRss&quot;:false,&quot;threadCount&quot;:false,&quot;localBook&quot;:false}</string>
+</map>

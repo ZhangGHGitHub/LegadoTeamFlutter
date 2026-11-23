@@ -1,0 +1,101 @@
+[
+ {
+  "bookSourceUrl": "http://192.168.100.52:18090",
+  "bookSourceName": "QA9A文书源",
+  "bookSourceGroup": "QA9A",
+  "bookSourceType": 0,
+  "enabled": true,
+  "enabledExplore": true,
+  "searchUrl": "http://192.168.100.52:18090/search?q={{key}}",
+  "ruleSearch": {
+   "bookList": "$[*]",
+   "name": "$.name",
+   "author": "$.author",
+   "bookUrl": "$.bookUrl",
+   "checkKeyWord": "QA9A"
+  },
+  "exploreUrl": "分类::http://192.168.100.52:18090/explore?page={{page}}",
+  "ruleExplore": {
+   "bookList": "$[*]",
+   "name": "$.name",
+   "author": "$.author",
+   "bookUrl": "$.bookUrl"
+  },
+  "ruleBookInfo": {
+   "name": "$.name",
+   "author": "$.author",
+   "intro": "$.intro",
+   "tocUrl": "http://192.168.100.52:18090/tocjson/QA9A文A"
+  },
+  "ruleToc": {
+   "chapterList": "$[*]",
+   "chapterName": "$.title",
+   "chapterUrl": "$.url"
+  },
+  "ruleContent": {
+   "content": "$.content"
+  }
+ },
+ {
+  "bookSourceUrl": "http://192.168.100.52:18090#manga",
+  "bookSourceName": "QA9A漫画源",
+  "bookSourceGroup": "QA9A",
+  "bookSourceType": 2,
+  "enabled": true,
+  "enabledExplore": false,
+  "searchUrl": "http://192.168.100.52:18090/manga/search?q={{key}}",
+  "ruleSearch": {
+   "bookList": "$[*]",
+   "name": "$.name",
+   "author": "$.author",
+   "bookUrl": "$.bookUrl",
+   "checkKeyWord": "QA9A"
+  },
+  "ruleBookInfo": {
+   "name": "$.name",
+   "author": "$.author",
+   "intro": "$.intro",
+   "tocUrl": "{{$.bookUrl}}/toc4"
+  },
+  "ruleToc": {
+   "chapterList": "<js>\n(function(){\n  var toc = [];\n  for (var i = 1; i <= 4; i++) {\n    toc.push({title: '话' + i, url: 'http://192.168.100.52:18090/mangacontent/QA9A漫A/' + i});\n  }\n  return JSON.stringify(toc);\n})()\n</js>",
+   "chapterName": "$.title",
+   "chapterUrl": "$.url",
+   "isVolume": ""
+  },
+  "ruleContent": {
+   "content": "",
+   "imageStyle": "FULL"
+  }
+ },
+ {
+  "bookSourceUrl": "http://192.168.100.52:18090#bad",
+  "bookSourceName": "QA9A坏章源",
+  "bookSourceGroup": "QA9A",
+  "bookSourceType": 0,
+  "enabled": true,
+  "enabledExplore": false,
+  "searchUrl": "http://192.168.100.52:18090/search?q={{key}}",
+  "ruleSearch": {
+   "bookList": "$[*]",
+   "name": "$.name",
+   "author": "$.author",
+   "bookUrl": "$.bookUrl",
+   "checkKeyWord": "QA9A"
+  },
+  "ruleBookInfo": {
+   "name": "$.name",
+   "author": "$.author",
+   "intro": "$.intro",
+   "tocUrl": "{{$.bookUrl}}/toc8bad"
+  },
+  "ruleToc": {
+   "chapterList": "<js>\n(function(){\n  var toc = [];\n  var name = java.book ? String(java.get('bookName')) : 'QA9A坏章书';\n  for (var i = 1; i <= 8; i++) {\n    toc.push({title: '第' + i + '章', url: 'http://192.168.100.52:18090/content/QA9A坏章书/' + i});\n  }\n  return JSON.stringify(toc);\n})()\n</js>",
+   "chapterName": "$.title",
+   "chapterUrl": "$.url"
+  },
+  "ruleContent": {
+   "content": "$.content"
+  }
+ }
+]

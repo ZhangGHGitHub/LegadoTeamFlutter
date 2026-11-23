@@ -1,0 +1,2 @@
+config:recordHttpLog|false
+config:directLinkUploadRule|http://192.168.100.52:8765/upload,{"method":"POST","body":{"file":"fileRequest"},"type":"multipart/form-data"}

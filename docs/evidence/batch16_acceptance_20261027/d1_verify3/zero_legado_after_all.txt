@@ -1,0 +1,2 @@
+/sdcard/Download/legado/bookSource_QA本地音频B2 (1).json
+/sdcard/Download/legado/HighlightRules (1).json

@@ -1,0 +1,6 @@
+total 20
+drwxrwsrwx 2 u0_a66 u0_a66 4096 2026-11-03 23:05 .
+drwxrwsrwx 3 u0_a66 u0_a66 4096 2026-11-03 23:04 ..
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 23:04 30f7b0cc1e84270c.jpg
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 23:04 425a06f4f803fa48.jpg
+-rw-rw-rw- 1 u0_a66 u0_a66   70 2026-11-03 23:04 9ab189680bea0015.png

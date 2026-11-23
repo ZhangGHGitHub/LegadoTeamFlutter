@@ -1,0 +1,9 @@
+x86_64 51938080 2026-11-03 22:34:50.853340800 +0800
+{"contentHash":51404204,"mode":"release","quickjs":true,"builtAt":"2026-11-03T22:34:51.2734307+08:00","rustFingerprint":"e494bfeb1927158ff7f8d25329b0f8f706ef393e27b0180f810fcbc4ebacf8c2"}
+arm64 51756336 2026-11-03 22:33:07.776718000 +0800
+{"contentHash":51404204,"mode":"release","quickjs":true,"builtAt":"2026-11-03T22:34:51.2025256+08:00","rustFingerprint":"e494bfeb1927158ff7f8d25329b0f8f706ef393e27b0180f810fcbc4ebacf8c2"}
+armv7 34378712 2026-11-03 22:34:06.697851700 +0800
+{"contentHash":51404204,"mode":"release","quickjs":false,"builtAt":"2026-11-03T22:34:51.2212536+08:00","rustFingerprint":"e494bfeb1927158ff7f8d25329b0f8f706ef393e27b0180f810fcbc4ebacf8c2"}
+5fa153afcb414bf5ec43ba35c949c79fac56f8f3488bed542d1323c5ee5d4f02 *flutter_legado/android/app/src/main/jniLibs/arm64-v8a/liblegado_ffi.so
+849760b84eb54106a515abb39f0e76701ce2d7b2f9ce963e02d5e268848a0eae *flutter_legado/android/app/src/main/jniLibs/armeabi-v7a/liblegado_ffi.so
+5c29e4dd963272bbe3355688c67adeb9e414cc33c155ba3b81a9d2a22982b68c *flutter_legado/android/app/src/main/jniLibs/x86_64/liblegado_ffi.so

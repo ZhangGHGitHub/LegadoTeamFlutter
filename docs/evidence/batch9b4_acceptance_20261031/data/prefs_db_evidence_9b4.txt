@@ -1,0 +1,38 @@
+批9b-4 prefs / Rust caches 证据（设备直读，adb shell 为 root）
+=====================================================================
+prefs 路径: /data/data/io.legado.flutter_legado/shared_prefs/FlutterSharedPreferences.xml
+caches 路径: /data/data/io.legado.flutter_legado/app_flutter/legado.db
+
+[1] 设置页保存 GlobalUA/9.9 后
+    <string name="flutter.userAgent">GlobalUA/9.9</string>
+    sqlite> select key,value from caches where key like '%userAgent%';
+    config:userAgent|GlobalUA/9.9
+
+[2] 设置页清空 UA 后
+    (FlutterSharedPreferences.xml 无 userAgent 键)
+    config:userAgent|[]        （空串，Rust set_default_user_agent 归一化为 None → 内置）
+
+[3] 设置页输入含换行值 "CtrlUA/1.0\nEvilTail" 后
+    <string name="flutter.userAgent">CtrlUA/1.0&#10;EvilTail</string>
+    select key,hex(value): config:userAgent|4374726C55412F312E300A4576696C5461696C
+    （0A = LF，原样落库；请求期被 Rust 控制字符过滤 → 内置 UA）
+
+[4] 启动同步分叉注入（app 停止时 sed 改 prefs）
+    启动前: prefs=GlobalUA/9.9；DB=4374...300A...（CtrlUA/1.0\nEvilTail）
+    冷启动日志: 21:26:35.856 I/flutter [启动] UserAgent 已同步到 Rust：GlobalUA/9.9
+    启动后 DB: config:userAgent|GlobalUA/9.9
+    请求 (21:26:46): UA=GlobalUA/9.9
+
+[5] 本地备份/恢复（场景5）
+    备份文件 legado_backup_1793453305113.json 实测 appPrefs 段:
+      {"remote_servers_migrated":true,"userAgent":"GlobalUA/9.9",...,"app_backup_path":"/storage/emulated/0/Download/legado"}
+    QA fixture qa9b4_backup_restoreUA.json: 将 appPrefs.userAgent 改为 "BackupUA/7.7"（其余原样）
+    恢复前: prefs=ChangedUA/5.5；DB=ChangedUA/5.5；请求 21:29:59 UA=ChangedUA/5.5
+    恢复后（未重启）: prefs=BackupUA/7.7；DB=BackupUA/7.7；请求 21:32:23 UA=BackupUA/7.7
+
+[6] 清理后
+    prefs: userAgent / app_backup_path / rssSourceImportUrls / lastBackup 键已删除
+    caches: config:userAgent 行已删除（余 config:recordHttpLog=false、config:autoTaskService=true 为默认）
+    books=0, book_sources=0, rssSources=4（默认源）, chapters=0
+    /sdcard/Download/legado/{legado_backup_1793453305113.json,qa9b4_backup_restoreUA.json} 已删除
+    mock 端口 18090 无监听；冷启动 UA 行显示「默认」

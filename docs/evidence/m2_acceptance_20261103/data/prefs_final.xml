@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <boolean name="flutter.overrideBaseCardCornerRadius" value="false" />
+    <long name="flutter.dictRuleVersion" value="1" />
+    <string name="flutter.app_theme_mode">system</string>
+    <long name="flutter.lastBackup" value="1793640875126" />
+    <boolean name="flutter.reader_layout_is_night" value="true" />
+    <long name="flutter.lastCheckUpdate" value="1793640880116" />
+    <boolean name="flutter.reader_adv_letter_spacing_migrated" value="true" />
+    <boolean name="flutter.brightness_mode_migrated_v1b1" value="true" />
+    <boolean name="flutter.settingsMigrated_v271" value="true" />
+    <boolean name="flutter.remote_servers_migrated" value="true" />
+    <boolean name="flutter.webServiceWakeLock" value="false" />
+    <long name="flutter.rssSourceVersion" value="6" />
+    <boolean name="flutter.enableContainerBackgroundImage" value="false" />
+    <long name="flutter.txtTocRuleVersion" value="1" />
+    <boolean name="flutter.overrideBaseCardBorder" value="false" />
+</map>

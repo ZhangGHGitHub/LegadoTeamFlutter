@@ -1,0 +1,3 @@
+bookSourceUrl         bookSourceName  bookSourceType
+--------------------  --------------  --------------
+https://qa.b2c.local  QA_B2C源         0             

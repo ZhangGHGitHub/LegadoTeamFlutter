@@ -1,0 +1,7 @@
+seed done: db/legado_after_upgrade.db
+book_sources 3
+books 4
+chapters 2
+caches 4
+rssSources 3
+rssReadRecords 3

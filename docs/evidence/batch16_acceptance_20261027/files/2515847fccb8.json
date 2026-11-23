@@ -1,0 +1,11 @@
+{
+  "from": "bookSource.json",
+  "meta": {
+    "name": "file",
+    "filename": "bookSource.json",
+    "content_type": "application/json",
+    "size": 2100,
+    "sha1": "2515847fccb88e77b1dec783a73cf43b2f3296ff",
+    "head256": "[\n  {\n    \"bookSourceUrl\": \"http://127.0.0.1:18080\",\n    \"bookSourceName\": \"QA本地音频B2\",\n    \"bookSourceGroup\": \"QA\",\n    \"bookSourceType\": 1,\n    \"bookUrlPattern\": null,\n    \"customOrder\": 0,\n    \"enabled\": true,\n    \"enabledExplore\": false,\n    \"js"
+  }
+}

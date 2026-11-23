@@ -1,0 +1,5 @@
+MISSING qa_day_red.png
+MISSING qa_day_red_3000x2000.png
+MISSING qa_night_blue_3000x2000.jpg
+MISSING qa_big_12mp_4000x3000.jpg
+MISSING qa_fake_image.png

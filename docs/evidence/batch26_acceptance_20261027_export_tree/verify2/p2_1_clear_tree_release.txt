@@ -1,0 +1,32 @@
+== logcat ==
+--------- beginning of main
+10-28 12:26:57.065  8190  8381 E SaveFileBridge: 目录树保存失败（TREE_UNAVAILABLE）：tree=content://com.android.externalstorage.documents/tree/primary%3ADownload%2Flegado, doc=null, detail=Missing file for primary:Download/legado at /storage/emulated/0/Download/legado
+10-28 12:26:57.065  8190  8381 E SaveFileBridge: java.io.FileNotFoundException: Missing file for primary:Download/legado at /storage/emulated/0/Download/legado
+10-28 12:26:57.065  8190  8381 E SaveFileBridge: 	at java.lang.reflect.Constructor.newInstance0(Native Method)
+10-28 12:26:57.065  8190  8381 E SaveFileBridge: 	at java.lang.reflect.Constructor.newInstance(Constructor.java:343)
+10-28 12:26:57.065  8190  8381 E SaveFileBridge: 	at android.os.ParcelableException.readFromParcel(ParcelableException.java:56)
+10-28 12:26:57.065  8190  8381 E SaveFileBridge: 	at android.os.ParcelableException$1.createFromParcel(ParcelableException.java:82)
+10-28 12:26:57.065  8190  8381 E SaveFileBridge: 	at android.os.ParcelableException$1.createFromParcel(ParcelableException.java:79)
+10-28 12:26:57.065  8190  8381 E SaveFileBridge: 	at android.os.Parcel.readParcelableInternal(Parcel.java:5094)
+10-28 12:26:57.065  8190  8381 E SaveFileBridge: 	at android.os.Parcel.readParcelable(Parcel.java:5076)
+10-28 12:26:57.065  8190  8381 E SaveFileBridge: 	at android.os.Parcel.createExceptionOrNull(Parcel.java:3256)
+10-28 12:26:57.065  8190  8381 E SaveFileBridge: 	at android.os.Parcel.createException(Parcel.java:3245)
+10-28 12:26:57.065  8190  8381 E SaveFileBridge: 	at android.os.Parcel.readException(Parcel.java:3228)
+10-28 12:26:57.065  8190  8381 E SaveFileBridge: 	at android.database.DatabaseUtils.readExceptionFromParcel(DatabaseUtils.java:201)
+10-28 12:26:57.065  8190  8381 E SaveFileBridge: 	at android.database.DatabaseUtils.readExceptionFromParcel(DatabaseUtils.java:153)
+10-28 12:26:57.065  8190  8381 E SaveFileBridge: 	at android.content.ContentProviderProxy.call(ContentProviderNative.java:764)
+10-28 12:26:57.065  8190  8381 E SaveFileBridge: 	at android.content.ContentResolver.call(ContentResolver.java:2466)
+10-28 12:26:57.065  8190  8381 E SaveFileBridge: 	at android.provider.DocumentsContract.createDocument(DocumentsContract.java:1380)
+10-28 12:26:57.065  8190  8381 E SaveFileBridge: 	at f5.o.t(SourceFile:42)
+10-28 12:26:57.065  8190  8381 E SaveFileBridge: 	at f5.j.run(SourceFile:11)
+10-28 12:26:57.065  8190  8381 E SaveFileBridge: 	at java.lang.Thread.run(Thread.java:1119)
+10-28 12:26:57.065  8190  8190 W SaveFileBridge: 记住的保存目录不可用，清除后重选一次：content://com.android.externalstorage.documents/tree/primary%3ADownload%2Flegado
+10-28 12:26:57.065  8190  8190 I SaveFileBridge: 已释放目录持久授权（清除记住目录）：content://com.android.externalstorage.documents/tree/primary%3ADownload%2Flegado
+10-28 12:26:57.065  8190  8190 I SaveFileBridge: 已清除记住的保存目录
+== top ==
+    topResumedActivity=ActivityRecord{120582085 u0 com.android.documentsui/.picker.PickActivity t698}
+== grants ==
+  * UID 10062 holds:
+    UriPermission{4348a2a content://com.android.externalstorage.documents/tree/primary%3ADownload%2Flegado%2Flegado2 [user 0] [prefix]}
+      targetUserId=0 sourcePkg=com.android.externalstorage targetPkg=io.legado.flutter_legado
+      mode=0x3 owned=0x0 global=0x0 persistable=0x3 persisted=0x3 persistedCreate=1793120361320

@@ -1,0 +1,1 @@
+e7740c264974d2bc937fdf0e4a3226726507f1aaf873d2b92dba560f7956aa55 *D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/build/app/outputs/flutter-apk/app-release.apk

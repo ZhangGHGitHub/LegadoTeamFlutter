@@ -1,0 +1,3 @@
+Error: in prepare, no such column: name
+  select sourceUrl,name from rssSources;
+                   ^--- error here

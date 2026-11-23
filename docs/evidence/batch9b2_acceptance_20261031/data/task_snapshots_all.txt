@@ -1,0 +1,1 @@
+cacheDownloadTask:15|{"taskId":15,"bookUrl":"http://192.168.100.52:18092/a/book/QAB2A-1","startChapter":0,"endChapter":19,"total":20,"completed":20,"failed":0,"nextIndex":20,"status":"completed","failedChapters":[],"finishedChapters":[]}

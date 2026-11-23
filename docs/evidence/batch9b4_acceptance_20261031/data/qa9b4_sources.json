@@ -1,0 +1,67 @@
+[
+  {
+    "bookSourceUrl": "http://192.168.100.52:18090/a",
+    "bookSourceName": "QA9B4-A",
+    "bookSourceGroup": "QA9B4",
+    "bookSourceType": 0,
+    "enabled": true,
+    "enabledExplore": false,
+    "searchUrl": "http://192.168.100.52:18090/a/search?q={{key}}",
+    "ruleSearch": {
+      "bookList": "$[*]",
+      "name": "$.name",
+      "author": "$.author",
+      "intro": "$.intro",
+      "bookUrl": "$.bookUrl",
+      "coverUrl": "$.coverUrl"
+    },
+    "ruleBookInfo": {
+      "name": "$.name",
+      "author": "$.author",
+      "intro": "$.intro",
+      "coverUrl": "$.coverUrl",
+      "tocUrl": "$.tocUrl"
+    },
+    "ruleToc": {
+      "chapterList": "$.chapters[*]",
+      "chapterName": "$.title",
+      "chapterUrl": "$.url"
+    },
+    "ruleContent": {
+      "content": "$.content"
+    }
+  },
+  {
+    "bookSourceUrl": "http://192.168.100.52:18090/b",
+    "bookSourceName": "QA9B4-B",
+    "bookSourceGroup": "QA9B4",
+    "bookSourceType": 0,
+    "enabled": true,
+    "enabledExplore": false,
+    "searchUrl": "http://192.168.100.52:18090/b/search?q={{key}}",
+    "ruleSearch": {
+      "bookList": "$[*]",
+      "name": "$.name",
+      "author": "$.author",
+      "intro": "$.intro",
+      "bookUrl": "$.bookUrl",
+      "coverUrl": "$.coverUrl"
+    },
+    "ruleBookInfo": {
+      "name": "$.name",
+      "author": "$.author",
+      "intro": "$.intro",
+      "coverUrl": "$.coverUrl",
+      "tocUrl": "$.tocUrl"
+    },
+    "ruleToc": {
+      "chapterList": "$.chapters[*]",
+      "chapterName": "$.title",
+      "chapterUrl": "$.url"
+    },
+    "ruleContent": {
+      "content": "$.content"
+    },
+    "header": "{\"User-Agent\": \"ExplicitSourceUA/1.0\"}"
+  }
+]

@@ -1,0 +1,32 @@
+total 170824
+-rwxrwxrwx 1 root root      2100 2026-10-27 06:06 BookSource_QA.json
+-rwxrwxrwx 1 root root      2203 2026-10-27 06:06 BookSource_QA2.json
+-rwxrwxrwx 1 root root         0 2026-10-27 07:12 HighlightRules (1).json
+-rwxrwxrwx 1 root root       409 2026-10-27 07:12 HighlightRules (2).json
+-rwxrwxrwx 1 root root       409 2026-10-27 07:14 HighlightRules (3).json
+-rwxrwxrwx 1 root root       409 2026-10-27 05:55 HighlightRules.json
+-rwxrwxrwx 1 root root  10777987 2026-09-12 01:22 KernelSU_v3.3.0_32601-release.apk
+-rwxrwxrwx 1 root root    466042 2026-10-03 16:24 QA验收漫画12页.cbz
+-rwxrwxrwx 1 root root 105357759 2026-09-12 01:15 YWQtYXBwOmFkX2RzcF9hcHA6NTYxOTIzMzQzOTpNRVJDSEFOVDpbQkAyZjc1Mjg0ZDoyMjUzNTM1MjMyOTQzOQ==.apk
+-rwxrwxrwx 1 root root         0 2026-10-27 06:58 bookSource_QA本地音频B2 (1).json
+-rwxrwxrwx 1 root root         0 2026-10-27 07:10 bookSource_QA本地音频B2 (2).json
+-rwxrwxrwx 1 root root      2100 2026-10-27 07:10 bookSource_QA本地音频B2 (3).json
+-rwxrwxrwx 1 root root      2100 2026-10-27 07:13 bookSource_QA本地音频B2 (4).json
+-rwxrwxrwx 1 root root         0 2026-10-27 07:19 bookSource_QA本地音频B2 (5).json
+-rwxrwxrwx 1 root root      2100 2026-10-27 07:19 bookSource_QA本地音频B2 (6).json
+-rwxrwxrwx 1 root root         0 2026-10-27 07:22 bookSource_QA本地音频B2 (7).json
+-rwxrwxrwx 1 root root      2100 2026-10-27 07:22 bookSource_QA本地音频B2 (8).json
+-rwxrwxrwx 1 root root      2100 2026-10-27 06:37 bookSource_QA本地音频B2.json
+-rwxrwxrwx 1 root root       284 2026-09-14 09:57 bookshelf_ref.json
+drwxrwxrwx 1 root root      4096 2026-10-27 07:37 legado
+-rwxrwxrwx 1 root root  26920144 2026-09-12 02:54 legado_app_3.26082823_universal_release-1.apk
+-rwxrwxrwx 1 root root  26920144 2026-09-12 01:02 legado_app_3.26082823_universal_release.apk
+-rwxrwxrwx 1 root root         0 2026-09-30 22:59 manga-1790780351361.jpg
+-rwxrwxrwx 1 root root         0 2026-09-30 23:03 manga-1790780625652.jpg
+-rwxrwxrwx 1 root root    202731 2026-09-29 18:16 manga_sources_clean_36.json
+-rwxrwxrwx 1 root root      4920 2026-09-13 20:57 qa_book.txt
+-rwxrwxrwx 1 root root       347 2026-10-04 12:26 qa_local_d6.txt
+-rwxrwxrwx 1 root root   4144435 2026-09-13 23:42 source_1270.json
+-rwxrwxrwx 1 root root       360 2026-09-13 16:28 src_hit.json
+-rwxrwxrwx 1 root root       360 2026-09-13 16:28 src_nohit.json
+-rwxrwxrwx 1 root root     74222 2026-09-29 18:11 video_sources_9.json

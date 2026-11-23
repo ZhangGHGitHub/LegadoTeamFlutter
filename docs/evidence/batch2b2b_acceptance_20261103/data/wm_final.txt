@@ -1,0 +1,2 @@
+Physical size: 1080x1920
+Physical density: 480

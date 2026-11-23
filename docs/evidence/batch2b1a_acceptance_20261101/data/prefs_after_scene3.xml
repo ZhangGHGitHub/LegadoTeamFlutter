@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <long name="flutter.containerOpacity" value="100" />
+    <boolean name="flutter.remote_servers_migrated" value="true" />
+    <string name="flutter.app_theme_mode">light</string>
+    <long name="flutter.lastBackup" value="1793504370763" />
+    <string name="flutter.largeContainerBackgroundImageDark">theme_backgrounds/large_dark/c23068520115d5e09dd72592ccacced2.jpg</string>
+    <string name="flutter.largeContainerBackgroundImageLight">theme_backgrounds/large_light/a2886634615701d48290820828f9de32.jpg</string>
+    <string name="flutter.app_palette_id">elink</string>
+    <long name="flutter.lastCheckUpdate" value="1793504375689" />
+    <boolean name="flutter.enableContainerBackgroundImage" value="true" />
+</map>

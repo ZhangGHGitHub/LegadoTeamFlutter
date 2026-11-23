@@ -1,0 +1,11 @@
+auto_task_rules           cookies                   rssArticles             
+book_groups               coverRules                rssReadRecords          
+book_memos                dictRules                 rssSources              
+book_source_check_states  download_tasks            rssStars                
+book_sources              highlightRules            ruleSubs                
+bookmarks                 highlights                searchBooks             
+books                     httpTTS                   search_keywords         
+cached_chapters           keyboardAssists           servers                 
+caches                    readRecord                txtTocRules             
+chapter_reviews           readRecordDaily         
+chapters                  replace_rules           

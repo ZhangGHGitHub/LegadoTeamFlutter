@@ -1,0 +1,1 @@
+Starting: Intent { cmp=io.legado.flutter_legado/io.legado.flutter.MainActivity }

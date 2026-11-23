@@ -1,0 +1,15 @@
+=== 设备/版本 ===
+2026-10-27T06:13:02+08:00
+SM-G9900
+15
+x86_64
+    versionCode=392 minSdk=24 targetSdk=36
+    versionName=2.0.391
+    lastUpdateTime=2026-10-27 05:44:15
+
+=== DB 计数 ===
+15|534|6|1
+
+=== RSS 源 ===
+MockRSS|http://127.0.0.1:18080/rss.xml
+MockRSS2|http://127.0.0.1:18080/rss.xml?n=2

@@ -1,0 +1,57 @@
+[
+ {
+  "bookSourceUrl": "http://192.168.100.52:18080",
+  "bookSourceName": "QA42发现源",
+  "bookSourceGroup": "QA42",
+  "bookSourceType": 0,
+  "enabled": true,
+  "enabledExplore": true,
+  "searchUrl": "http://192.168.100.52:18080/search?q={{key}}",
+  "ruleSearch": {
+   "bookList": "$[*]",
+   "name": "$.name",
+   "author": "$.author",
+   "bookUrl": "$.bookUrl",
+   "checkKeyWord": "QA42"
+  },
+  "exploreUrl": "分类::http://192.168.100.52:18080/explore?page={{page}}",
+  "ruleExplore": {
+   "bookList": "$[*]",
+   "name": "$.name",
+   "author": "$.author",
+   "bookUrl": "$.bookUrl"
+  }
+ },
+ {
+  "bookSourceUrl": "http://192.168.100.52:18081",
+  "bookSourceName": "QA42慢源",
+  "bookSourceGroup": "QA42",
+  "bookSourceType": 0,
+  "enabled": true,
+  "enabledExplore": false,
+  "searchUrl": "http://192.168.100.52:18081/slow?q={{key}}",
+  "ruleSearch": {
+   "bookList": "$[*]",
+   "name": "$.name",
+   "author": "$.author",
+   "bookUrl": "$.bookUrl",
+   "checkKeyWord": "QA42"
+  }
+ },
+ {
+  "bookSourceUrl": "http://192.168.199.99:1",
+  "bookSourceName": "QA42死域名源",
+  "bookSourceGroup": "QA42",
+  "bookSourceType": 0,
+  "enabled": true,
+  "enabledExplore": false,
+  "searchUrl": "http://192.168.199.99:1/search?q={{key}}",
+  "ruleSearch": {
+   "bookList": "$[*]",
+   "name": "$.name",
+   "author": "$.author",
+   "bookUrl": "$.bookUrl",
+   "checkKeyWord": "QA42"
+  }
+ }
+]

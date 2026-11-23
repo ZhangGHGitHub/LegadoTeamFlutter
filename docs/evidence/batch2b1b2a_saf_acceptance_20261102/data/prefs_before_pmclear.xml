@@ -1,0 +1,13 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <long name="flutter.containerOpacity" value="100" />
+    <boolean name="flutter.overrideBaseCardCornerRadius" value="false" />
+    <boolean name="flutter.remote_servers_migrated" value="true" />
+    <boolean name="flutter.eyeProtectionEnabled" value="false" />
+    <long name="flutter.lastBackup" value="1793623860807" />
+    <boolean name="flutter.enableItemDivider" value="false" />
+    <long name="flutter.appColumnBackgroundOpacity" value="100" />
+    <long name="flutter.lastCheckUpdate" value="1793623865792" />
+    <boolean name="flutter.enableContainerBackgroundImage" value="false" />
+    <boolean name="flutter.overrideBaseCardBorder" value="false" />
+</map>

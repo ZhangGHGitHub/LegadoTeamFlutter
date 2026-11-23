@@ -224,6 +224,8 @@ pwsh rust/scripts/rust-fingerprint.ps1 -Check             # → DECISION=REBUILD
 
 ### A.2 分类表
 
+> **处置状态（2026-11-23）**：下表 42 个目录已全部处置完毕（40 个由本次归档后删除，2 个由并行提交 `205214c19b` 处置）。逐目录归档位置、png/xml 数量与丢弃量见 **A.8**。
+
 | # | 目录名 | 大小 | 文件数 | mtime 范围 | 主要类型 | 截图归档情况 | 唯一非日志副本 | 建议 |
 |---|---|---|---|---|---|---|---|---|
 | 1 | `device_acceptance_20261026` | 3.3 MB | 51 | 2026-10-26~2026-10-26 | .xml×21、.txt×14、.png×13、.log×2 | 0/13 | 14 | **需先归档** |
@@ -338,6 +340,74 @@ pwsh rust/scripts/rust-fingerprint.ps1 -Check             # → DECISION=REBUILD
 
 > 处置口径：两目录均**整目录归档、不筛选**（日志/脚本/语义树/截图/mock server 全留），保留原始 mtime；`docs/evidence/**` 已入库（`git ls-files docs/evidence` 非空），原 `tmp_debug/` 路径由 `.gitignore:49` 忽略。归档后两目录可视为「已归档」，不再计入本附录 A.2「需先归档」口径。
 
+
+### A.8 附录 A.2 42 个目录处置结果（2026-11-23）
+
+> 执行：ZCode 全栈工程师子代理 ｜ 起点 `84a062ca50`；执行期间并行代理提交 `205214c19b`（处置 #1、#37）与 `0837afef4f`，均未回退。
+> 归档口径：**只归档承重证据** —— `.png` 截图与 `.xml` uiautomator dump **全量复制、不做内容去重**，保证归档目录内数量与源目录逐一相等（阶段 2 硬校验）。
+> 丢弃口径：`.log` 与日志型 `.txt`（logcat/构建/测试过程输出）不入库，验收结论已由 `docs/DEVICE_ACCEPTANCE_*.md` 固化；逐文件清单留在各目录 `MANIFEST.txt`。
+> 随同归档：`.db`（DB 升级前后快照）/`.json`/`.sql`/`.sh`/`.py`/`.cbz`/`.7z`/`.html` 等唯一副本。
+> `fixtures/` 下的 `.txt`（小说正文、GBK 样本、种子文本）是测试载荷而非日志，已保留。
+
+| # | 原目录 | 归档位置 | png | xml | 文件数 | 体积 | 丢弃 log/txt | 判定 |
+|---|---|---|---|---|---|---|---|---|
+| 1 | `device_acceptance_20261026` | `docs/evidence/acceptance_20261026/` | 13 | 21 | 51 | 3.3 MB | — | 需先归档 |
+| 2 | `device_acceptance_20261027` | `docs/evidence/batch16_acceptance_20261027/` | 129 | 186 | 361 | 30.5 MB | 6 / 25 | 需先归档 |
+| 3 | `device_acceptance_20261027_7z` | `docs/evidence/batch24_acceptance_20261027_7z/` | 37 | 36 | 108 | 5.8 MB | 7 / 38 | 需先归档 |
+| 4 | `device_acceptance_20261027_backup_pwd` | `docs/evidence/batch17_acceptance_20261027_backup_pwd/` | 36 | 90 | 158 | 12.8 MB | 4 / 10 | 需先归档 |
+| 5 | `device_acceptance_20261027_export_tree` | `docs/evidence/batch26_acceptance_20261027_export_tree/` | 42 | 41 | 94 | 4.7 MB | 2 / 22 | 需先归档 |
+| 6 | `device_acceptance_20261027_remote_book` | `docs/evidence/batch18_acceptance_20261027_remote_book/` | 73 | 6 | 97 | 10.2 MB | 9 / 7 | 需先归档 |
+| 7 | `device_acceptance_20261027_rss_bridge` | `docs/evidence/batch21_acceptance_20261027_rss_bridge/` | 51 | 14 | 85 | 6.5 MB | 4 / 15 | 需先归档 |
+| 8 | `device_acceptance_20261028_batch2729` | `docs/evidence/batch27_29_acceptance_20261028/` | 70 | 3 | 94 | 10.7 MB | 6 / 6 | 需先归档 |
+| 9 | `device_acceptance_20261028_batch31` | `docs/evidence/batch31_acceptance_20261028/` | 52 | 1 | 70 | 10.4 MB | 5 / 6 | 需先归档 |
+| 10 | `device_acceptance_20261028_batch34` | `docs/evidence/batch34_acceptance_20261028/` | 54 | 46 | 113 | 11.6 MB | 5 / 7 | 需先归档 |
+| 11 | `device_acceptance_20261029_batch35` | `docs/evidence/batch35_acceptance_20261029/` | 35 | 3 | 50 | 8.5 MB | 6 / 4 | 需先归档 |
+| 12 | `device_acceptance_20261029_batch36` | `docs/evidence/batch36_acceptance_20261029/` | 81 | 11 | 98 | 11.6 MB | 11 / 9 | 需先归档 |
+| 13 | `device_acceptance_20261029_batch37` | `docs/evidence/batch37_acceptance_20261029/` | 73 | 79 | 170 | 13.3 MB | 3 / 8 | 需先归档 |
+| 14 | `device_acceptance_20261029_batch38` | `docs/evidence/batch38_acceptance_20261029/` | 108 | 147 | 267 | 15.9 MB | 3 / 5 | 需先归档 |
+| 15 | `device_acceptance_20261029_batch40` | `docs/evidence/batch40_acceptance_20261029/` | 111 | 6 | 135 | 18.5 MB | 8 / 2 | 需先归档 |
+| 16 | `device_acceptance_20261030_batch39_43` | `docs/evidence/batch39_43_acceptance_20261030/` | 49 | 773 | 874 | 18.8 MB | 26 / 7 | 需先归档 |
+| 17 | `device_acceptance_20261031_batch1a` | `docs/evidence/batch1a_acceptance_20261031/` | 55 | 91 | 156 | 9.8 MB | 2 / 5 | 需先归档 |
+| 18 | `device_acceptance_20261031_batch1b1` | `docs/evidence/batch1b1_acceptance_20261031/` | 23 | 14 | 49 | 4.1 MB | 2 / 6 | 需先归档 |
+| 19 | `device_acceptance_20261031_batch1b3` | `docs/evidence/batch1b3_acceptance_20261031/` | 24 | 85 | 117 | 3.7 MB | 2 / 0 | 可删 |
+| 20 | `device_acceptance_20261031_batch9a` | `docs/evidence/batch9a_acceptance_20261031/` | 97 | 115 | 223 | 15.5 MB | 3 / 0 | 需先归档 |
+| 21 | `device_acceptance_20261031_batch9b1` | `docs/evidence/batch9b1_acceptance_20261031/` | 18 | 24 | 52 | 9.6 MB | 11 / 5 | 需先归档 |
+| 22 | `device_acceptance_20261031_batch9b2` | `docs/evidence/batch9b2_acceptance_20261031/` | 55 | 34 | 99 | 8.7 MB | 11 / 3 | 需先归档 |
+| 23 | `device_acceptance_20261031_batch9b4` | `docs/evidence/batch9b4_acceptance_20261031/` | 16 | 92 | 116 | 3.4 MB | 11 / 1 | 需先归档 |
+| 24 | `device_acceptance_20261101_batch1b2a` | `docs/evidence/batch1b2a_acceptance_20261101/` | 116 | 81 | 200 | 21.3 MB | 2 / 0 | 需先归档 |
+| 25 | `device_acceptance_20261101_batch1b2a_reverify` | `docs/evidence/batch1b2a_reverify_acceptance_20261101/` | 83 | 44 | 130 | 18.5 MB | 2 / 0 | 需先归档 |
+| 26 | `device_acceptance_20261101_batch2a1` | `docs/evidence/batch2a1_acceptance_20261101/` | 82 | 2 | 88 | 11.6 MB | 5 / 5 | 需先归档 |
+| 27 | `device_acceptance_20261101_batch2b1a` | `docs/evidence/batch2b1a_acceptance_20261101/` | 78 | 2 | 87 | 23.6 MB | 5 / 5 | 需先归档 |
+| 28 | `device_acceptance_20261101_batch2b1b1` | `docs/evidence/batch2b1b1_acceptance_20261101/` | 1 | 6 | 17 | 0.0 MB | 6 / 0 | 需先归档 |
+| 29 | `device_acceptance_20261101_batch9b6` | `docs/evidence/batch9b6_acceptance_20261101/` | 16 | 2 | 22 | 1.5 MB | 3 / 58 | 可删 |
+| 30 | `device_acceptance_20261101_batch9b6c` | `docs/evidence/batch9b6c_acceptance_20261101/` | 32 | 53 | 88 | 6.7 MB | 6 / 10 | 可删 |
+| 31 | `device_acceptance_20261101_reverify` | `docs/evidence/batch2b1a_reverify_acceptance_20261101/` | 50 | 1 | 56 | 11.8 MB | 5 / 0 | 需先归档 |
+| 32 | `device_acceptance_20261102_batch2b1b2a` | `docs/evidence/batch2b1b2a_acceptance_20261102/` | 5 | 3 | 14 | 0.3 MB | 5 / 1 | 需先归档 |
+| 33 | `device_acceptance_20261102_reverify_saf` | `docs/evidence/batch2b1b2a_saf_acceptance_20261102/` | 5 | 67 | 82 | 80.1 MB | 5 / 5 | 需先归档 |
+| 34 | `device_acceptance_20261103_batch2b1b2b` | `docs/evidence/batch2b1b2b_acceptance_20261103/` | 194 | 154 | 371 | 57.4 MB | 5 / 2 | 需先归档 |
+| 35 | `device_acceptance_20261103_batch2b2a` | `docs/evidence/batch2b2a_acceptance_20261103/` | 3 | 197 | 211 | 2.6 MB | 6 / 3 | 需先归档 |
+| 36 | `device_acceptance_20261103_batch2b2b` | `docs/evidence/batch2b2b_acceptance_20261103/` | 104 | 178 | 288 | 14.3 MB | 5 / 0 | 可删 |
+| 37 | `device_acceptance_20261103_batch2b2c` | `docs/evidence/acceptance_20261103_batch2b2c/` | 26 | 33 | 86 | 4.1 MB | — | 需先归档 |
+| 38 | `device_acceptance_20261103_m1` | `docs/evidence/m1_acceptance_20261103/` | 62 | 110 | 181 | 9.0 MB | 8 / 3 | 需先归档 |
+| 39 | `device_acceptance_20261103_m2` | `docs/evidence/m2_acceptance_20261103/` | 47 | 88 | 141 | 7.7 MB | 10 / 1 | 可删 |
+| 40 | `device_acceptance_20261103_m3` | `docs/evidence/m3_acceptance_20261103/` | 63 | 160 | 230 | 8.6 MB | 8 / 1 | 需先归档 |
+| 41 | `device_acceptance_20261103_reverify` | `docs/evidence/batch2b2a_reverify_acceptance_20261103/` | 0 | 147 | 150 | 2.8 MB | 6 / 2 | 可删 |
+| 42 | `device_acceptance_20261104` | `docs/evidence/acceptance_20261104/` | 147 | 127 | 331 | 15.1 MB | 6 / 1 | 需先归档 |
+| — | **合计 42** | 42 个新目录 | **2416** | **3373** | **6410** | **545.0 MB** | **245 / 288** | — |
+
+**丢弃量（40 个本次处理目录，取自各 `MANIFEST.txt`）**：`.log` 245 个 / 206.4 MB；日志型 `.txt` 288 个 / 52.0 MB；构建产物 `*/target/*` 61 个 / 13.3 MB（`cargo build` 可重建）。
+
+### A.8.1 关键结论与遗留
+
+1. **承重证据 100% 入库**：42 个目录的 2,416 张 `.png` 与 3,373 个 `.xml` 全部落在 `docs/evidence/` 对应目录，逐目录数量与名称/大小与源目录严格一致（独立脚本复核，非归档脚本自报）。
+2. **6 个「可删」目录（A.3）实际需要归档**：分类表以「截图是否已归档」为口径判「可删」，但它们的 `.xml` 语义树从未入库 —— `batch1b3` 85 个、`batch9b6c` 53 个、`batch2b2b` 178 个、`m2` 88 个、`reverify` 147 个（`batch9b6` 仅 2 个）。本次把这 553 个语义树一并归档后才删除原目录，避免了不可逆的证据丢失。
+3. **`.gitignore` 新增例外**：`.gitignore` 的 `*.db` 规则会挡住 19 个 DB 升级快照（6.33 MB，唯一副本），已追加 `!docs/evidence/**/*.db` 等三条白名单，否则这些文件留在磁盘但不入库，删除 `tmp_debug` 后即彻底丢失。
+4. **体积说明**：`docs/evidence/` 由 286 MB 增至 846 MB（+560 MB，含 42 个目录的 README/MANIFEST 0.81 MB）。其中两处显著占用：
+   - `batch2b1b2a_saf_acceptance_20261102/` 81 MB —— 主要是 `fixtures/saf_huge_48mb.png`（45.8 MB）与 `fixtures/saf_33mb_padded.png`（33.0 MB）。按附录 A.6 判定为可再生成的压测夹具，但**为满足阶段 2「png 数量与源目录一致」的硬校验而随同归档**；若后续确认可再生成，可单独移出（不影响其它证据完整性）。
+   - `batch2b1b2b_acceptance_20261103/` 59 MB —— 194 张水波纹逐帧截图 + 12MP 大图夹具。
+   - 其余 40 个目录均 ≤ 32 MB。
+5. **`tmp_debug` 体积**：1,058 MB → 236 MB，释放 **822 MB**（42 个 acceptance 目录全部删除；剩余为其它 `tmp_*` 调试物，不在本次范围）。
+6. **无目录因校验不符而保留**：40 个本次处理目录全部通过阶段 2 校验并删除；另 2 个（`20261026`、`20261103_batch2b2c`）由并行提交 `205214c19b` 整目录归档后删除。
 
 ---
 

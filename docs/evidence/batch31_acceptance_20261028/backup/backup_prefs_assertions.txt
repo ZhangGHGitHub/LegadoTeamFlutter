@@ -1,0 +1,10 @@
+备份文件: backup/legado_backup_batch31.json（设备 /sdcard/Download/legado/legado_backup_1793206912690.json）
+version=5 (期望 5)
+appPrefs 键数=7
+showSourceBookshelfCount=True (期望 True)
+appPrefs 全键: app_backup_path, reader_adv_letter_spacing_migrated, reader_layout_is_night, remote_servers_migrated, rssSourceVersion, settingsMigrated_v271, showSourceBookshelfCount
+books=4
+book QA批31书A1 readConfig.reverseToc=False reverseTocDisplay=False
+book QA批31书A2 readConfig.reverseToc=False reverseTocDisplay=False
+book QA批31书B1 readConfig.reverseToc=False reverseTocDisplay=False
+book QA批31临时书 readConfig.reverseToc=False reverseTocDisplay=False

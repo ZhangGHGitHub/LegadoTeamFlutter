@@ -1,0 +1,28 @@
+# D1 原入口（DownloadsProvider）authority / permission 证据行
+
+## 基线（修复前 SaveFileBridge，document/7）
+10-27 06:58:58.485   839   855 W UriGrantsManagerService: For security reasons, the system cannot issue a Uri permission grant to content://com.android.providers.downloads.documents/document/7 [user 0]; use startActivityAsCaller() instead
+10-27 06:58:58.492  1912  1946 E DatabaseUtils: java.lang.SecurityException: Permission Denial: writing com.android.providers.downloads.DownloadStorageProvider uri content://com.android.providers.downloads.documents/document/7 from pid=27710, uid=10055 requires android.permission.MANAGE_DOCUMENTS, or grantUriPermission()
+10-27 06:58:58.550  1912 28378 E DatabaseUtils: java.lang.SecurityException: Permission Denial: writing com.android.providers.downloads.DownloadStorageProvider uri content://com.android.providers.downloads.documents/document/7 from pid=27710, uid=10055 requires android.permission.MANAGE_DOCUMENTS, or grantUriPermission()
+10-27 06:58:58.551 27710 27710 W DocumentsContract: java.lang.SecurityException: Permission Denial: writing com.android.providers.downloads.DownloadStorageProvider uri content://com.android.providers.downloads.documents/document/7 from pid=27710, uid=10055 requires android.permission.MANAGE_DOCUMENTS, or grantUriPermission()
+
+## 修复后-书源（document/8，回退 MediaStore）
+10-27 07:10:49.085   839 21862 W UriGrantsManagerService: For security reasons, the system cannot issue a Uri permission grant to content://com.android.providers.downloads.documents/document/8 [user 0]; use startActivityAsCaller() instead
+10-27 07:10:49.091  1912 28772 E DatabaseUtils: java.lang.SecurityException: Permission Denial: writing com.android.providers.downloads.DownloadStorageProvider uri content://com.android.providers.downloads.documents/document/8 from pid=28627, uid=10055 requires android.permission.MANAGE_DOCUMENTS, or grantUriPermission()
+10-27 07:10:49.116  1694 28404 I MediaProvider: Open with lower FS for /storage/emulated/0/Download/.pending-1793661049-bookSource_QA本地音频B2.json. Uid: 10055
+10-27 07:10:49.120  1694 28404 D MediaProvider: Moving /storage/emulated/0/Download/.pending-1793661049-bookSource_QA本地音频B2.json to /storage/emulated/0/Download/bookSource_QA本地音频B2 (3).json
+10-27 07:10:49.128  1694 28404 I MediaProvider: Open with lower FS for /storage/emulated/0/Download/bookSource_QA本地音频B2 (3).json. Uid: 10055
+
+## 修复后-高亮规则（document/9，回退 MediaStore）
+10-27 07:12:35.918   839 21862 W UriGrantsManagerService: For security reasons, the system cannot issue a Uri permission grant to content://com.android.providers.downloads.documents/document/9 [user 0]; use startActivityAsCaller() instead
+10-27 07:12:35.925  1912 28772 E DatabaseUtils: java.lang.SecurityException: Permission Denial: writing com.android.providers.downloads.DownloadStorageProvider uri content://com.android.providers.downloads.documents/document/9 from pid=28627, uid=10055 requires android.permission.MANAGE_DOCUMENTS, or grantUriPermission()
+10-27 07:12:35.934  1694 28404 I MediaProvider: Open with lower FS for /storage/emulated/0/Download/.pending-1793661155-HighlightRules.json. Uid: 10055
+10-27 07:12:35.938  1694 28404 D MediaProvider: Moving /storage/emulated/0/Download/.pending-1793661155-HighlightRules.json to /storage/emulated/0/Download/HighlightRules (2).json
+10-27 07:12:35.950  1694 28404 I MediaProvider: Open with lower FS for /storage/emulated/0/Download/HighlightRules (2).json. Uid: 10055
+
+## 计数
+before_logcat_downloads.txt FATAL=0 SecurityException=4
+v2_logcat_downloads_booksource.txt FATAL=0 SecurityException=1
+v2_logcat_downloads_highlight.txt FATAL=0 SecurityException=1
+v2_logcat_external_booksource.txt FATAL=0 SecurityException=0
+v2_logcat_external_highlight.txt FATAL=0 SecurityException=0

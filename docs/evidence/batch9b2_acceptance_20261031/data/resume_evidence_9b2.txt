@@ -1,0 +1,14 @@
+续跑关键证据（批9b-2 场景6）
+=============================
+阶段1（force-stop 前）:
+  mock book_count[QAB2A-1]=10（第1..10章各1次），max_inflight=1
+  DB task15 = {"total":20,"completed":9,"failed":0,"nextIndex":9,"status":"running"}
+  cached_chapters=9，chapter_index=0..8
+  pidof io.legado.flutter_legado 为空（已杀进程）
+阶段2（冷启动 → 进入离线缓存页触发 ensure_restored）:
+  00:19:20 重新请求 chapter 10（阶段1 在途章），00:19:21..23 请求 11..20
+  mock 最终：content 请求 21 次；chapter#10=2；chapter#1..#9=1；#11..#20=1
+  DB task15 = {"total":20,"completed":20,"failed":0,"nextIndex":20,"status":"completed"}
+  cached_chapters=20；UI 已缓存 20/20
+结论：已完成前缀（0..8）未重复请求；仅中断在途章重下 1 次；最终计数 20/20、failed=0，
+      未出现重复计数（completed 未超过 total）或误判 failed。

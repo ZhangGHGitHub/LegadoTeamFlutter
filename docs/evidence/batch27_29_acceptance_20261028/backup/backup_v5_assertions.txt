@@ -1,0 +1,10 @@
+top-level keys: ['appPrefs', 'backupTime', 'bookGroups', 'bookMemos', 'bookSources', 'bookmarks', 'books', 'dictRules', 'directLinkUploadRule', 'highlightRules', 'highlights', 'httpTTS', 'keyboardAssists', 'readRecords', 'replaceRules', 'rssSources', 'rssStars', 'ruleSubs', 'searchHistory', 'servers', 'txtTocRules', 'version']
+version = 5
+bookMemos present = True len = 0
+readRecords len = 5
+readRecords union keys = ['author', 'bookName', 'coverUrl', 'deviceId', 'displayAuthor', 'displayBookName', 'lastChapterIndex', 'lastChapterPos', 'lastChapterTitle', 'lastRead', 'metadataEditedAt', 'readTime', 'resolvedAuthor']
+readRecords 13 字段齐全 = True
+sample: {"author": "作者Y", "bookName": "QA登录头书", "coverUrl": null, "deviceId": "", "displayAuthor": "", "displayBookName": "", "lastChapterIndex": 0, "lastChapterPos": 0, "lastChapterTitle": "第一章 登录头", "lastRead": 1793195659191, "metadataEditedAt": 0, "readTime": 285681, "resolvedAuthor": null}
+books len = 4
+bookSources len = 3
+rssSources len = 2

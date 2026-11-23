@@ -1,0 +1,46 @@
+{
+ "build": {
+  "apk_bytes": 199971976,
+  "sha256": "6ca78ed3d065ecaae32ac5bb6c46b9d72d9c0b4d278fd6ff53edc612fa491612",
+  "assembleRelease_s": 5.9,
+  "version": "2.0.434+435",
+  "install": "streamed 199971976 bytes",
+  "x86_64_so_sha256": "7fea8be820550d7108a8f38c246140cba39e8f3ae9ed374e53fa0f2c4a41871e"
+ },
+ "cold_start_ms": [
+  379,
+  360
+ ],
+ "memory_kb": {
+  "before_12mp": {
+   "pss": 121128,
+   "rss": 255228
+  },
+  "after_12mp_select_not_drawn": {
+   "pss": 128467,
+   "rss": 263120
+  },
+  "after_12mp_drawn_light50": {
+   "pss": 124400,
+   "rss": 259004
+  }
+ },
+ "blur_edge_std": {
+  "0": 48.3,
+  "50": 9.5,
+  "100": 8.6
+ },
+ "fatal": {
+  "app_fatal": 0,
+  "anr": 0,
+  "oom": 0,
+  "renderflex_overflow": 0,
+  "app_native_tombstone": 0,
+  "uiautomator_tombstones_final": 92
+ },
+ "tests": {
+  "analyze": "No issues found",
+  "targeted": "82 passed",
+  "full": "3775 passed / 1 skipped, EXIT=0"
+ }
+}

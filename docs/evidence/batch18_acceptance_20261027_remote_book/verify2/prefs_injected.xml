@@ -1,0 +1,24 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <string name="flutter.app_theme_mode">system</string>
+    <boolean name="flutter.videoPlay.autoPlay" value="true" />
+    <boolean name="flutter.videoPlay.fullBottomProgressBar" value="true" />
+    <boolean name="flutter.videoPlay.defaultFloatWindow" value="false" />
+    <boolean name="flutter.reader_layout_is_night" value="false" />
+    <long name="flutter.videoPlay.longPressSpeed" value="30" />
+    <boolean name="flutter.webdav_servers_migrated" value="true" />
+    <boolean name="flutter.reader_adv_letter_spacing_migrated" value="true" />
+    <long name="flutter.remote_server_id" value="1793070940707" />
+    <boolean name="flutter.settingsMigrated_v271" value="true" />
+    <boolean name="flutter.toc_load_word_count" value="true" />
+    <boolean name="flutter.crash_last_crash" value="true" />
+    <boolean name="flutter.railExtended" value="true" />
+    <boolean name="flutter.remote_servers_migrated" value="true" />
+    <long name="flutter.bookshelf_tab_position" value="1" />
+    <boolean name="flutter.source_rule_help_shown" value="true" />
+    <boolean name="flutter.videoPlay.startFull" value="false" />
+    <long name="flutter.rssSourceVersion" value="6" />
+    <string name="flutter.app_backup_path">/storage/emulated/0/Download/legado</string>
+    <long name="flutter.httpTtsSeedVersion" value="1" />
+    <string name="flutter.sync_webdav_remote_dir">/legado/</string>
+</map>

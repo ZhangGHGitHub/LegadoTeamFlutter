@@ -1,0 +1,15 @@
+sourceName  sourceUrl                                              singleUrl  showWebLog  enableJs  preload_len  inject_len  shouldOverrideUrlLoading
+----------  -----------------------------------------------------  ---------  ----------  --------  -----------  ----------  ------------------------
+QA21-AJAX   http://192.168.100.52:18082/rss_bridge.xml?s=ajax      0          0           1         426                                              
+QA21-URL模式  http://192.168.100.52:18082/urlmode.html               1          0           1         529                                              
+QA21-安全     http://192.168.100.52:18082/rss_bridge.xml?s=sec       0          0           1         21           782                                 
+QA21-拦截     http://192.168.100.52:18082/rss_bridge.xml?s=override  0          0           1         26           260         java.get('k')=='v1'     
+QA21-日志     http://192.168.100.52:18082/rss_bridge.xml?s=log       0          1           1         45                                               
+QA21-普通     http://192.168.100.52:18082/rss_bridge.xml?s=normal    0          0           1                                                          
+QA21-桥基础    http://192.168.100.52:18082/rss_bridge.xml?s=bridge    0          0           1         341          413                                 
+QA21-清洗     http://192.168.100.52:18082/rss_bridge.xml?s=clean     0          0           1         22           263                                 
+key                                                              value        
+---------------------------------------------------------------  -------------
+sourceVariable_http://192.168.100.52:18082/rss_bridge.xml?s=sec  SECRET_VAR_21
+v_http://192.168.100.52:18082/rss_bridge.xml?s=override_k        v1           
+loginHeader_http://192.168.100.52:18082/rss_bridge.xml?s=sec|{"Cookie": "LOGIN_SECRET_21=1"}

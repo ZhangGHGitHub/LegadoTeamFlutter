@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <boolean name="flutter.overrideBaseCardCornerRadius" value="true" />
+    <boolean name="flutter.remote_servers_migrated" value="true" />
+    <long name="flutter.baseCardCornerRadius" value="12" />
+    <long name="flutter.lastBackup" value="1793544896108" />
+    <long name="flutter.lastCheckUpdate" value="1793544901084" />
+    <boolean name="flutter.disableSplicedColumnGroupCornerRadius" value="false" />
+</map>

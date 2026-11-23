@@ -1,0 +1,7 @@
+total 4196
+-rwxrwxrwx 1 root root     409 2026-10-27 06:38 HighlightRules.json
+-rwxrwxrwx 1 root root       0 2026-10-27 07:44 bookSource_QA本地音频B2 (1).json
+-rwxrwxrwx 1 root root    2100 2026-10-27 07:44 bookSource_QA本地音频B2 (2).json
+-rwxrwxrwx 1 root root    2100 2026-10-27 06:36 bookSource_QA本地音频B2.json
+-rwxrwxrwx 1 root root     227 2026-10-27 05:40 legacy_backup_min.zip
+-rwxrwxrwx 1 root root 4287249 2026-10-27 05:58 legado_backup_1793051898410.json

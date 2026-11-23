@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <boolean name="flutter.remote_servers_migrated" value="true" />
+    <boolean name="flutter.reader_layout_is_night" value="false" />
+    <long name="flutter.rssSourceVersion" value="6" />
+    <boolean name="flutter.reader_adv_letter_spacing_migrated" value="true" />
+    <boolean name="flutter.settingsMigrated_v271" value="true" />
+    <boolean name="flutter.exploreMainContent" value="false" />
+    <string name="flutter.exploreMainSourceUrl">https://qa36.local/paged</string>
+</map>

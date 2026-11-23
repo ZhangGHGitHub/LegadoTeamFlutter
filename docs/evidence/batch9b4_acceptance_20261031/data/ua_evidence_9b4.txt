@@ -1,0 +1,53 @@
+批9b-4 UA 请求证据（mock_access9b4.log 摘录，设备时间）
+=====================================================================
+Mock: http://192.168.100.52:18090；每次请求记录 path + User-Agent（重复头以 " | " 连接；全会话 0 次重复）。
+Book source A: base /a，无 header UA；Book source B: base /b，header {"User-Agent":"ExplicitSourceUA/1.0"}。
+
+[场景1] 全局 UA = GlobalUA/9.9（设置页保存 → force-stop → 冷启动）
+21:21:07  GET /a/search?q=qa9b4                      UA=GlobalUA/9.9
+21:21:22  GET /a/book/QA9B4A-1                       UA=GlobalUA/9.9
+21:21:22  GET /a/toc/QA9B4A-1                        UA=GlobalUA/9.9
+21:22:16  GET /a/toc/QA9B4A-1                        UA=GlobalUA/9.9
+21:22:16  GET /a/content/QA9B4A-1/1                  UA=GlobalUA/9.9
+21:22:16  GET /a/content/QA9B4A-1/2                  UA=GlobalUA/9.9
+21:22:16  GET /a/content/QA9B4A-1/3                  UA=GlobalUA/9.9
+（搜索→详情→目录→正文 每一步均为 GlobalUA/9.9）
+
+[场景2] 显式书源 UA 优先（同一全局 GlobalUA/9.9 下）
+21:21:07  GET /b/search?q=qa9b4                      UA=ExplicitSourceUA/1.0
+21:22:43  GET /b/book/QA9B4B-1                       UA=ExplicitSourceUA/1.0
+21:22:43  GET /b/toc/QA9B4B-1                        UA=ExplicitSourceUA/1.0
+21:22:53  GET /b/content/QA9B4B-1/1                  UA=ExplicitSourceUA/1.0
+21:22:54  GET /b/content/QA9B4B-1/2                  UA=ExplicitSourceUA/1.0
+21:22:54  GET /b/content/QA9B4B-1/3                  UA=ExplicitSourceUA/1.0
+（无 GlobalUA、无重复 UA）
+
+[场景3a] 启动同步（分叉注入：prefs=GlobalUA/9.9，Rust caches=CtrlUA/1.0\nEvilTail）
+21:26:35  冷启动日志 [启动] UserAgent 已同步到 Rust：GlobalUA/9.9；DB config:userAgent 更新为 GlobalUA/9.9
+21:26:46  GET /a/search?q=qa9b4                      UA=GlobalUA/9.9
+
+[场景3b] 清空 UA → 保存 → 请求回落内置
+21:24:48  GET /a/search?q=qa9b4                      UA=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36
+[场景3c] 清空后 force-stop 冷启动，不改设置再请求
+21:25:05  GET /a/search?q=qa9b4                      UA=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36
+
+[场景4] 控制字符（换行）UA 保存后请求
+设置值实际为 "CtrlUA/1.0\nEvilTail"（prefs 存储 CtrlUA/1.0&#10;EvilTail；DB hex 4374...300A4576696C5461696C）
+21:26:17  GET /b/search?q=qa9b4                      UA=ExplicitSourceUA/1.0
+21:26:18  GET /a/search?q=qa9b4                      UA=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36
+（未发出含换行头，无 400/断连，结果 2/2 正常）
+
+[场景5] 备份恢复后同会话
+21:29:59  GET /a/search?q=qa9b4                      UA=ChangedUA/5.5（恢复前）
+（21:32:08 本地恢复 QA9B4 备份 fixture，appPrefs.userAgent=BackupUA/7.7）
+21:32:23  GET /a/search?q=qa9b4                      UA=BackupUA/7.7（同会话，未重启）
+21:32:23  GET /b/search?q=qa9b4                      UA=ExplicitSourceUA/1.0
+
+[场景6] 回归
+21:33:32  GET /rss                                   UA=BackupUA/7.7（RSS 列表 2 篇）
+21:33:45  GET /favicon.ico                           UA=BackupUA/7.7（RSS 文章详情打开）
+21:34:45  GET /a/search?q=qa9b4                      UA=BackupUA/7.7
+21:34:45  GET /b/search?q=qa9b4                      UA=ExplicitSourceUA/1.0
+封面: 21:21:07 GET /cover/QA9B4A-1.png、/cover/QA9B4B-1.png，UA=Dart/3.12 (dart:io)，PNG 正常显示（截图 12_search_covers.png）
+
+重复 UA 检查: grep -c " | " mock_access9b4.log = 0

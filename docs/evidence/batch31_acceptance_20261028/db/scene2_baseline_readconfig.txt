@@ -1,0 +1,1 @@
+http://qa.local/a/book/1|{"reverseToc":false,"reverseTocDisplay":false}

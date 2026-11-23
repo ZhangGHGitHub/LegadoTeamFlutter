@@ -1,0 +1,3 @@
+version = 5
+bookMemos = [{"bookUrl": "http://192.168.100.52:18080/book/1", "content": "QA备忘-批27-29", "updatedAt": 1793195800000}]
+readRecords len = 5

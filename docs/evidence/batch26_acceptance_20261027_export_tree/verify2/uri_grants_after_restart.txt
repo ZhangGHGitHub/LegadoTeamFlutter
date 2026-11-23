@@ -1,0 +1,7 @@
+  * UID 10062 holds:
+    UriPermission{4348a2a content://com.android.externalstorage.documents/tree/primary%3ADownload%2Flegado%2Flegado2 [user 0] [prefix]}
+      targetUserId=0 sourcePkg=com.android.externalstorage targetPkg=io.legado.flutter_legado
+      mode=0x3 owned=0x0 global=0x0 persistable=0x3 persisted=0x3 persistedCreate=1793120361320
+    UriPermission{2f3d01b content://com.android.externalstorage.documents/tree/primary%3ADownload%2Flegado [user 0] [prefix]}
+      targetUserId=0 sourcePkg=com.android.externalstorage targetPkg=io.legado.flutter_legado
+      mode=0x3 owned=0x0 global=0x0 persistable=0x3 persisted=0x3 persistedCreate=1793120523036

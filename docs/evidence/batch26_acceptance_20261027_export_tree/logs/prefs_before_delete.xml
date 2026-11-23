@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <string name="tree_display_path">下载/legado/legado2</string>
+    <string name="tree_authority">com.android.externalstorage.documents</string>
+    <string name="tree_uri">content://com.android.externalstorage.documents/tree/primary%3ADownload%2Flegado%2Flegado2</string>
+</map>
