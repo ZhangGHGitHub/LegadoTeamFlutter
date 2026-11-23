@@ -1388,6 +1388,11 @@ class AppStrings {
   static String get backupContentSaved => _get('已保存备份内容', 'Backup content saved');
   static String get backupContentSaveFailed => _get('保存备份内容失败', 'Failed to save backup content');
   static String get backupContentLoadFailed => _get('读取备份内容失败', 'Failed to load backup content');
+  // 角色卡（R42 阶段 2A）：备份内容弹窗的只读告知行——产品决策上永不备份，
+  // 故不出现在可勾选清单里（勾选项语义是「可选关闭」）。
+  static String get backupContentCharactersExcluded => _get(
+      '角色卡不纳入备份：换机或恢复备份后，已建的角色档案不会随之迁移（与参考版一致）。',
+      'Character profiles are not included in backups: they will not be transferred when switching devices or restoring a backup (same as the reference app).');
   static String get webdavKeepLatestOnly => _get('仅保留最新备份', 'Keep Only the Latest Backup');
   static String get webdavKeepLatestOnlyDesc => _get('本地备份仅保留最新备份文件', 'Local backup keeps only the latest backup file');
   static String get webdavAutoBackup => _get('自动备份', 'Auto backup');

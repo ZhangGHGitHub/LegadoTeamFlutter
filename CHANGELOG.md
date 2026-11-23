@@ -17,6 +17,13 @@ All notable changes to this project will be documented in this file.
 - [Rust] 替换规则预览超时用例的断言改为契约本身（必须返回 ⚠️ 降级文本、三层超时机制任一上报均可、不得把死循环结果当正文），修复 CPU 满载时的假红；新增断言比原来更严，专门堵「执行器悄悄返回原文却仍带 ⚠️」的伪绿。
 - [Rust] `cargo audit` 的 7 条 unmaintained 公告（genpdf 链 5 项 + `stdweb` + `chrono`）登记为已接受风险，`cargo audit` 恢复 0 漏洞 / 0 warnings。**注意**：实测是 7 项而非原登记的 6 项，`chrono`（RUSTSEC-2026-0543）是新增且不在 genpdf 链上，重写 genpdf 也清不掉它。
 - [UI] MD3 渲染矩阵补书籍详情与阅读两屏（3 调色板 × 亮暗 = 12 例），两屏此前无单测级渲染防护。
+- [Rust] 备份模块登记「刻意不纳入备份的表」清单 `BACKUP_EXCLUDED_TABLES`（`rust/legado-ffi/src/api/backup_api.rs`）：我方备份是**白名单**机制（`BackupData` 逐字段显式收集，全模块无 `sqlite_master` 遍历），新增表默认不会进备份；该常量把「为什么不进」写在代码里，并由守卫测试 `test_excluded_tables_never_leak_into_backup_json` 锁死（向被排除表种特征串 → 备份 JSON 不得出现；反向断言排除表名不得成为 `BackupData` 序列化键），将来若有人误把角色卡接进备份格式会立刻变红。
+- [UI] 「WebDav 设置 → 备份内容」弹窗新增只读告知行「角色卡不纳入备份」：角色卡是产品决策上**永不备份**（与参考版一致），语义不是「可选关闭」，故不作为可勾选项；此前用户换机后角色全丢会误判为 Bug。
+
+### Known Limitations
+- **角色卡（Characters）不随备份迁移**（R42 阶段 2A，用户裁决 D5=A 照抄参考版）：`book_character_profiles` 表刻意不进备份与恢复链，换机或恢复备份后已建的角色档案全部丢失，需重新建档。参考版 `Backup.kt` / `Restore.kt` 同样不含角色/知识表（参考版共 5 张，本阶段只建 `book_character_profiles` 1 张）。备份是白名单机制（`BackupData` 逐字段收集），该表因此天然不会进备份；`BACKUP_EXCLUDED_TABLES` 常量与守卫测试把这一决定锁死。
+- **换源后角色归属**（同一裁决 D4=A，**我方实际情况与参考版不同，已核实**）：角色卡以 `bookUrl` 为键。我方换源走 Task#16 方案 A——`switch_book_source_with` 只改 `origin`/`originName`/`tocUrl`/`originBookUrl`，**`bookUrl` 保持稳定主键**（`source_switch.rs` 单测断言「bookUrl 必须保持稳定主键不变」），故**普通换源不会让角色失联**（优于参考版：参考版换源改 `bookUrl`，角色确实全丢）。真正的风险点是另一条路径——`BookRepository::insert` 遇到同名同作者冲突时的 `remap_book_url_preserving_chapters`：它会把 `chapters`/`highlights`/`cached_chapters`/`download_tasks`/`book_memos` 迁到新 `bookUrl`，但**不含角色表**，因此该路径下角色卡会成为孤儿行（旧 `bookUrl` 已无书籍）。按裁决 D4=A 本批不补该迁移，登记于此。
+- **删书不清理角色孤儿行**：`BookRepository::delete_by_url` 只 `DELETE FROM books`（`chapters` 靠外键级联清理），`book_character_profiles` **无外键**，故删书后角色行残留。参考版删书同样不联动清理；`deleteBookCharacter(bookUrl, characterId)` 提供按书+角色硬删入口，UI 删除流程按需调用，本批不做自动级联。
 
 ## [2.0.513] - 2026-11-20
 

@@ -58,6 +58,21 @@
 //! 旧备份缺 `readRecordDaily`/`coverRules`/`chapterReviews`/`autoTasks` 时
 //! 只解析为空数组，恢复体对空列表**零写入**，库内既有行保持不变。
 //!
+//! # 刻意不纳入备份的表（R42 阶段 2A，2026-11-23）
+//!
+//! 本模块的备份是**白名单**机制：[`BackupData`] 逐字段显式收集，`backup_create`
+//! 只读结构体列出的段，**没有任何「遍历 `sqlite_master` 全量导出」的路径**
+//! （本文件对 `sqlite_master` 零命中，只有测试清表时枚举过表名）。
+//! 因此新增表默认**不会**被自动纳入备份——这一点由
+//! [`test_excluded_tables_never_leak_into_backup_json`] 钉死。
+//!
+//! [`BACKUP_EXCLUDED_TABLES`] 登记「产品决策上永不备份」的表及其依据
+//! （区别于 [`BACKUP_IGNORE_IDENTIFIERS`]：后者是**用户可关闭**的段）：
+//! - `book_character_profiles`（角色卡）：用户裁决 D5=A，照抄参考版
+//!   （参考版 `Backup.kt` / `Restore.kt` 不含任何角色/知识表）。代价是换机 /
+//!   恢复备份后角色全丢，已在 CHANGELOG「Known Limitations」与「备份内容」
+//!   弹窗的只读告知行明示。
+//!
 //! # 原版 zip 备份恢复（批9，用户裁决⑥）
 //!
 //! 入口按**文件魔数**分流：`PK\x03\x04` / `PK\x05\x06` 走 zip 分支，其余按自有
@@ -525,6 +540,30 @@ const DIRECT_LINK_UPLOAD_RULE_CONFIG_KEY: &str = "directLinkUploadRule";
 fn direct_link_upload_rule_cache_key() -> String {
     format!("{CONFIG_PREFIX}{DIRECT_LINK_UPLOAD_RULE_CONFIG_KEY}")
 }
+
+// ─── 刻意不纳入备份的表（登记面，防未来「新表自动进备份」）────────────────
+
+/// **刻意不纳入备份**的表清单（表名 → 不纳入的依据）
+///
+/// 本模块的备份是**白名单**机制：[`BackupData`] 逐字段显式收集，`backup_create`
+/// 只读 `BackupData` 列出的段——**不存在「遍历 `sqlite_master` 自动备份」的路径**
+/// （`grep sqlite_master backup_api.rs` 零命中，仅测试里清表时枚举过表名）。
+/// 因此新增表默认**不会**进备份，本常量只是把「为什么不进」写在代码里，
+/// 并由 [`test_excluded_tables_never_leak_into_backup_json`] 守住——
+/// 若将来有人把其中某张表接进 [`BackupData`]，该测试立刻变红。
+///
+/// 与 [`BACKUP_IGNORE_IDENTIFIERS`] 的区别：那张表是**用户可关闭**的段
+/// （对齐参考版 `dbIsNotIgnored`）；本清单是**产品决策上永不备份**的表，
+/// 不出现在「备份内容」UI 的可勾选项里。
+pub const BACKUP_EXCLUDED_TABLES: &[(&str, &str)] = &[
+    // [R42 阶段 2A | 2026-11-23] 用户裁决 D5=A（照抄参考版）：角色卡不纳入备份。
+    // 参考版 `Backup.kt` / `Restore.kt` 均无这 5 张角色/知识表。
+    // 已知代价：换机 / 恢复备份后角色卡全部丢失（CHANGELOG「Known Limitations」已明写）。
+    (
+        "book_character_profiles",
+        "R42 阶段 2A 用户裁决 D5=A：照抄参考版，角色卡不随备份迁移（换机后需重新建档）",
+    ),
+];
 
 // ─── C1：逐表备份忽略（对齐参考版 `BackupConfig.dbIsNotIgnored`）──────────
 
@@ -11567,6 +11606,112 @@ mod tests {
             assert_eq!(servers.len(), 1, "zip 加密 servers.json 应可解密恢复");
             assert_eq!(servers[0].config.as_deref(), Some(ENC_SERVER_CONFIG));
             Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [R42 阶段 2A 配套] 刻意排除表（[`BACKUP_EXCLUDED_TABLES`]）不得进备份
+    ///
+    /// 备份是**白名单**机制（[`BackupData`] 逐字段显式收集，无
+    /// `sqlite_master` 遍历），本用例把「新表不会被自动纳入备份」钉成可执行证据：
+    /// 1. 往 `book_character_profiles` 种一行**特征串**；
+    /// 2. `backup_create` 写出的 JSON 里不得出现该特征串，也不得出现任何
+    ///    角色卡段名（`bookCharacter*` / `characters` / 表名本身）；
+    /// 3. 反向守卫：`BACKUP_EXCLUDED_TABLES` 里的表名不得出现在
+    ///    [`BackupData`] 的序列化键集合里（将来有人接进去即变红）。
+    ///
+    /// 刻意用**裸 SQL** 而非 `BookCharacterRepository`：本用例只关心「这张表
+    /// 是否会被备份白名单捞走」，不该被角色卡模块的编译/演进状态绑架
+    /// （表 DDL 幂等建，与 `clear_backup_tables` 对 `readRecordDaily` 的既有
+    /// 做法一致——单独检出本提交时表可能尚未由迁移创建）。
+    #[test]
+    fn test_excluded_tables_never_leak_into_backup_json() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        // 种子：角色卡一行（特征串用于在备份文本里做全量搜索）
+        const MARKER: &str = "R42角色卡不应进备份的标记串";
+        let book_url = "https://r42-backup.example/book/1";
+        with_database(|db| {
+            let conn = db.connection();
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS book_character_profiles (\
+                 id TEXT PRIMARY KEY NOT NULL, bookUrl TEXT NOT NULL, name TEXT NOT NULL, \
+                 aliasesJson TEXT NOT NULL DEFAULT '[]', avatarUri TEXT, \
+                 tagsJson TEXT NOT NULL DEFAULT '[]', role TEXT NOT NULL DEFAULT '', \
+                 voiceGender TEXT NOT NULL DEFAULT 'unknown', \
+                 voiceAgeBand TEXT NOT NULL DEFAULT 'unknown', \
+                 personality TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '', \
+                 status INTEGER NOT NULL DEFAULT 1, source TEXT NOT NULL DEFAULT 'user', \
+                 confidence REAL NOT NULL DEFAULT 1.0, \
+                 schemaVersion INTEGER NOT NULL DEFAULT 1, \
+                 createdAt INTEGER NOT NULL DEFAULT 0, updatedAt INTEGER NOT NULL DEFAULT 0);",
+            )
+            .map_err(|e| LegadoError::Database(format!("建角色卡表失败: {e}")))?;
+            conn.execute("DELETE FROM book_character_profiles", [])
+                .map_err(|e| LegadoError::Database(format!("清角色卡表失败: {e}")))?;
+            conn.execute(
+                "INSERT INTO book_character_profiles (id, bookUrl, name, summary, createdAt, updatedAt) \
+                 VALUES ('r42-marker-id', ?1, ?2, ?2, 1700000000000, 1700000000000)",
+                rusqlite::params![book_url, MARKER],
+            )
+            .map_err(|e| LegadoError::Database(format!("种角色卡行失败: {e}")))?;
+            Ok(())
+        })
+        .unwrap();
+
+        let dir = std::env::temp_dir().join("legado_backup_r42_excluded");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("r42_excluded.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        backup_create(path_str).unwrap();
+        let content = fs::read_to_string(&backup_path).unwrap();
+
+        // ① 特征串不得外泄（种子的 name 与 summary 都是它）
+        assert!(
+            !content.contains(MARKER),
+            "角色卡数据不得出现在备份文件中：{content}"
+        );
+        // ② 备份顶层键集合里不得出现任何角色卡段名
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let keys: Vec<&str> = parsed
+            .as_object()
+            .expect("备份应为 JSON 对象")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        for key in &keys {
+            let lowered = key.to_ascii_lowercase();
+            assert!(
+                !lowered.contains("character") && !lowered.contains("characters"),
+                "备份不应出现角色卡段（发现键 {key}），实际键：{keys:?}"
+            );
+        }
+        // ③ 反向守卫：排除表名不得成为 BackupData 的序列化键
+        let backup_keys: Vec<String> = serde_json::to_value(BackupData::empty())
+            .unwrap()
+            .as_object()
+            .expect("BackupData 应序列化为对象")
+            .keys()
+            .cloned()
+            .collect();
+        for (table, reason) in BACKUP_EXCLUDED_TABLES {
+            assert!(
+                !backup_keys.iter().any(|k| k == table),
+                "刻意排除的表 {table} 不得出现在 BackupData 序列化键中（依据：{reason}）"
+            );
+        }
+
+        // 收尾：清掉种子行，避免污染共享测试库
+        with_database(|db| {
+            db.connection()
+                .execute("DELETE FROM book_character_profiles", [])
+                .map_err(|e| LegadoError::Database(format!("清理角色卡种子失败: {e}")))?;
+            Ok(())
         })
         .unwrap();
 

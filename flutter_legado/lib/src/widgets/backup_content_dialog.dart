@@ -72,6 +72,29 @@ class _BackupContentDialogState extends State<BackupContentDialog> {
                     });
                   },
                 ),
+              const Divider(height: 16),
+              // 角色卡（R42 阶段 2A）：产品决策上**永不备份**，故不提供勾选项
+              // （勾选项语义是「可选关闭」，与此不同）。此行只做告知——否则
+              // 换机 / 恢复备份后角色全丢，用户会误以为是 Bug。
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      AppStrings.backupContentCharactersExcluded,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
