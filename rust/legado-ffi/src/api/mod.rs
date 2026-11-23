@@ -8,6 +8,8 @@ pub mod audio_api;
 pub mod audio_cache_api;
 pub mod auto_task_api;
 pub mod backup_api;
+/// [R42 阶段 2A | 2026-11-23] 角色卡手动闭环数据层（契约 §2.56，book_character_profiles）
+pub mod book_character_api;
 pub mod book_export;
 pub mod book_group_api;
 pub mod book_import;

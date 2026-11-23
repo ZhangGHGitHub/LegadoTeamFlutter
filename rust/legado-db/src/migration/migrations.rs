@@ -154,6 +154,10 @@ pub fn repair_legacy_columns(conn: &Connection) -> LegadoResult<()> {
     // 「user_version 已到 118 但缺表/缺索引」场景（v118 迁移同用该函数）。
     super::book_marks_v118::ensure_book_marks_v118(conn)?;
 
+    // [R42 阶段 2A] book_character_profiles 建表 + 建索引（幂等）：兜住
+    // 「user_version 已到 120 但缺表/缺索引」场景（v120 迁移同用该函数）。
+    super::book_characters_v120::ensure_book_character_profiles_v120(conn)?;
+
     Ok(())
 }
 

@@ -41,6 +41,11 @@ pub use import::RoomImporter;
 pub use migration::MigrationRegistry;
 pub use repository::auto_task_repository::AutoTaskRepository;
 pub use repository::book_chapter_repository::BookChapterRepository;
+pub use repository::book_character_repository::{
+    clamp_limit as book_character_clamp_limit, BookCharacterRepository,
+    DEFAULT_LIST_LIMIT as BOOK_CHARACTER_DEFAULT_LIST_LIMIT,
+    MAX_LIST_LIMIT as BOOK_CHARACTER_MAX_LIST_LIMIT,
+};
 pub use repository::book_group_repository::{BookGroup, BookGroupRepository};
 pub use repository::book_marking_repository::BookMarkingRepository;
 pub use repository::book_memo_repository::{BookMemo, BookMemoRepository};

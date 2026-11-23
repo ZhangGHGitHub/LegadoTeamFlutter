@@ -5,6 +5,7 @@
 //! - `MigrationRegistry` 注册表管理所有版本间的迁移
 //! - 使用 SQLite `user_version` PRAGMA 追踪当前版本
 
+pub mod book_characters_v120;
 pub mod book_marks_v118;
 pub mod daily_seconds_v107;
 pub mod disable_read_record_v117;
@@ -89,6 +90,7 @@ impl MigrationRegistry {
         self.register(Box::new(disable_read_record_v117::Migration116To117));
         self.register(Box::new(book_marks_v118::Migration117To118));
         self.register(Box::new(privacy_flags_v119::Migration118To119));
+        self.register(Box::new(book_characters_v120::Migration119To120));
     }
 
     /// 注册单个迁移
@@ -363,7 +365,8 @@ mod tests {
         let registry = MigrationRegistry::new();
         let list = registry.list_migrations();
         // 批9a：新增 Migration118To119（isPrivate）→ 29
-        assert_eq!(list.len(), 29);
+        // R42 阶段 2A：新增 Migration119To120（book_character_profiles）→ 30
+        assert_eq!(list.len(), 30);
         assert_eq!(list[0].0, 90);
         assert_eq!(list[0].1, 91);
     }

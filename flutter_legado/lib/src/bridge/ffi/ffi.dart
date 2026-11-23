@@ -1569,6 +1569,35 @@ Future<void> bookMarkingSetEnabled({
   enabled: enabled,
 );
 
+/// 按书取角色卡列表（裸 JSON 数组）
+///
+/// `status != 3`（排除 DELETED）、`ORDER BY updatedAt DESC`；`limit` 经
+/// clamp（`<=0` → 50，`>500` → 500），不 panic。`bookUrl` 空或无数据 → `[]`。
+Future<String> getBookCharacters({
+  required String bookUrl,
+  required int limit,
+}) => RustLib.instance.api.crateFfiFfiGetBookCharacters(
+  bookUrl: bookUrl,
+  limit: limit,
+);
+
+/// 保存角色卡，返回落库后重新查出的完整对象 JSON
+///
+/// **空 id 时按 `(bookUrl, name)` 精确查重并复用其 id**（用户裁决 D2=A，
+/// 避免 `UNIQUE(bookUrl,name)` + `INSERT OR REPLACE` 静默换 id 导致绑定失效）；
+/// `updatedAt` 恒写当前毫秒；改名撞别人返回明确错误「已存在同名角色」。
+Future<String> saveBookCharacter({required String profileJson}) =>
+    RustLib.instance.api.crateFfiFfiSaveBookCharacter(profileJson: profileJson);
+
+/// 按 `(bookUrl, id)` 硬删角色卡，返回是否命中（不存在为 false，不报错）
+Future<bool> deleteBookCharacter({
+  required String bookUrl,
+  required String characterId,
+}) => RustLib.instance.api.crateFfiFfiDeleteBookCharacter(
+  bookUrl: bookUrl,
+  characterId: characterId,
+);
+
 /// 获取所有替换规则（JSON 数组）
 Future<String> replaceRuleList() =>
     RustLib.instance.api.crateFfiFfiReplaceRuleList();

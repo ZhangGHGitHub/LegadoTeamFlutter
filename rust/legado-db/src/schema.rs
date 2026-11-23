@@ -93,7 +93,20 @@ use legado_core::{LegadoError, LegadoResult};
 ///   对齐参考版 `Book.kt:89` 与 `BookGroup.kt:27`）：`INTEGER NOT NULL DEFAULT 0`，
 ///   单本私密标记与「所属私密分组」取并集（判定属消费方）；
 ///   Migration118To119 幂等增列，并纳入开库自愈 `repair_legacy_columns`。
-pub const SCHEMA_VERSION: u32 = 119;
+/// - v120：新增 `book_character_profiles` 表（R42 阶段 2A 角色卡 Characters
+///   手动闭环数据层，逐列对齐参考版 `BookKnowledge.kt:8-70` 的
+///   `BookCharacterProfile` 与 Room schema v97+）：`id` TEXT 主键（UUID）+
+///   `bookUrl`/`name`/`aliasesJson`（默认 `"[]"`）/`avatarUri`（可空）/
+///   `tagsJson`（默认 `"[]"`）/`role`/`voiceGender`（默认 `'unknown'`）/
+///   `voiceAgeBand`（默认 `'unknown'`）/`personality`/`summary`/`status`
+///   （默认 1）/`source`（默认 `'user'`）/`confidence`（REAL 默认 1.0）/
+///   `schemaVersion`（默认 1）/`createdAt`/`updatedAt`，共 17 列；
+///   索引 `UNIQUE(bookUrl, name)`（一书一名唯一）与 `(bookUrl, updatedAt)`
+///   （列表 `ORDER BY updatedAt DESC`）。**无外键**（对齐参考版
+///   `foreignKeys = null` 与 `book_marks` 既有结论）；**不纳入备份**
+///   （参考版 `Backup.kt`/`Restore.kt` 均无这 5 张角色表）。
+///   Migration119To120 幂等建表 + 建索引，并纳入开库自愈 `repair_legacy_columns`。
+pub const SCHEMA_VERSION: u32 = 120;
 
 /// 初始化全部 Schema（创建所有表）
 pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
@@ -159,6 +172,8 @@ pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
         .map_err(|e| LegadoError::Database(format!("创建 book_source_check_states 表失败：{e}")))?;
     conn.execute_batch(CREATE_BOOK_MARKS)
         .map_err(|e| LegadoError::Database(format!("创建 book_marks 表失败：{e}")))?;
+    conn.execute_batch(CREATE_BOOK_CHARACTER_PROFILES)
+        .map_err(|e| LegadoError::Database(format!("创建 book_character_profiles 表失败：{e}")))?;
 
     // 创建索引
     conn.execute_batch(INDEXES)
@@ -166,6 +181,11 @@ pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
     // book_marks 索引单列常量（迁移/开库自愈复用同一 DDL）
     conn.execute_batch(CREATE_BOOK_MARKS_INDEX)
         .map_err(|e| LegadoError::Database(format!("创建 book_marks 索引失败: {e}")))?;
+    // book_character_profiles 索引单列常量（迁移/开库自愈复用同一 DDL）
+    conn.execute_batch(CREATE_BOOK_CHARACTER_PROFILES_INDEXES)
+        .map_err(|e| {
+            LegadoError::Database(format!("创建 book_character_profiles 索引失败: {e}"))
+        })?;
 
     Ok(())
 }
@@ -581,6 +601,63 @@ CREATE TABLE IF NOT EXISTS book_marks (
 pub const CREATE_BOOK_MARKS_INDEX: &str =
     "CREATE INDEX IF NOT EXISTS index_book_marks_bookUrl_chapterIndex
      ON book_marks(bookUrl, chapterIndex);";
+
+/// book_character_profiles 表（v120，逐列对齐参考版 `BookKnowledge.kt:8-70`
+/// 的 `BookCharacterProfile`，Room schema v97+ 17 列）
+///
+/// 角色卡（人物档案）：
+/// - `id` TEXT 主键（参考版 UUID 字符串；FFI 保存空 id 时生成 UUID v4）；
+/// - `bookUrl` 书籍稳定主键；`name` 角色名——二者由唯一索引约束「一书一名唯一」；
+/// - `aliasesJson` / `tagsJson` 为 JSON 数组字符串（FFI 原样存取，不解析）；
+/// - `avatarUri` 可空（本地 `file://` URI）；
+/// - `role` 为 `male_lead`/`female_lead`/`male_supporting`/`female_supporting`/`""`；
+/// - `voiceGender` / `voiceAgeBand` 由参考版 v97 追加，DDL 默认 `'unknown'`
+///   （后者存「声音池名」，非固定枚举）；
+/// - `status`：`0`=DRAFT / `1`=ACTIVE / `2`=DISABLED / `3`=DELETED；
+/// - `source`：`user` / `ai` / `import`；`confidence` 0–1（手动恒 1.0）；
+/// - `schemaVersion` 行级 schema 版本；`createdAt`/`updatedAt` 为 Unix 毫秒。
+///
+/// **DEFAULT 口径**：参考版 Room schema 的实体默认值由 Kotlin 构造器提供，
+/// 本 DDL 按契约把 `'[]'` / `''` / `'unknown'` / `1` / `'user'` / `1.0` 写进
+/// DEFAULT 作为宽容兜底（FFI 写入恒为全列参数，无行为差异）。
+///
+/// **无外键**（参考版 `foreignKeys = null`，对齐 `book_marks` 结论）；
+/// **不纳入备份**（参考版 `Backup.kt`/`Restore.kt` 无这 5 张角色表）。
+pub const CREATE_BOOK_CHARACTER_PROFILES: &str = "
+CREATE TABLE IF NOT EXISTS book_character_profiles (
+    id TEXT PRIMARY KEY NOT NULL,
+    bookUrl TEXT NOT NULL,
+    name TEXT NOT NULL,
+    aliasesJson TEXT NOT NULL DEFAULT '[]',
+    avatarUri TEXT,
+    tagsJson TEXT NOT NULL DEFAULT '[]',
+    role TEXT NOT NULL DEFAULT '',
+    voiceGender TEXT NOT NULL DEFAULT 'unknown',
+    voiceAgeBand TEXT NOT NULL DEFAULT 'unknown',
+    personality TEXT NOT NULL DEFAULT '',
+    summary TEXT NOT NULL DEFAULT '',
+    status INTEGER NOT NULL DEFAULT 1,
+    source TEXT NOT NULL DEFAULT 'user',
+    confidence REAL NOT NULL DEFAULT 1.0,
+    schemaVersion INTEGER NOT NULL DEFAULT 1,
+    createdAt INTEGER NOT NULL DEFAULT 0,
+    updatedAt INTEGER NOT NULL DEFAULT 0
+);
+";
+
+/// book_character_profiles 索引（迁移/开库自愈复用同一 DDL）
+///
+/// - `index_book_character_profiles_bookUrl_name` **UNIQUE** `(bookUrl, name)`：
+///   「一书一名唯一」硬约束（参考版 `BookKnowledge.kt:10-13`；`CastProfileMirror`
+///   注释说明正因该约束，按名字兜底只能精确相等、不能 LIKE）；
+/// - `index_book_character_profiles_bookUrl_updatedAt` `(bookUrl, updatedAt)`：
+///   列表 `ORDER BY updatedAt DESC` 用。
+pub const CREATE_BOOK_CHARACTER_PROFILES_INDEXES: &str = "
+CREATE UNIQUE INDEX IF NOT EXISTS index_book_character_profiles_bookUrl_name
+    ON book_character_profiles(bookUrl, name);
+CREATE INDEX IF NOT EXISTS index_book_character_profiles_bookUrl_updatedAt
+    ON book_character_profiles(bookUrl, updatedAt);
+";
 
 /// book_source_check_states 表（v115，逐列对齐原版 `BookSourceCheckState.kt`
 /// 与 `DatabaseMigrations.kt:108-121` 的 `migration_105_106` DDL）

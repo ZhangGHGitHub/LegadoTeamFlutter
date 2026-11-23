@@ -2021,6 +2021,38 @@ pub mod ffi {
         Ok(())
     }
 
+    // ─── 角色卡（book_character_profiles，契约 §2.56，R42 阶段 2A）──────
+
+    /// 按书取角色卡列表（裸 JSON 数组）
+    ///
+    /// `status != 3`（排除 DELETED）、`ORDER BY updatedAt DESC`；`limit` 经
+    /// clamp（`<=0` → 50，`>500` → 500），不 panic。`bookUrl` 空或无数据 → `[]`。
+    pub fn get_book_characters(book_url: String, limit: i32) -> Result<String, BridgeError> {
+        let characters = crate::api::book_character_api::get_book_characters(&book_url, limit)?;
+        to_json(&characters)
+    }
+
+    /// 保存角色卡，返回落库后重新查出的完整对象 JSON
+    ///
+    /// **空 id 时按 `(bookUrl, name)` 精确查重并复用其 id**（用户裁决 D2=A，
+    /// 避免 `UNIQUE(bookUrl,name)` + `INSERT OR REPLACE` 静默换 id 导致绑定失效）；
+    /// `updatedAt` 恒写当前毫秒；改名撞别人返回明确错误「已存在同名角色」。
+    pub fn save_book_character(profile_json: String) -> Result<String, BridgeError> {
+        let character = crate::api::book_character_api::save_book_character(&profile_json)?;
+        to_json(&character)
+    }
+
+    /// 按 `(bookUrl, id)` 硬删角色卡，返回是否命中（不存在为 false，不报错）
+    pub fn delete_book_character(
+        book_url: String,
+        character_id: String,
+    ) -> Result<bool, BridgeError> {
+        Ok(crate::api::book_character_api::delete_book_character(
+            &book_url,
+            &character_id,
+        )?)
+    }
+
     // ─── 替换规则管理 ─────────────────────────────────────────
 
     /// 获取所有替换规则（JSON 数组）
