@@ -12,6 +12,8 @@ import '../services/book_api.dart';
 import '../services/privacy_record_alias_store.dart';
 import '../widgets/app_progress_indicator.dart';
 import '../widgets/book_cover.dart';
+import '../widgets/character_manage_dialog.dart';
+import '../utils/book_open_utils.dart';
 import '../utils/error_message.dart';
 
 /// 书籍信息编辑页面
@@ -148,9 +150,38 @@ class _EditBookInfoScreenState extends ConsumerState<EditBookInfoScreen> {
                 ),
               ),
             ),
+            // [R42 阶段 2A | 2026-11-23] 角色卡入口（契约 §2.56）
+            //
+            // 参考版位置：`BookInfoEditScreen.kt:223` 的 `BookKnowledgeEditCard`
+            // 「人物」按钮 → 人物列表页。我方 2A 只做手动建档最小闭环，
+            // 把「列表 + 新增 + 编辑 + 删除」收敛进 [CharacterManageDialog]，
+            // 不新建独立页面（5 个知识/关系页面明确不在本轮范围）。
+            //
+            // 仅在线书展示：详情页角色区块对本地书短路（与相关书同口径），
+            // 本地书建档后无处可见，故此处同样隐藏，避免「录了看不到」。
+            if (BookOpenUtils.isOnlineBook(widget.book)) ...[
+              const SizedBox(height: 12),
+              Card(
+                child: ListTile(
+                  leading: const Icon(Symbols.group_rounded),
+                  title: const Text('角色'),
+                  subtitle: const Text('手动建档，详情页展示角色卡'),
+                  trailing: const Icon(Symbols.chevron_right_rounded),
+                  onTap: _saving ? null : _openCharacterManage,
+                ),
+              ),
+            ],
           ],
         ),
       ),
+    );
+  }
+
+  /// 打开角色卡管理对话框
+  Future<void> _openCharacterManage() async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => CharacterManageDialog(bookUrl: widget.book.bookUrl),
     );
   }
 

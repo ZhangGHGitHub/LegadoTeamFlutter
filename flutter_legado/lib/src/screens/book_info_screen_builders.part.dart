@@ -10,6 +10,109 @@ part of 'book_info_screen.dart';
 /// [R42 阶段 1] 相关书条目封面高度（5:7，宽 96 → 高 134.4，取整 134）
 const double _relatedBookCoverHeight = 134;
 
+/// [R42 阶段 2A] 角色卡宽度（对齐参考版 `CharacterEntryCard` 160dp）
+const double _characterCardWidth = 160;
+
+/// [R42 阶段 2A] 角色卡头像直径（对齐参考版 36dp 圆形）
+const double _characterAvatarSize = 36;
+
+/// [R42 阶段 2A | 2026-11-23] 角色卡单卡（契约 §2.56）
+///
+/// 形态逐项对齐参考版 `BookInfoScreen.kt:2241-2321` `CharacterEntryCard`：
+/// - `GlassCard(width = 160dp)`，此处用 `surfaceContainerLow` 卡面 + 12dp 圆角
+///   （参考版 GlassCard 圆角随主题；我方详情页卡片圆角口径为 12–15dp）；
+/// - 第 1 行：36dp 圆形头像（2A 不填 `avatarUri`，恒走占位图标）+ 右侧
+///   姓名（单行省略）/ 角色中文（空角色不渲染该行）；
+/// - 第 2 行：tags 用 `" | "` 拼接（空则不渲染该行）；
+/// - **`summary` / `personality` 不渲染**（参考版卡片同样不渲染）。
+class _CharacterEntryCard extends StatelessWidget {
+  const _CharacterEntryCard({required this.character});
+
+  final BookCharacter character;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final ts = Theme.of(context).textTheme;
+    final roleLabel = character.roleLabel;
+    final tagsText = character.tagsText;
+    return SizedBox(
+      width: _characterCardWidth,
+      child: Material(
+        color: cs.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  // 2A 明确不做头像选择/裁剪：avatarUri 只建模不填，恒占位
+                  Container(
+                    width: _characterAvatarSize,
+                    height: _characterAvatarSize,
+                    decoration: BoxDecoration(
+                      color: cs.surfaceContainerHighest,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Symbols.person_rounded,
+                      size: 18,
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          character.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: ts.labelLarge?.copyWith(
+                            fontSize: 14,
+                            color: cs.onSurface,
+                          ),
+                        ),
+                        if (roleLabel.isNotEmpty)
+                          Text(
+                            roleLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: ts.labelSmall?.copyWith(
+                              fontSize: 11,
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              if (tagsText.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  tagsText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: ts.labelSmall?.copyWith(
+                    fontSize: 11,
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// [R42 阶段 1 | 2026-11-21] 相关书条目：封面 + 书名 + 作者（宽 96）
 ///
 /// 形态对齐参考版 `BannerModule`（`CoilBookCover` width=96dp + 12dp 间距），
@@ -1632,40 +1735,80 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     );
   }
 
-  /// [UI_SYNC_REFACTOR S3] Characters 区块骨架（已授权；数据链后端调研中，
-  /// 无数据隐藏=缺省降级）
+  /// [R42 阶段 2A | 2026-11-23] 角色卡区块（契约 §2.56）
+  ///
+  /// 数据源：本地表 `book_character_profiles`（用户手动建档）→ Rust
+  /// `getBookCharacters` → provider 解析为 [BookCharacter] 列表（JSON 解析
+  /// 全在 provider，UI 层不含业务逻辑）。
+  ///
+  /// 形态对齐参考版 `BookInfoScreen.kt:2171-2239` `BookInfoCharacters`：
+  /// 标题（我方用 `AppStrings.charactersLabel` = 「角色」，用户裁决 D1=B；
+  /// 参考版此处文案是「知识」但内容为人物卡，属其自身语义错位）+ 横向卡片
+  /// 列表；卡片 160dp 宽、36dp 圆形头像（2A 不做头像，恒占位图标）、角色
+  /// 中文映射、tags `" | "` 拼接，**`summary`/`personality` 卡片上不渲染**
+  /// （实测参考版也没渲染）。
+  ///
+  /// **空数据 / 加载中 / 加载失败一律 `const []`**——保持既有「无数据隐藏」
+  /// 缺省语义（加载中也隐藏，避免区块先出现再消失的跳动）。
   List<Widget> _buildCharactersSection(BuildContext context, Book book) {
-    // 数据源（参考 BookInfoViewModel.characters）后端调研登记：
-    // UI_ONE_TO_ONE_CLONE_PLAN_20260905.md §〇；接通前恒为空
-    const List<({String name, String role})> characters = [];
+    // 本地书无书源规则（与相关书同口径短路；Rust 侧同样返回空）
+    if (!_isOnlineBook(book)) return const [];
+    final characters =
+        ref.watch(bookCharactersProvider(book.bookUrl)).valueOrNull ??
+        const <BookCharacter>[];
     if (characters.isEmpty) return const [];
     return [
       SliverToBoxAdapter(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: Text(
-            AppStrings.charactersLabel,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-        ),
-      ),
-      SliverToBoxAdapter(
-        child: SizedBox(
-          height: 120,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            children: [
-              for (final c in characters)
-                Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: Chip(label: Text(c.name)),
-                ),
-            ],
-          ),
+        child: Column(
+          key: const ValueKey('bookInfoCharacters'),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Text(
+                AppStrings.charactersLabel,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            _buildCharacterCards(context, characters),
+          ],
         ),
       ),
     ];
+  }
+
+  /// 角色卡横向列表（160dp 卡宽，高度随系统字体缩放）
+  Widget _buildCharacterCards(
+    BuildContext context,
+    List<BookCharacter> characters,
+  ) {
+    final textScaler = MediaQuery.textScalerOf(context);
+    // 列表高度 = 顶部 padding 8 + 卡内 padding 10×2 + 首行（头像 36 与姓名/
+    // 角色两行取大）+ 行距 4 + 标签行 + 6dp 余量（不同字体行高差异）；
+    // 下限 96dp 兜底（无标签时卡片仍不塌），随系统字体缩放增高避免溢出。
+    final twoLineHeight =
+        textScaler.scale(14) * 1.4 + textScaler.scale(11) * 1.4;
+    final headerHeight = twoLineHeight > _characterAvatarSize
+        ? twoLineHeight
+        : _characterAvatarSize;
+    final computedHeight =
+        8 + 10 + headerHeight + 4 + textScaler.scale(11) * 1.4 + 10 + 6;
+    final rowHeight = computedHeight > 96 ? computedHeight : 96.0;
+    return SizedBox(
+      height: rowHeight,
+      // 横向长列表按需渲染（懒加载），避免角色多时一次性建树
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+        itemCount: characters.length,
+        itemBuilder: (context, index) => Padding(
+          padding: EdgeInsets.only(
+            right: index == characters.length - 1 ? 0 : 12,
+          ),
+          child: _CharacterEntryCard(character: characters[index]),
+        ),
+      ),
+    );
   }
 
   /// [R42 阶段 1 | 2026-11-21] 相关书区块（契约 §2.55）

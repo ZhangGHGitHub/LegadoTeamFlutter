@@ -16,6 +16,7 @@ import '../l10n/app_strings.dart';
 import '../models/cover_settings.dart';
 import '../models/models.dart';
 import '../providers/auto_task/auto_task_notifier.dart';
+import '../providers/book_info/characters_provider.dart';
 import '../providers/book_info/related_books_provider.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/cover_settings/cover_settings_notifier.dart';
