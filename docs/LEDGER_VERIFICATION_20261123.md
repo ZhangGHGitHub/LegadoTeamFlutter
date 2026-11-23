@@ -19,10 +19,10 @@
 | **仍为真待办** | **28 屏** |
 | 台账「❌待补采」屏行计数变化 | 30 → 28（表内 29 行含 2-10 部分态，其中 3-3/1-6 已改） |
 
-**核心结论：上一轮「30 屏真缺」的判断基本成立，仅漏掉 1 屏完整证据（3-3）与 1 屏限定证据（1-6）。** 两者的共同特点是**证据不在 `docs/` 下**——3-3 在 gitignore 的 `.tmp/`，1-6 在 `docs/` 内但被首轮「透明主题 + 灰底诊断帧」的异常亮度（lum 129.2，高于 90 阈值）过滤掉。
+**核心结论：上一轮「30 屏真缺」的判断基本成立，仅漏掉 1 屏完整证据（3-3）与 1 屏限定证据（1-6）。** 两者的共同特点是**证据不在 `docs/` 下**——3-3 在 gitignore 的 `.tmp/`（**已于 2026-11-23 归档，见 §4.2**），1-6 在 `docs/` 内但被首轮「透明主题 + 灰底诊断帧」的异常亮度（lum 129.2，高于 90 阈值）过滤掉。
 
 **关键限定（不可忽略）**：
-- 3-3 的证据 `.tmp/b3_kazusa_settings.png` **位于 `.gitignore:89` 忽略的 `.tmp/` 目录，未入库**，台账回销当前依赖非持久文件，需归档后方为正式证据。
+- 3-3 的证据原为 `.tmp/b3_kazusa_settings.png`（位于 `.gitignore:89` 忽略的 `.tmp/`，未入库）——**已于 2026-11-23 归档为 `docs/parity_shots/ref_dark_20261123/b3_kazusa_settings.png`**（复制非移动），现为持久化证据，见该目录 `README.md`。
 - 1-6 的 `07_ref_transparent_dark_search_graybg.png` 是「透明主题 + 人为注入 128 灰背景」的 **surfaceContainerLow 槽位诊断帧**（见 `parity_shots/ref_dark_20260921/RECAPTURE_20260921.md` §2），**不是自然深色整屏基线**，只能用于文字/图标角色核对。
 
 ---
@@ -46,14 +46,14 @@
 
 | 屏号 | 屏名 | 状态 | 证据 | 结论 |
 |---|---|---|---|---|
-| 1-2 | 首页页签 | ❌ | 无参考版深色。命中项均为我方或非本屏：`materials_1031b/33_kazusa_home.png`（参考侧但内容是**书架**非首页）、`kz1_home.png`（书架）、`materials_1107/s2_08_night_home.png`（我方）。`.tmp/ref_home_menu.png` 为参考侧**浅色**首页（lum 236.7） | 真缺 |
-| 1-4 | 书架溢出菜单 | ❌ | 深色命中项均为他屏：`materials_1031b/34_kz_menu.png` 是**阅读器菜单**（非书架溢出）、`materials_1031d/*` 是我方目录页菜单、`gate_evidence/gr_*_menu.png` 是我方书源管理菜单。`.tmp/k3.xml`+`menu.xml` 有参考侧菜单 dump（「远程书籍/添加本地/更新目录/布局设置/分组管理/添加网址/选择模式/书架管理」）但**无对应深色截图** | 真缺（仅 dump 无图，按口径不计） |
+| 1-2 | 首页页签 | ❌ | 无参考版深色。命中项均为我方或非本屏：`materials_1031b/33_kazusa_home.png`（参考侧但内容是**书架**非首页）、`kz1_home.png`（书架）、`materials_1107/s2_08_night_home.png`（我方）。`parity_shots/ref_dark_20261123/ref_20260914_home_overflow_light.png`（原 `.tmp/ref_home_menu.png`，已归档）为参考侧**浅色**首页（lum 236.7）；同批另有 `parity_shots/ref_dark_20261123/b3_kazusa_shelf_light.png`（**文件名含 shelf 但内容实为首页**，浅色 lum 231.9） | 真缺（参考侧仅浅色） |
+| 1-4 | 书架溢出菜单 | ❌ | 深色命中项均为他屏：`materials_1031b/34_kz_menu.png` 是**阅读器菜单**（非书架溢出）、`materials_1031d/*` 是我方目录页菜单、`gate_evidence/gr_*_menu.png` 是我方书源管理菜单。`parity_shots/ref_dark_20261123/ref_20260914_shelf_overflow_dump_k3.xml` + `ref_20260914_shelf_overflow_dump_menu.xml`（原 `.tmp/k3.xml` / `.tmp/menu.xml`，已归档，`package=io.legato.kazusa`）有参考侧菜单 dump（「远程书籍/添加本地/更新目录/布局设置/分组管理/添加网址/选择模式/书架管理」）但**无对应深色截图** | 真缺（仅 dump 无图，按口径不计） |
 | 1-5 | 书架批量多选态 | ❌ | 命中项全为我方：`materials_1031d/01_import_selected.png`、`08_long_selected.png`、`pairs_2.0.260/05_bookshelf_select_mode_diff.png`（差分图非实机） | 真缺 |
 | **1-6** | **搜索** | **🔄 部分** | **`parity_shots/ref_dark_20260921/07_ref_transparent_dark_search_graybg.png` + `.xml`**（720×1280，`package=io.legato.kazusa` 实测，文本「搜索/搜索书名、作者/搜索历史/没有内容哦」）。同屏白底对照 `06_ref_transparent_dark_search.png` | **部分回销**：仅透明主题 sCL 诊断帧，可核文字/图标角色，非整屏深色基线 |
-| 1-7 | 搜索结果页 | ❌ | 命中项全为我方：`materials_1031e/10_s6_search_results.png`（我方批次验收）、`pairs_2.0.260/07_search_results_diff.png`（差分）。`.tmp/fail_07_search_results.png` 为我方失败态（lum 174） | 真缺 |
+| 1-7 | 搜索结果页 | ❌ | 命中项全为我方：`materials_1031e/10_s6_search_results.png`（我方批次验收）、`pairs_2.0.260/07_search_results_diff.png`（差分）。`.tmp/fail_07_search_results.png` 为我方失败态（lum 174，**未归档**：属我方截图） | 真缺 |
 | 1-9 | 目录页 | ❌ | 命中项全为我方：`materials_1031c/14_regress_toc.png`、`materials_1031d/04~07_gbk_toc*`（批次验收） | 真缺 |
 | 1-12 | 正文长按菜单 | ❌ | `kz9_longpress.png` 是**我的页**（P43 报告 §五 明确记载「未观察到文本选择工具条」）；`w2_96_longpress_menu.png`（lum 12.9）是**漫画阅读器**长按菜单（保存图片/分享图片/复制链接），非正文长按；`pairs_*/12_reader_longpress_diff.png` 为差分图 | 真缺 |
-| 1-14 | 目录·书签页签 | ❌ | 无参考版深色。`.tmp/k*.xml` 无书签页 dump | 真缺 |
+| 1-14 | 目录·书签页签 | ❌ | 无参考版深色。已归档的参考版 `k*` dump（`parity_shots/ref_dark_20261123/ref_20260914_*`）中无书签页 dump | 真缺 |
 | 1-15 | 章节跳转 | ❌ | 命中项全为我方：`materials_1031d/11~15_slider_*.png`、`materials_1102/65_cleanup_sliders.png`、`materials_1301/evidence/m1_after_chapter_jump.png`（我方漫画验收） | 真缺 |
 | 1-16 | 自动翻页 | ❌ | 仅 `pairs_2.0.260/16_auto_flip_diff.png`（差分图，非实机） | 真缺 |
 
@@ -72,14 +72,14 @@
 
 | 屏号 | 屏名 | 状态 | 证据 | 结论 |
 |---|---|---|---|---|
-| 3-2 | 阅读记录 | ❌ | 仅 `pairs_b3/02_read_record_diff.png`（差分）。`.tmp/k*.xml` 有参考侧「阅读记录」入口但无该页深色截图 | 真缺 |
-| **3-3** | **设置主页** | **✅** | **`.tmp/b3_kazusa_settings.png`**（1080×1920，lum 28.1；参考版深色「设置」主页：外观/高级/阅读界面/封面设置/下载与缓存/备份与恢复/AI 设置/翻译设置 八项**纯文字行 + 右 chevron，无图标无副题**）。同批对照 `.tmp/b3_ours_settings.png`（浅色，带图标+副题） | **可回销**（**但证据在 gitignore 的 `.tmp/`，需归档**） |
-| 3-6 | 设置·备份与恢复 | ❌ | `materials_1102/58_backup_done.png`（我方）；`pairs_b3/06_backup_diff.png`（差分）。`.tmp/b3_kazusa_backup.png` 为参考侧但**浅色**（lum 239.1）；`b3_kazusa_webdav_dialog.png` 亦浅色（237.7） | 真缺（参考侧仅浅色） |
+| 3-2 | 阅读记录 | ❌ | 仅 `pairs_b3/02_read_record_diff.png`（差分）。已归档的参考版 `k*` dump 有参考侧「阅读记录」入口但无该页深色截图 | 真缺 |
+| **3-3** | **设置主页** | **✅** | **`docs/parity_shots/ref_dark_20261123/b3_kazusa_settings.png`**（1080×1920，lum 28.1；参考版深色「设置」主页：外观/高级/阅读界面/封面设置/下载与缓存/备份与恢复/AI 设置/翻译设置 八项**纯文字行 + 右 chevron，无图标无副题**；底色 `rgb(21,19,11)` 页面 / `rgb(30,27,19)` 卡片行）。同批对照 `.tmp/b3_ours_settings.png`（浅色，带图标+副题，未归档）。归属旁证 `parity_shots/ref_dark_20261123/attribution_20260916_settings_home_ui_set2.xml`（`package=io.legato.kazusa`，八项文本逐项吻合） | **已闭环**（2026-11-23 归档入库，持久化） |
+| 3-6 | 设置·备份与恢复 | ❌ | `materials_1102/58_backup_done.png`（我方）；`pairs_b3/06_backup_diff.png`（差分）。`parity_shots/ref_dark_20261123/b3_kazusa_backup.png` 为参考侧但**浅色**（lum 239.1）；同目录 `b3_kazusa_webdav_dialog.png`（237.7）、`b3_kazusa_webdav_focus.png`（237.3）亦浅色（2026-11-23 已从 `.tmp/` 归档） | 真缺（参考侧仅浅色） |
 | 3-7 | 字体（Tt 入口） | ❌ | `materials_1104/m1_24~25_font13_*`、`materials_1105/m2_15~19_font*` 均为我方；参考侧字体相关见 `materials_1031b/35_kz_readcfg1.png`（阅读界面 Sheet 的 Tt 按钮，非独立字体页） | 真缺 |
 | 3-8 | 朗读 | ❌ | 仅 `materials_1104c/80_bg_start_readaloud.png`（我方，lum 65.2） | 真缺 |
 | 3-9 | 分组管理 | ❌ | `materials_1110d/tmp_qb13_C6_night_group.png`（我方）；`m4b_01_group.png`（我方漫画书架视频组）；`ref_01_eye_group.png` 是外观页护眼组；`pairs_b3/09_group_mgmt_diff.png`（差分） | 真缺 |
-| 3-10 | 定时任务 | ❌ | 仅 `materials_1104/m1_20_auto_tasks.png`（我方，lum 22.7）。`.tmp` 有参考侧定时任务 dump（`k*.xml` 含「定时任务」）但无深色图 | 真缺 |
-| 3-11 | 高亮标注列表 | ❌ | 仅 `pairs_b3/11_highlight_diff.png`（差分，lum 4.9）。`.tmp/b3_ours_highlight.png`（我方） | 真缺 |
+| 3-10 | 定时任务 | ❌ | 仅 `materials_1104/m1_20_auto_tasks.png`（我方，lum 22.7）。**原文「`.tmp` 有参考侧定时任务 dump（`k*.xml` 含「定时任务」）」经 2026-11-23 复核为误记**：全 `.tmp/*.xml` 中「定时任务」仅命中 `b3v2_cur.xml`，其 `package=io.legado.flutter_legado`（**我方**）；已归档的参考版 `k*` dump 均无此文案 → 参考侧该入口未取到 dump，更无深色图 | 真缺 |
+| 3-11 | 高亮标注列表 | ❌ | 仅 `pairs_b3/11_highlight_diff.png`（差分，lum 4.9）。`.tmp/b3_ours_highlight.png`（我方，**未归档**：属我方截图，非参考版） | 真缺 |
 
 ### 第 4 批（6 屏待核）
 
@@ -87,9 +87,9 @@
 |---|---|---|---|---|
 | 4-1 | TXT 目录规则 | ❌ | `materials_1031d/16_txtrule_dlg.png`（我方）；`pairs_b4/01_txt_toc_rule_diff.png`（差分） | 真缺 |
 | 4-2 | 字典规则 | ❌ | `materials_1107/s1_08_dark50_dict.png`（我方容器不透明度验收）；`pairs_b4/02_dict_rule_diff.png`（差分） | 真缺 |
-| 4-3 | 文件管理 | ❌ | `materials_1101e/03_filepicker.png`（我方，lum 87.2）、`materials_1102/08_file_picker_refreshed.png`（我方）；`pairs_b4/03_file_manage_diff.png`（差分）。**`.tmp/kz2.xml` 有参考版「筛选 • 文件管理」dump（root/cache/files）但无对应截图** | 真缺（仅 dump 无图） |
-| 4-4 | 关于页 | ❌ | 无参考版深色。`.tmp/b3_kazusa_my2.png` 深色我的页有「关于」入口，但非关于页本身；参考侧浅色见 `ref_20260913/02_about_page.png`（lum 241） | 真缺 |
-| 4-5 | 首页模块管理二级页 | ❌ | 维持「随裁决」。`.tmp/ref_home_menu.png` 为参考侧**浅色**首页 + 溢出菜单（含「首页组件」项），非深色二级页；`.tmp/k1.xml`/`k2.xml` 有「首页组件」dump 但无深色图 | 真缺（随裁决） |
+| 4-3 | 文件管理 | ❌ | `materials_1101e/03_filepicker.png`（我方，lum 87.2）、`materials_1102/08_file_picker_refreshed.png`（我方）；`pairs_b4/03_file_manage_diff.png`（差分）。**`parity_shots/ref_dark_20261123/ref_20260917_filemanager_dump_kz2.xml`（原 `.tmp/kz2.xml`，已归档，`package=io.legato.kazusa`）有参考版「筛选 • 文件管理」dump（root/cache/files）但无对应截图** | 真缺（仅 dump 无图） |
+| 4-4 | 关于页 | ❌ | 无参考版深色。`parity_shots/ref_dark_20261123/b3_kazusa_my2.png`（原 `.tmp/`，已归档）深色我的页有「关于」入口，但非关于页本身；参考侧浅色见 `ref_20260913/02_about_page.png`（lum 241） | 真缺 |
+| 4-5 | 首页模块管理二级页 | ❌ | 维持「随裁决」。`parity_shots/ref_dark_20261123/ref_20260914_home_overflow_light.png`（原 `.tmp/ref_home_menu.png`，已归档）为参考侧**浅色**首页 + 溢出菜单（含「首页组件」项），非深色二级页；`ref_20260914_home_menu_dump_k1.xml`（原 `.tmp/k1.xml`，已归档，`package=io.legato.kazusa`）有「首页组件」dump 但无深色图 | 真缺（随裁决） |
 | 4-6 | 超低频深页 | ❌ | 无参考版深色 | 真缺 |
 
 ---
@@ -109,11 +109,15 @@
 
 > 前 42 张为采集失败/占位坏图，建议清理或标注；后 2 张为参考侧测试素材，属正常。
 
-### 4.2 `.tmp/` 参考版证据未入库（关键风险）
+### 4.2 `.tmp/` 参考版证据未入库（关键风险，**2026-11-23 已解除**）
 
-`.tmp/` 被 `.gitignore:89` 忽略（`git ls-files .tmp` 返回 0）。其中含**21 张参考版深色截图**（`b3_kazusa_*.png` 系列，2026-10-01 14:15~14:20 采集），是本轮 3-3 回销的唯一证据源。若 `.tmp/` 被清理，3-3 回销将失去证据支撑。
+`.tmp/` 被 `.gitignore:89` 忽略（`git ls-files .tmp` 返回 0）。其中含参考版截图（`b3_kazusa_*.png` 系列，2026-10-01 14:15~14:21 采集），是 3-3 回销的唯一证据源。若 `.tmp/` 被清理，3-3 回销将失去证据支撑。
 
-**建议**：将 `b3_kazusa_settings.png`（3-3）及同批可复用者（`b3_kazusa_my.png` / `b3_kazusa_my2.png` / `b3_kazusa_appearance.png` / `b3_kazusa_home.png`）复制归档到 `docs/parity_shots/ref_dark_20261123/` 并补 manifest。本轮**未做**（任务授权为「只读调研 + 更新台账」，归档属新增素材入库，宜由主代理决定）。
+**已处置（2026-11-23）**：全部参考版帧已**复制**归档到 `docs/parity_shots/ref_dark_20261123/`（`.tmp/` 原件保留不动），并附 7 份 `package="io.legato.kazusa"` 的 uiautomator dump 作归属旁证；来源、采集时间、逐张屏号映射、可用/不可用边界见该目录 `README.md`。
+
+**数量更正**：实测该批 `b3_kazusa_*.png` 共 **22 张**，其中**深色仅 6 张**（`settings` 28.1 / `my` 30.2 / `my2` 31.3 / `appearance` 30.9 / `home` 34.6 / `home2` 34.6），其余 16 张为浅色对照帧。原文「21 张参考版深色截图」的表述不准确——深色帧只有 6 张，且其中 3-1 / 1-3 / 3-4 三屏此前已用 `docs/` 内更强证据回销，故本批**实际只新增 3-3 一屏**（与 §一 结论一致）。
+
+**归属缺口（照实登记）**：10-01 该批次本身**未保留 dump**（`.tmp/` 内 10-01 唯一 dump `b3v2_cur.xml` 的 `package` 是 `io.legado.flutter_legado`，属我方），归属依靠三条间接证据（成对命名与时间戳连续、与我方同屏形态差异显著、09-16 参考版 `ui_set2.xml` 八项文本逐项吻合）。**非机器直证**，如需更强归属应重采带 dump 的设置主页帧。
 
 ### 4.3 同名不同内容（非重复文件，避免误判）
 
@@ -157,13 +161,13 @@
 
 ## 六、给下游的可执行建议
 
-1. **立即可做（0 成本）**：把 `.tmp/b3_kazusa_settings.png` 归档为 3-3 的持久证据（建议路径 `docs/parity_shots/ref_dark_20261123/`），并在 manifest 中登记「参考版深色设置主页，八项纯文字行无图标」。归档后 3-3 从「✅（证据未入库）」升级为正式闭环。
+1. **已完成（2026-11-23）**：`.tmp/b3_kazusa_settings.png` 已归档为 3-3 的持久证据 → `docs/parity_shots/ref_dark_20261123/b3_kazusa_settings.png`，同批 31 张参考帧 + 7 份 dump 一并入库，登记见该目录 `README.md`（含「参考版深色设置主页，八项纯文字行无图标」）。3-3 已从「✅（证据未入库）」升级为正式闭环。
 2. **1-6 的使用边界**：`07_ref_transparent_dark_search_graybg.png` 只能用于「深色下文字/图标 onSurface 角色」核对（该报告 §3 已给出 hint `#EDE6FF`、返回图标同色等实测值），**不可**作为搜索页深色整屏基线；若需整屏基线，仍应补采标准板深色搜索页。
 3. **补采优先序**（参考版设备补采，归档 `docs/parity_shots/ref_dark_<YYYYMMDD>/`）：
-   - 第一波（高频）：1-2 首页、1-4 书架溢出、1-6 搜索整屏、1-7 搜索结果、1-9 目录、3-3（已有，仅需归档）
+   - 第一波（高频）：1-2 首页、1-4 书架溢出、1-6 搜索整屏、1-7 搜索结果、1-9 目录（3-3 已完成归档，无需再采）
    - 第二波（发现域）：2-2、2-4（需下拉型源）、2-5、2-6、2-7、2-9
    - 第三波（设置/长尾）：3-2/3-6/3-7/3-8/3-9/3-10/3-11、4-1~4-6
-4. **证据卫生**：清理或标注 `docs/**` 下 42 张纯黑占位图（§4.1 清单），避免后续亮度扫描再次误判；`.tmp/` 中参考版证据建议整体归档后清理，防止随临时目录丢失。
+4. **证据卫生**：清理或标注 `docs/**` 下 42 张纯黑占位图（§4.1 清单），避免后续亮度扫描再次误判；`.tmp/` 中参考版证据**已于 2026-11-23 归档**（`docs/parity_shots/ref_dark_20261123/`），`.tmp/` 清理不再威胁 3-3 证据；其余 `.tmp/` 内容（`corpus/`、`dbsrc/`、`legado-master/` 等）仍属可清理的临时物，清理前请复核 `REFACTORING_ACTIVE_PLAN.md` 中的活引用。
 5. **无需再核的屏**：1-12 已确认参考侧「漫画长按菜单」与「正文长按菜单」是两回事（`w2_96` 为漫画），不要再把 `w2_96_longpress_menu.png` 误当 1-12 证据。
 
 ---
@@ -174,8 +178,28 @@
 |---|---|
 | `§一` 结论段 | 追加「2026-11-23 二次核实」段：说明检索面扩展到根级未入库目录、新增 1 屏全量 + 1 屏部分、28 屏仍真缺、`.tmp/` 未入库风险 |
 | `§四` 1-6 行 | ❌待补采 → 🔄部分已补采（`07_ref_transparent_dark_search_graybg.png` + `.xml`，注明透明主题灰底诊断帧限定） |
-| `§四` 3-3 行 | ❌待补采 → ✅已补采（`.tmp/b3_kazusa_settings.png`，注明 `.gitignore` 未入库缺口） |
+| `§四` 3-3 行 | ❌待补采 → ✅已补采（`.tmp/b3_kazusa_settings.png`，注明 `.gitignore` 未入库缺口）→ **2026-11-23 归档后改指 `docs/parity_shots/ref_dark_20261123/b3_kazusa_settings.png`，缺口解除** |
 | `§五` B-1 行 | 「30 屏 ❌待补采 + 2-10 部分 + 3-4 复验」→「28 屏 ❌待补采 + 1-6 部分 + 2-10 部分 + 3-4 复验」 |
 | `§六` 执行记录末尾 | 追加 2026-11-23 条目（逐屏结论、口径扩展、三项证据完整性告警） |
 
 未改动：`SCREEN_1TO1_PARITY_LEDGER_20260914.md`、`REMAINING_WORK_INVENTORY_20261120.md`、`REFACTORING_ACTIVE_PLAN.md`、任何产品代码/版本号/CHANGELOG。
+
+---
+
+## 八、2026-11-23 归档动作补记（本报告后的追加提交）
+
+> 本节由归档批次追加，记录把 §4.2 风险实际消解的过程。**只做文件归档与文档更新，未改任何产品代码/版本号/CHANGELOG/ACTIVE_PLAN/契约。**
+
+| 项 | 内容 |
+|---|---|
+| 归档目标 | `docs/parity_shots/ref_dark_20261123/`（新建） |
+| 归档方式 | 从 `.tmp/` **复制**（非移动），`.tmp/` 原件全部保留 |
+| 归档内容 | 参考版 PNG 31 张（深色全屏 6 / 浅色全屏 16 / 裁剪 8 / 09-14 首页溢出浅色 1）+ XML 7 份（均 `package="io.legato.kazusa"`）+ `README.md` |
+| 主证据 | `b3_kazusa_settings.png`（3-3 设置主页深色，lum 28.1） |
+| 归属旁证 | `attribution_20260916_settings_home_ui_set2.xml`（八项文本与截图逐项吻合）+ `attribution_20260916_settings_home_sr.xml`（同屏多一项「实验室」） |
+| 顺带归档 | 台账原本只引 `.tmp/` 的 5 份 dump：`ref_20260914_home_dump_k0.xml`（1-2）、`ref_20260914_home_menu_dump_k1.xml`（4-5）、`ref_20260914_shelf_overflow_dump_k3.xml` + `_menu.xml`（1-4）、`ref_20260917_filemanager_dump_kz2.xml`（4-3）；另 `ref_20260914_home_overflow_light.png`（原 `.tmp/ref_home_menu.png`） |
+| 结论变更 | **3-3 由「✅（证据未入库）」升级为持久化闭环**；其余屏结论不变（1-6 仍为部分回销、3-6/4-4 等仍真缺） |
+| 数据更正 1 | 该批 `b3_kazusa_*.png` 实测 **22 张**，深色仅 **6 张**（原报告「21 张参考版深色截图」表述不准确）；本批实际新增回销仍只有 3-3 一屏 |
+| 数据更正 2 | §三 3-10 行原述「`.tmp` 有参考侧定时任务 dump（`k*.xml` 含「定时任务」）」**为误记**：全 `.tmp/*.xml` 中「定时任务」仅命中 `b3v2_cur.xml`，其 `package=io.legado.flutter_legado`（我方） |
+| 文档同步 | `docs/DARK_THEME_PARITY_LEDGER_20260920.md` 的 §一 追加归档段、§四 3-3 行改指归档路径、§六 执行记录两条改路径与张数；本文件 §一/§三/§四/§六/§七 同步 |
+| 未改 | `.tmp/` 内任何文件；`flutter_legado/lib/**`；`rust/**`；版本号；CHANGELOG；`REFACTORING_ACTIVE_PLAN.md`；`docs/API_CONTRACT.md`（工作区既有改动，与本次无关） |
