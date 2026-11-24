@@ -14,8 +14,9 @@
 | 提取出的剩余项总数 | **47 项**（合并强相关子项后） |
 | 其中「已对齐 / 无需做」 | **11 项** |
 | 其中「文档卫生已闭环」 | **2 项**（R45、R46，2026-11-24） |
-| 实际仍需动作 | **34 项** |
-| 类型分布 | 功能缺口 4 ｜ 已知缺陷 12 ｜ 文档偏差 1 ｜ 实机项 5 ｜ 技术债 12 ｜ 已对齐 11 ｜ 已闭环 2 |
+| 其中「测试债已闭环」 | **1 项**（R41，2026-11-24） |
+| 实际仍需动作 | **33 项** |
+| 类型分布 | 功能缺口 4 ｜ 已知缺陷 12 ｜ 文档偏差 1 ｜ 实机项 5 ｜ 技术债 11 ｜ 已对齐 11 ｜ 已闭环 3 |
 | 核实中发现「文档与代码不一致」 | **16 处**（其中 5 处文档声称未做但代码已实现，3 处数字失真，5 处声称状态已过时，3 处已于 2026-11-24 就地修正） |
 
 **三条最重要的核实结论**
@@ -72,7 +73,7 @@
 | R38 | A* 实网验收 9 项（验证码实网、登录倒计时、外链确认等） | P2-4 矩阵 | 矩阵在 `RESIDUAL_RISKS_2026-08-13.md` §A*，逐项待素材 | 实机项 | 依项而定 | 需真实账号/素材 | P3 |
 | R39 | P2-23 iOS 自动任务降级 + 真机走查 | P2-23 | 工程侧已可编译验证；真机待 Apple 设备 | 实机项 | 待设备 | 无 Apple 设备 | P3 |
 | R40 | P2-26 iOS CI 签名（脚手架已交付 `4d5366d818`） | P2-26 | 态 A（无 secrets）默认，CI 绿；态 B 未实证 | 实机项/技术债 | 0.5 天（配置 4 secrets） | 需 Apple Developer Program | P3 |
-| R41 | 低优候选 1：`md3_acceptance_matrix_test.dart` 仅 4 屏，详情/阅读两屏无单测级渲染防护 | 低优候选1 | 已确认：矩阵仅 `theme_config/home/settings/search` | 技术债（测试） | 1 天 | 无 | P3 |
+| R41 | 低优候选 1：`md3_acceptance_matrix_test.dart` 仅 4 屏，详情/阅读两屏无单测级渲染防护 | 低优候选1 | **已闭环（2026-11-24 核实 + 增量）**：原「详情/阅读补页」分组（`md3_acceptance_matrix_test.dart:201` 起）已存在且有效（非 skip、非注释；断言书名/查看目录/书源 + `ReaderPageView` 挂载 + `takeException` 为 null）。本轮再补 2 屏：`reader_config_panel`（15 张分组卡 + 亮度三层嵌套 FutureBuilder）与 `rss_source_edit_screen`（4 Tab × 32 TextField + 可折叠选项面板 + 横向 TabBar），同口径 3 调色板 × 亮暗。矩阵现覆盖 **8 屏**（theme_config/home/settings/search/book_info/reader/reader_config_panel/rss_source_edit）。未补屏理由：`bookshelf_config_sheet`（17 个 testWidgets 已覆盖五段/横竖屏/条件显隐）、`highlight_rules_screen`（44 个 testWidgets 含配色行溢出）、`reader_theme_screen`（已有 360dp 无溢出 + 网格/列表/管理态覆盖）均已有充分渲染防护，不重复补。实测命令：`cd flutter_legado && flutter test test/widget/md3_acceptance_matrix_test.dart`（→ `+39: All tests passed!`，原 27 项 → 39 项）；`flutter analyze`（→ `No issues found!`） | 技术债（测试） | 0（已闭环） | — | 关闭 |
 | R42 | 低优候选 2：Characters/RelatedBooks 后端数据链 + AI 摘要 | 低优候选2 | 已确认：`API_CONTRACT.md` **无** `getBookCharacters`/`getRelatedBooks`（grep 0 命中）；`book_info_screen_builders.part.dart:1571-1613` 为 `const []` 空骨架 | 功能缺口 | 5~8 天 | 需契约先行 + 用户授权排期 | P3 |
 | R43 | 深色主题台账 44 屏「待补采」参考截图 | `DARK_THEME_PARITY_LEDGER_20260920.md` | 已确认：台账 `待补采` 出现 44 次；但后续批 3b/8b/13 已大量实机验证（该台账未回销） | 文档偏差 + 实机项 | 依屏幕数 | 需参考版设备 | P3 |
 | R44 | 「待优化台账」6 项 UX（替换规则保存不返回数据、测试空 pattern 提示被覆盖、RSS 末条判底复用首条 sort、崩溃弹窗溢出 12px、Web 服务卡片仅 Switch 可点、冒烟脚本存根遮蔽） | L849 | 逐项核实：①仍保留（`source_write_api.rs:1103-1106` 注释明示 1:1 保留原版怪癖）；④已修（`crash_log_dialog.dart:88-99` 有宽度约束注释）；其余未逐项复核 | 已知缺陷（UX） | 2~3 天 | **偏离原版需用户确认** | P3 |
@@ -184,7 +185,7 @@ pwsh rust/scripts/rust-fingerprint.ps1 -Check             # → DECISION=REBUILD
 | **已知缺陷** | R04、R05、R06、R07、R17、R18、R19、R20、R25、R29、R33、R44 | 12 |
 | **文档偏差** | R43 | 1（R45、R46 已于 2026-11-24 闭环，移出） |
 | **实机项** | R36、R37、R38、R39、R40 | 5 |
-| **技术债** | R01、R21、R22、R23、R24、R28、R31、R32、R34、R35、R41、R47 | 12 |
+| **技术债** | R01、R21、R22、R23、R24、R28、R31、R32、R34、R35、R47 | 11（R41 已于 2026-11-24 闭环，移出） |
 | **已对齐（无需做）** | R03、R08、R09、R10、R11、R12、R13、R14、R15、R16、R27 | 11 |
 
 > 合计 4+12+1+5+12+11 = **45**（原始 47 项，R45、R46 已于 2026-11-24 闭环后移出「文档偏差」类）。其中「已对齐 11 项」为**本轮核实后确认无需动作**（代码已实现，文档未回销），建议在 ACTIVE_PLAN 一次性回销，避免下轮盘点再次误入清单。

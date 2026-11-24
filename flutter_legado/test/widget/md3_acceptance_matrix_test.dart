@@ -10,6 +10,12 @@
 //    断言关键元素在位（详情：书名/查看目录/书源；阅读：ReaderPageView
 //    已挂载）且 takeException 为 null。pump 成本低（详情 7 stub、阅读 4
 //    stub，复用 one_to_one_matrix / reader_dark_background 模板）。
+//    [R41 增量 2026-11-24] 再补「阅读设置面板 / RSS 源编辑」两屏（视觉最重、
+//    此前只有单一主题 360dp 溢出守卫）：同口径 3 调色板 × 亮暗 + 关键元素
+//    在位断言（面板：高级阅读设置标题/翻页模式分段按钮/页面边距/亮度控制；
+//    源编辑：四 Tab/选项面板/字段输入框）。
+//    当前矩阵覆盖 8 屏：theme_config/home/settings/search/book_info/reader/
+//    reader_config_panel/rss_source_edit。
 // 2. 系统字体缩放边界：textScaler 0.8/1.6 下关键页无溢出。
 // 3. 语义/触控目标：底栏 NavigationBar 目标 ≥ 48dp、SwitchListTile 行高
 //    ≥ 48dp、主题卡片语义标签存在。
@@ -21,14 +27,18 @@ import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/models/models.dart';
+import 'package:flutter_legado/src/models/flip_mode.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/reader/reader_notifier.dart';
 import 'package:flutter_legado/src/screens/book_info_screen.dart';
 import 'package:flutter_legado/src/screens/home_screen.dart';
+import 'package:flutter_legado/src/screens/reader_config_panel.dart';
 import 'package:flutter_legado/src/screens/reader_screen.dart';
+import 'package:flutter_legado/src/screens/rss_source_edit_screen.dart';
 import 'package:flutter_legado/src/screens/search_screen.dart';
 import 'package:flutter_legado/src/screens/settings_screen.dart';
 import 'package:flutter_legado/src/screens/theme_config_screen.dart';
+import 'package:flutter_legado/src/services/mock_book_api.dart';
 import 'package:flutter_legado/src/theme/app_theme.dart';
 import 'package:flutter_legado/src/theme/md3_colors.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_page_view.dart';
@@ -252,6 +262,99 @@ void main() {
 
           // 正文分页面板已挂载（说明书籍打开链路走通、非空态占位）
           expect(find.byType(ReaderPageView), findsOneWidget);
+          expect(tester.takeException(), isNull);
+        });
+      }
+    }
+  });
+
+  // [R41 增量 2026-11-24] 补「阅读设置面板 / RSS 源编辑」两屏：这两屏视觉
+  // 最重（面板 15 张分组卡 + 亮度异步三连 FutureBuilder；RSS 编辑 4 Tab ×
+  // 32 个 TextField + 可折叠选项面板 + 横向 TabBar），且此前仅有
+  // screens_overflow_regress_test 的**单一主题 360dp** 溢出守卫，无
+  // 「3 调色板 × 亮暗」渲染防护。故按 theme_config 同口径补齐。
+  //
+  // 选择说明（已排除的屏及理由）：
+  // - bookshelf_config_sheet：已有 17 个 testWidgets 覆盖五段结构/横竖屏/
+  //   条件显隐/滑块范围，渲染防护充分，不重复补。
+  // - highlight_rules_screen：已有 44 个 testWidgets（含 batch_group 与
+  //   highlight_color_row_overflow）覆盖列表/表单/批量/配色行溢出，充分。
+  // - reader_theme_screen：已有 reader_theme_search_test 覆盖网格/列表/管理态
+  //   与 360dp 无溢出，且 screens_overflow_regress 已纳入。
+  group('关键页渲染矩阵（设置面板/源编辑补页）', () {
+    for (final (name, _) in palettes) {
+      for (final mode in [ThemeMode.light, ThemeMode.dark]) {
+        testWidgets('$name/${mode.name} reader_config_panel 无异常渲染', (tester) async {
+          tester.view.physicalSize = const Size(1080, 2260);
+          tester.view.devicePixelRatio = 3.0;
+          addTearDown(tester.view.reset);
+          await tester.pumpWidget(
+            ProviderScope(
+              overrides: [bookApiProvider.overrideWithValue(MockBookApi())],
+              child: buildScreenApp(
+                name,
+                mode,
+                // 镜像真实呈现形态：showModalBottomSheet(isScrollControlled)
+                // + DraggableScrollableSheet(maxChildSize 0.92) + 可滚动
+                // （对齐 screens_overflow_regress_test 的 fixture 约定，
+                // 避免无界高度产生的「底部溢出」假象）
+                Scaffold(
+                  body: ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 588),
+                    child: SingleChildScrollView(
+                      child: ReaderConfigPanel(
+                        config: ReaderAdvancedConfig(),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+          // 面板含三层嵌套 FutureBuilder（isSupported → isAutoBrightness →
+          // getBrightness），逐帧推进等其全部落地；不用 pumpAndSettle，
+          // 避免加载环的无限动画导致超时。
+          for (var i = 0; i < 6; i++) {
+            await tester.pump(const Duration(milliseconds: 100));
+          }
+
+          // 关键元素在位：面板标题 / 首卡「翻页模式」分段按钮 / 页面边距入口 /
+          // 亮度分组标题（后者不依赖异步分支，恒在，可防「整段被条件吞掉」）
+          expect(find.text('高级阅读设置'), findsOneWidget);
+          expect(find.byType(SegmentedButton<FlipMode>), findsOneWidget);
+          expect(find.text('翻页模式'), findsWidgets);
+          expect(find.text('页面边距'), findsWidgets);
+          expect(find.text('亮度控制'), findsWidgets);
+          expect(tester.takeException(), isNull);
+        });
+
+        testWidgets('$name/${mode.name} rss_source_edit 无异常渲染', (tester) async {
+          tester.view.physicalSize = const Size(1080, 2260);
+          tester.view.devicePixelRatio = 3.0;
+          addTearDown(tester.view.reset);
+          await tester.pumpWidget(
+            ProviderScope(
+              overrides: [bookApiProvider.overrideWithValue(MockBookApi())],
+              child: buildScreenApp(
+                name,
+                mode,
+                const RssSourceEditScreen(),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          // 关键元素在位：标题 / 四个 Tab / 可折叠选项面板 / 首字段标签 /
+          // 字段输入框已实际铺出（防「TabBarView 空壳」假绿）
+          expect(find.text('新建订阅源'), findsOneWidget);
+          expect(find.text('基本'), findsOneWidget);
+          expect(find.text('预处理'), findsOneWidget);
+          expect(find.text('列表规则'), findsOneWidget);
+          expect(find.text('WEB_VIEW'), findsOneWidget);
+          expect(find.text('选项'), findsOneWidget);
+          expect(find.text('源名称'), findsWidgets);
+          expect(find.byType(TabBar), findsOneWidget);
+          expect(find.byType(TextField), findsWidgets);
           expect(tester.takeException(), isNull);
         });
       }
