@@ -33,7 +33,7 @@ Legado（阅读）是一款免费开源的小说阅读器，正在从 Android �
 ### 环境要求
 
 - Rust stable（见 `rust/rust-toolchain.toml`）
-- Flutter SDK >= 3.8.0
+- Flutter SDK >= 3.44.8（CI 固定该版本；`pubspec.lock` 硬下限 `>=3.44.0`）
 - Android NDK r26+（交叉编译时需要）
 
 ### 编译与测试

@@ -1,6 +1,7 @@
 # 剩余未关闭项全量盘点（2026-11-20）
 
 > 基线：`HEAD c3d95bda8e`，版本 `2.0.512+513`，`SCHEMA_VERSION = 119`
+> **2026-11-24 增量回销**：基线已推进至 `HEAD 4928ef14ee` / 版本 `2.0.514+515` / `SCHEMA_VERSION = 120`；R45（README 版本）已自然闭环，R46（DEVELOPMENT 的 31→32 Repository + 119→120 Schema）已修正。详见第三节 I-14/I-15。
 > 性质：**只读调研**。除本文件外未修改任何代码/配置。
 > 方法：`docs/REFACTORING_ACTIVE_PLAN.md`（1289 行）用 Python 以 UTF-8 读取；每条结论均以源码 grep / 命令输出交叉验证，不照抄文档。
 
@@ -12,9 +13,10 @@
 |---|---|
 | 提取出的剩余项总数 | **47 项**（合并强相关子项后） |
 | 其中「已对齐 / 无需做」 | **11 项** |
-| 实际仍需动作 | **36 项** |
-| 类型分布 | 功能缺口 4 ｜ 已知缺陷 12 ｜ 文档偏差 3 ｜ 实机项 5 ｜ 技术债 12 ｜ 已对齐 11 |
-| 核实中发现「文档与代码不一致」 | **13 处**（其中 5 处文档声称未做但代码已实现，3 处数字失真，5 处声称状态已过时） |
+| 其中「文档卫生已闭环」 | **2 项**（R45、R46，2026-11-24） |
+| 实际仍需动作 | **34 项** |
+| 类型分布 | 功能缺口 4 ｜ 已知缺陷 12 ｜ 文档偏差 1 ｜ 实机项 5 ｜ 技术债 12 ｜ 已对齐 11 ｜ 已闭环 2 |
+| 核实中发现「文档与代码不一致」 | **16 处**（其中 5 处文档声称未做但代码已实现，3 处数字失真，5 处声称状态已过时，3 处已于 2026-11-24 就地修正） |
 
 **三条最重要的核实结论**
 
@@ -74,13 +76,13 @@
 | R42 | 低优候选 2：Characters/RelatedBooks 后端数据链 + AI 摘要 | 低优候选2 | 已确认：`API_CONTRACT.md` **无** `getBookCharacters`/`getRelatedBooks`（grep 0 命中）；`book_info_screen_builders.part.dart:1571-1613` 为 `const []` 空骨架 | 功能缺口 | 5~8 天 | 需契约先行 + 用户授权排期 | P3 |
 | R43 | 深色主题台账 44 屏「待补采」参考截图 | `DARK_THEME_PARITY_LEDGER_20260920.md` | 已确认：台账 `待补采` 出现 44 次；但后续批 3b/8b/13 已大量实机验证（该台账未回销） | 文档偏差 + 实机项 | 依屏幕数 | 需参考版设备 | P3 |
 | R44 | 「待优化台账」6 项 UX（替换规则保存不返回数据、测试空 pattern 提示被覆盖、RSS 末条判底复用首条 sort、崩溃弹窗溢出 12px、Web 服务卡片仅 Switch 可点、冒烟脚本存根遮蔽） | L849 | 逐项核实：①仍保留（`source_write_api.rs:1103-1106` 注释明示 1:1 保留原版怪癖）；④已修（`crash_log_dialog.dart:88-99` 有宽度约束注释）；其余未逐项复核 | 已知缺陷（UX） | 2~3 天 | **偏离原版需用户确认** | P3 |
-| R45 | `README.md` 版本 `2.0.510+511` vs `pubspec.yaml` `2.0.512+513` | 文档卫生 | 已确认不一致 | 文档偏差 | 5 分钟 | 无 | P2 |
-| R46 | `docs/DEVELOPMENT.md` 称「31 个 Repository」，实测 `rust/legado-db/src/repository/*.rs` = **32** | 文档卫生 | 已确认不一致 | 文档偏差 | 5 分钟 | 无 | P3 |
+| R45 | `README.md` 版本 `2.0.510+511` vs `pubspec.yaml` `2.0.512+513` | 文档卫生 | **已闭环（2026-11-24 核实）**：`README.md:71` 现为 `2.0.514+515`，与 `flutter_legado/pubspec.yaml:4` 完全一致，无需改动。实测命令：`grep -n "^version" flutter_legado/pubspec.yaml`（→ `2.0.514+515`）；`grep -n "当前版本" README.md`（→ `README.md:71` 同值）。清单快照（2.0.510/512 时期）已过期，属自然收敛 | 文档偏差 | 0（已闭环） | — | 关闭 |
+| R46 | `docs/DEVELOPMENT.md` 称「31 个 Repository」，实测 `rust/legado-db/src/repository/*.rs` = **32** | 文档卫生 | **已闭环（2026-11-24 修正）**：`docs/DEVELOPMENT.md:38` 与 `:100` 两处 `31` → `32`；同段落 Schema 版本 `119` → `120`。实测命令：`ls rust/legado-db/src/repository/*.rs \| wc -l`（→ 33，含 `mod.rs`）；`ls rust/legado-db/src/repository/ \| grep -v "^mod.rs$" \| wc -l`（→ 32）；`grep -n "SCHEMA_VERSION" rust/legado-db/src/schema.rs`（→ `schema.rs:109` = `120`） | 文档偏差 | 0（已闭环） | — | 关闭 |
 | R47 | 8 个未跟踪证据目录（`docs/evidence/batch39c`/`batch45d`/`batch46b` + batch33 5 个文件） | 仓库卫生 | `git status --porcelain` 8 项 `??` | 技术债（卫生） | 10 分钟（提交或删除） | 需确认是否入库 | P2 |
 
 ---
 
-## 三、文档与代码不一致项（13 处，逐条给证据）
+## 三、文档与代码不一致项（16 处，逐条给证据）
 
 | # | 文档表述 | 实际状态 | 证据 |
 |---|---|---|---|
@@ -97,8 +99,11 @@
 | **I-11** | 批37 遗留③「设置页清理缓存副标题与实际范围不符（P3）」 | **已修** | `bfcf16d21e`；`app_strings.dart:512` = 「清除章节缓存与书源缓存 / Clear chapter and source caches」 |
 | **I-12** | 批38 遗留⑥「本地跑 `flutter test` 前须先 `cargo build -p legado-ffi --features quickjs`」+ 「CI Flutter 3.50.0、本地 3.44.8」 | 现状：本地 **3.44.8**（实测 `flutter --version`），CI 未在本轮核实；`flutter analyze` 实测 **0 issue**（`No issues found!`） | `flutter --version` → 3.44.8；`flutter analyze --no-fatal-infos` → `No issues found! (ran in 34.3s)` |
 | **I-13** | `README.md:71`「当前版本：**2.0.510+511**」 | 实际 `pubspec.yaml:4` = **2.0.512+513**；`updateLog.md` 已到 2.0.512 | `grep "^version" flutter_legado/pubspec.yaml`；`CHANGELOG.md:5 ## [2.0.512]` |
+| **I-14** | `README.md:71`「当前版本：**2.0.510+511**」（对应 R45，2026-11-24 复核） | **已自然闭环**：`README.md:71` = **2.0.514+515**，与 `pubspec.yaml:4` = **2.0.514+515** 完全一致，无需改动 | `grep -n "^version" flutter_legado/pubspec.yaml` → `4:version: 2.0.514+515`；`README.md:71` 同值（Python `-X utf8` 读取核实） |
+| **I-15** | `docs/DEVELOPMENT.md:38`「31 个 Repository」+「当前 119」；`:100`「31 Repository」（对应 R46，2026-11-24 修正） | **已修正**：两处 `31` → **32**（`repository/*.rs` 排除 `mod.rs` = 32）；同段落 Schema 版本 `119` → **120** | `ls rust/legado-db/src/repository/*.rs \| wc -l` → **33**（含 `mod.rs`）；`ls rust/legado-db/src/repository/ \| grep -v "^mod.rs$" \| wc -l` → **32**；`grep -n "SCHEMA_VERSION" rust/legado-db/src/schema.rs` → `109:pub const SCHEMA_VERSION: u32 = 120;` |
+| **I-16** | `docs/DEVELOPMENT.md:63`「要求 Flutter SDK >= 3.11.5」；`README.md:36`「Flutter SDK >= 3.8.0」；`docs/DEVELOPMENT.md:109`「test/ 548 个 .dart 文件」（2026-11-24 顺带排查发现） | **已修正**：两处 SDK 下限改为 **>= 3.44.8**（CI `FLUTTER_VERSION` 固定值，`pubspec.lock` 硬下限 `flutter: ">=3.44.0"`）；测试文件数 `548` → **555** | `grep -rn "FLUTTER_VERSION" .github/workflows/*.yml` → `flutter-release.yml:15` / `ios-build.yml:20` = `3.44.8`；`python -c "...pubspec.lock..."` → `flutter: ">=3.44.0"`；`find flutter_legado/test -name "*.dart" \| wc -l` → **555** |
 
-> 说明：`I-01`~`I-11` 属「文档滞后于代码」（代码已修/已做，文档未回销）；`I-12`/`I-13` 属「入口文档与实际环境/版本不一致」。本仓历史上多次出现「正文滞后」先例（`L1255` 审查批E 已登记过同类义务）。
+> 说明：`I-01`~`I-11` 属「文档滞后于代码」（代码已修/已做，文档未回销）；`I-12`/`I-13` 属「入口文档与实际环境/版本不一致」；`I-14`~`I-16` 为 2026-11-24 文档维护批次新增（I-14/I-15 对应 R45/R46 回销，I-16 为同批顺带排查发现的过期 SDK 下限与测试文件数）。本仓历史上多次出现「正文滞后」先例（`L1255` 审查批E 已登记过同类义务）。
 
 ---
 
@@ -177,13 +182,13 @@ pwsh rust/scripts/rust-fingerprint.ps1 -Check             # → DECISION=REBUILD
 |---|---|---|
 | **功能缺口** | R02、R26、R30、R42 | 4 |
 | **已知缺陷** | R04、R05、R06、R07、R17、R18、R19、R20、R25、R29、R33、R44 | 12 |
-| **文档偏差** | R45、R46、R43 | 3 |
+| **文档偏差** | R43 | 1（R45、R46 已于 2026-11-24 闭环，移出） |
 | **实机项** | R36、R37、R38、R39、R40 | 5 |
 | **技术债** | R01、R21、R22、R23、R24、R28、R31、R32、R34、R35、R41、R47 | 12 |
 | **已对齐（无需做）** | R03、R08、R09、R10、R11、R12、R13、R14、R15、R16、R27 | 11 |
 
-> 合计 4+12+3+5+12+11 = **47**。其中「已对齐 11 项」为**本轮核实后确认无需动作**（代码已实现，文档未回销），建议在 ACTIVE_PLAN 一次性回销，避免下轮盘点再次误入清单。
-> 第三节另列 **13 处文档与代码不一致**（I-01~I-13），其中 11 处即上述「已对齐」项的成因，2 处（I-12 环境口径、I-13 README 版本）独立于 R 编号。
+> 合计 4+12+1+5+12+11 = **45**（原始 47 项，R45、R46 已于 2026-11-24 闭环后移出「文档偏差」类）。其中「已对齐 11 项」为**本轮核实后确认无需动作**（代码已实现，文档未回销），建议在 ACTIVE_PLAN 一次性回销，避免下轮盘点再次误入清单。
+> 第三节另列 **16 处文档与代码不一致**（I-01~I-16），其中 11 处即上述「已对齐」项的成因，5 处（I-12 环境口径、I-13/I-14 README 版本、I-15 DEVELOPMENT 结构数字、I-16 SDK 下限与测试文件数）独立于 R 编号。
 
 ---
 
@@ -195,12 +200,12 @@ pwsh rust/scripts/rust-fingerprint.ps1 -Check             # → DECISION=REBUILD
 | **批 B** | R05+R06+R07 Web 写面三缺陷 | `rust/legado-server/src/{routes.rs,handlers/source.rs,handlers/source_update.rs,web_assets.rs}` | 可与批 C 并行 |
 | **批 C** | R22+R23+R47 仓库卫生清账 | `docs/pending_deletion/**`、`docs/evidence/**` | 可与批 B 并行 |
 | **批 D** | R04 JS→App 罐单向补齐 | `rust/legado-ffi/src/http_state.rs` + `rust/legado-js/src/host_api/cookie_store.rs` | 需独立（锁序敏感） |
-| **批 E** | R25 8 个测试 stub + R45/R46 文档版本 | `flutter_legado/test/widget/webdav_*.dart`、`README.md`、`docs/DEVELOPMENT.md` | 可与批 B/C 并行 |
+| **批 E** | R25 8 个测试 stub（R45/R46 已于 2026-11-24 由文档维护批次闭环） | `flutter_legado/test/widget/webdav_*.dart` | 可与批 B/C 并行 |
 | **批 F** | R17~R21 HLS 五条边界 | `rust/legado-ffi/src/api/{hls_playlist.rs,audio_cache_api.rs}` | 需独立（同文件） |
 | **批 G** | R02 L10N 分批（每批 ≤300 处，先按目录切） | 按目录分批 | 每批内可拆两子代理 |
 
 **建议先做的三件事（零代码）**：
-1. 把 I-01~I-13 的 13 处不一致回销进 ACTIVE_PLAN（尤其「C1 已完成」与「L10N 真实量」）；
+1. 把 I-01~I-16 的 16 处不一致回销进 ACTIVE_PLAN（尤其「C1 已完成」与「L10N 真实量」；I-14/I-15/I-16 已于 2026-11-24 在 `README.md` / `docs/DEVELOPMENT.md` 就地修正）；
 2. 修正 `L1285`/`L1287`/`L1289` 三处「54 处」为实测口径（并注明统计方法，便于下轮复核）；
 3. 修正 `L1285` 的「69 个 60GB + 4.5GB」为实测「`tmp_debug` 1.1G / `tmp_*` 1.2G / `.tmp` 645M / `rust/target` 329G」。
 
