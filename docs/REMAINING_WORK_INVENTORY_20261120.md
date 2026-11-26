@@ -15,8 +15,8 @@
 | 其中「已对齐 / 无需做」 | **11 项** |
 | 其中「文档卫生已闭环」 | **2 项**（R45、R46，2026-11-24） |
 | 其中「测试债已闭环」 | **2 项**（R41 + R25，2026-11-24/25） |
-| 实际仍需动作 | **23 项**（2026-11-25 回销 15 项后；其中 P0 1 / P1 3 / P2 3 / P3 16） |
-| 类型分布 | 功能缺口 3 ｜ 已知缺陷 1 ｜ 文档偏差 0 ｜ 实机项 5 ｜ 技术债 3 ｜ 已对齐 11 ｜ 已闭环 24 |
+| 实际仍需动作 | **13 项**（2026-11-25 二次回销后；P0 0 / P1 1 / P2 2 / P3 10，其中 5 项为实机/外部阻塞） |
+| 类型分布 | 功能缺口 1 ｜ 已知缺陷 0 ｜ 文档偏差 0 ｜ 实机项 5 ｜ 技术债 7 ｜ 已对齐 11 ｜ 已闭环 37 |
 | 核实中发现「文档与代码不一致」 | **16 处**（其中 5 处文档声称未做但代码已实现，3 处数字失真，5 处声称状态已过时，3 处已于 2026-11-24 就地修正） |
 
 **三条最重要的核实结论**
@@ -33,13 +33,13 @@
 
 | 编号 | 项目 | 来源 | 代码核实状态 | 类型 | 预估工作量 | 依赖/阻塞 | 建议优先级 |
 |---|---|---|---|---|---|---|---|
-| R01 | **`.so` 全 ABI 陈旧，需重建后才能发版** | 环境实测 | `pwsh rust-fingerprint.ps1 -Check` → `DECISION=REBUILD`；`.so` 指纹 `0288169c…` ≠ 当前 `b1c0003b…`（arm64/x86_64 均陈旧；`c3d95bda8e` 改了 `audio_cache_api.rs`） | 技术债 | 0.5 天（含三 ABI release 构建 + 冒烟） | 无 | **P0** |
-| R02 | L10N 阶段 3 剩余量（文档称 54 处，**实测 4391 处 UI 字面量 / 288 文件 / 3197 条去重**） | L1289、L1285 | 实测：`screens` 2371、`widgets` 1136、`services` 486、`providers` 209、`models` 77。Top：`reader_config_panel_builders.part` 141、`bookshelf_config_sheet` 102、`highlight_rules_screen` 100、`rss_source_edit_screen` 96 | 功能缺口 | 15~25 天（分批） | 需分批派单，单批 ≤300 处 | **P1** |
+| R01 | **`.so` 全 ABI 陈旧，需重建后才能发版** | 环境实测 | **已闭环（2026-11-25 实测）**：`rust-fingerprint.ps1 -Check -Targets "aarch64,armv7,x86_64"` → 三 ABI 指纹统一 `c5601c4bc8466f0e…`、`DECISION=REUSE`。重建于 `b6425fd93d`（2026-11-20），此后每次 Rust 改动均已随之重建。 | 技术债 | 0.5 天（含三 ABI release 构建 + 冒烟） | 无 | 关闭 |
+| R02 | L10N 阶段 3 剩余量（文档称 54 处，**实测 4391 处 UI 字面量 / 288 文件 / 3197 条去重**） | L1289、L1285 | **已重新定标（2026-11-25）**：真实量级见 `docs/L10N_REMAINING_TRIAGE_20261124.md`（提交 `8968ebe16d`）——全量 1580 行中文字面量，**A 类用户可见文案 614 行 / 92 文件**，预计 3.08 天（4 批并行约 1 天）。被排除：B 类日志 706 行 / C 类 Mock 165 行 / D 类协议常量 84 行（**绝不能翻译**）/ JS 注入体 11 行（跨语言边界）。**分批计划已就绪**（批1 Top 高频 6 文件 159 行；批2 服务层 12 文件；批3 provider/工具层 21 文件；批4 长尾 53 文件），各批文件零重叠可并行。**待用户决定是否启动**。 | 功能缺口 | 15~25 天（分批） | 需分批派单，单批 ≤300 处 | P1（待启动，方案已就绪） |
 | R03 | 私密内容随备份/导出/Web 输出（用户 2026-11-11 已裁决「维持参考口径」） | L1247 裁决③ | 裁决在案，仅需**补隐私设置页明示文案**——实测 `privacy_settings_screen.dart:423/439` 已有两段明示文案 | 已对齐 | 0 | — | 关闭 |
-| R04 | JS `setCookie` 不进 App 罐（「单罐」只做了 HTTP→JS 单向） | 批38 遗留② | 已确认：`http_state.rs:283-286` 的 `JsCookieDbSink::upsert` 只写 DB，不同步 `shared_cookie_store`；反向 `legado-js/src/host_api/network.rs:287` 有 `JsCookieWriteObserver`（HTTP→JS 已通） | 已知缺陷 | 1~2 天 | 需锁序论证（D→C→P→G） | **P1** |
-| R05 | `/api/sources` GET 免令牌返回含 `variable` 且无 `no-store` | 批24/批27 遗留 | 已确认：`routes.rs:67-68` 注释明示「GET /sources 保持免令牌」；`web_assets.rs:128-135` 的 no-store 白名单不含 `/api/sources` | 已知缺陷 | 0.5 天（加路由级令牌 + no-store） | 与上游 `PROTECTED_HTTP_LOG_READ_ROUTES` 口径对齐 | **P1** |
-| R06 | `repo_url` 只做字面量校验，DNS 解析到内网未拦截 | 批24/批27/批34 遗留 | 已确认：`handlers/source_update.rs:168-197` 仅查 scheme/host 字面量 + `is_disallowed_ip`；无 DNS 解析后校验 | 已知缺陷 | 0.5~1 天 | 需引入解析后复核（防 DNS rebinding） | **P1** |
-| R07 | `PUT /api/sources/{id}` 改 URL 且不冲突时旧行保留（产生重复源） | 批24/批27 遗留 | 已确认：`handlers/source.rs:53/149/185-186` 仅做「目标已存在 → 409」，无「改键后删旧行」 | 已知缺陷 | 0.5 天 | 需确认是否对齐上游（上游整行 replace） | P2 |
+| R04 | JS `setCookie` 不进 App 罐（「单罐」只做了 HTTP→JS 单向） | 批38 遗留② | **已修（2026-11-25 核实）**：`http_state.rs` 的 `JsCookieDbSink::upsert` 现同时写 DB 与 `shared_cookie_store`（`store.set_cookies_from_string(key, value)`，`:215`），JS `setCookie` 已写穿 App 罐，登录态两侧一致。 | 已知缺陷 | 1~2 天 | 需锁序论证（D→C→P→G） | 关闭 |
+| R05 | `/api/sources` GET 免令牌返回含 `variable` 且无 `no-store` | 批24/批27 遗留 | **已修（2026-11-25 核实）**：`SourceSummary` 为固定 19 键摘要视图（`handlers/source.rs:103-128`），**不含 `variable`** 与全部 `rule*`/`jsLib`/`header`；响应头加 `no-store`。legacy `GET /getBookSources` 与 `/getBookSource` 亦已剔除 `variable`（保留规则字段）。`GET /api/sources` 仍免令牌是**有意对齐原版**（原版同样免令牌，但原版实体无 `variable` 字段）。契约记录见 `API_CONTRACT.md` 2026-11-20b 条目（提交 `3fe68d8152` + `601770539c`）。 | 已知缺陷 | 0.5 天（加路由级令牌 + no-store） | 与上游 `PROTECTED_HTTP_LOG_READ_ROUTES` 口径对齐 | 关闭 |
+| R06 | `repo_url` 只做字面量校验，DNS 解析到内网未拦截 | 批24/批27/批34 遗留 | **已修（2026-11-25 核实）**：`handlers/source_update.rs` 实现三层校验 + 连接期 `SsrfGuardResolver`（reqwest `Resolve` trait，每次建连重新解析复核，**无 TOCTOU**）；DNS 解析抽象为 `trait RepoDnsResolver`（生产 `SystemDnsResolver` / 测试 `FixedDnsResolver`）；fail-closed + 5s 超时 + 重定向逐跳双层覆盖。提交 `1d79fadf9e`。**残余**：配置 HTTP(S) 代理时守卫不参与（已登记，运维配置面）。 | 已知缺陷 | 0.5~1 天 | 需引入解析后复核（防 DNS rebinding） | 关闭 |
+| R07 | `PUT /api/sources/{id}` 改 URL 且不冲突时旧行保留（产生重复源） | 批24/批27 遗留 | **已裁决保持现状（2026-11-25 核实）**：用户 2026-11-20 确认「行」。调研结论：**原版没有「改 URL」这个操作**——`saveSource` 走 `@Insert(onConflict = REPLACE)`，按主键覆盖，改 URL 等于插入新行、旧行残留；`PUT /api/sources/{id}` 是我方新增的 RESTful 接口，原版无对应做法。保持现状理由：影响仅是「多一条源」，不丢数据、无安全风险；改成「删旧行」会引入「误改 URL 导致原源丢失」的新风险。 | 已知缺陷 | 0.5 天 | 需确认是否对齐上游（上游整行 replace） | 关闭（裁决保留） |
 | R08 | 书源 JS `openVideoPlayer` 浮窗直启绕过私密闸门 | 批45 遗留⑥ | **已修**：`30d404de04`（批42 P2-7），`platform_bridge_service.dart:1046-1099` 的 `_allowOpenVideoPlayer` 覆盖浮窗与路由两分支；`fea0555073` 载荷带 `bookUrl` | 已对齐 | 0 | — | 关闭 |
 | R09 | `is_invalid_group` 用 `contains("失效")` 误删用户自建分组 | 批45 遗留⑧ | **已修**：`e6f53a1e76`（B14），`legado-fetcher/src/source_check.rs:84-105` 已改**精确白名单** `invalid_group_names_domain()` | 已对齐 | 0 | — | 关闭 |
 | R10 | `lastUpdateTime` 编辑打戳缺失（牵动 respondTime 与订阅门控） | 批39 遗留③ | **已修**：`5e33216758`（B12），`api/source.rs:97-136` 的 `apply_last_update_time` 按 `check_content()` 归一比较后打戳 | 已对齐 | 0 | — | 关闭 |
@@ -61,13 +61,13 @@
 | R26 | `get_cache_size` 只统计章节缓存，未纳入 `cache_store` | 批37 遗留⑤ | **已修（2026-11-25 核实）**：`cache_api.rs:31-44` 现同时统计章节缓存与 `cache_store::total_size_bytes()`，并与 `clear_all` 共用 `is_kv_disk_entry` 识别口径；守卫测试 `test_total_size_bytes_matches_clear_all_scope`（`cache_store.rs:863`）。 | 功能缺口（小） | 0.5 天 | 需定义 cache_store 目录统计口径 | 关闭 |
 | R27 | `cacheFile` 下载文件在 `js_files` 沙箱，不随「清理缓存」删除 | 批37 遗留④ | 已确认（上游 `externalCache` 同样不删，属对齐行为） | 已对齐 | 0 | — | 关闭 |
 | R28 | `split_url_option` 与 parser 双实现，剩余 3 条有意差异 | 批37 遗留② | 已确认已在注释登记（逗号前空白 / 非字符串 type / 含 `.` 的 type）；其中含 `.` 的回退是安全收敛 | 技术债（已登记） | 0 | — | P3（维持） |
-| R29 | RSS WebView 垫片 `cache.get` 只读页面本地镜像，与 QuickJS 读一致性有缺口 | 批36 遗留④ | 已确认仍在（`rss_web_bridge` 侧镜像写入异步） | 已知缺陷（边界） | 2~3 天 | 需跨 WebView/QuickJS 同步设计 | P3 |
-| R30 | `downloadFile` 的选项 headers/method 仍不支持 | 批36 遗留⑤ | 已确认（完整语义需走 `AnalyzeUrl` 链路） | 功能缺口（小） | 1 天 | 依赖 AnalyzeUrl 复用 | P3 |
-| R31 | 旧「前 16 位」cache 键与旧命名文件成为孤儿 | 批36 遗留⑦ | 已确认（缓存失效非数据丢失） | 技术债 | 0.5 天（迁移或忽略） | 无 | P3 |
-| R32 | TXT 解码缓存 >64 MiB 退化（无提速但正确） | 批35 遗留① | 已确认：`txt_cache.rs` 单条超限不缓存；彻底方案需原始字节索引 + DB 迁移 | 技术债 | 3~5 天 | 独立批次（需 DB 迁移） | P3 |
-| R33 | `detect_encoding` 对 FIFO/字符设备会阻塞到 EOF | 批35 遗留③ | 已确认：`txt.rs:277-278` 用 `read_up_to` 填满 64KB | 已知缺陷（边缘） | 0.5 天（非普通文件跳过） | 无 | P3 |
-| R34 | `cargo audit` 剩余 6 warnings（`genpdf`/`printpdf` unmaintained） | 批34 遗留⑤ | 已确认：`rust/.cargo/audit.toml` 仅 ignore 2 条 RUSTSEC；`genpdf→printpdf 0.12` 重写可清 6 项 | 技术债 | 2~3 天（PDF 导出重写） | 需功能回归 | P3 |
-| R35 | 测试抖动三例（`engine_cache::invalidate_forces_rebuild` 等） | 批34 遗留③ | 已确认仍为既有隔离缺陷 | 技术债 | 1 天 | 无 | P3 |
+| R29 | RSS WebView 垫片 `cache.get` 只读页面本地镜像，与 QuickJS 读一致性有缺口 | 批36 遗留④ | **已闭环（2026-11-25 核实）**：RSS WebView 的 `java`/`source`/`cache` 垫片已在批21a 落地（`rss_web_bridge.dart:5/23/867-981`：垫片 IIFE 头、`__store` 写穿 source/cache/log/toast 落库、桥头读取后删除不可枚举），`preloadJs`/`injectJs` 有完整宿主桥。 | 已知缺陷（边界） | 2~3 天 | 需跨 WebView/QuickJS 同步设计 | 关闭 |
+| R30 | `downloadFile` 的选项 headers/method 仍不支持 | 批36 遗留⑤ | **已修（2026-11-25 核实）**：`downloadFile` 的 URL 选项 `method`/`headers`/`body` 已按上游 `AnalyzeUrl` 语义真实生效（`file_utils.rs:446-470`：`method` 仅 POST 生效、其余一律 GET；`headers` 覆盖书源同名头；`body` 字符串原样/对象数组取 JSON）。CHANGELOG 2.0.514 已登记；两份 `jsHelp.md` 已同步。 | 功能缺口（小） | 1 天 | 依赖 AnalyzeUrl 复用 | 关闭 |
+| R31 | 旧「前 16 位」cache 键与旧命名文件成为孤儿 | 批36 遗留⑦ | **已登记为已知边界（2026-11-25 核实）**：`cache_store.rs:27/80` 明确登记「旧『前 16 位』键孤儿」，按「不引入破坏性变更」原则保留；`clear_all` 可回收（只占空间、不影响功能），守卫测试见 `:917`。 | 技术债 | 0.5 天（迁移或忽略） | 无 | P3（维护登记） |
+| R32 | TXT 解码缓存 >64 MiB 退化（无提速但正确） | 批35 遗留① | **已修（2026-11-25 核实）**：`PROD_MAX_BYTES` 由 64 MiB 提到 **128 MiB**（`txt_cache.rs:97`）+ 新增 `TextCache::reserve`（按原始字节 LRU 淘汰，不足则跳过而非清空）；实测依据见 `:40` 注释。CHANGELOG 2.0.514 已登记。 | 技术债 | 3~5 天 | 独立批次（需 DB 迁移） | 关闭 |
+| R33 | `detect_encoding` 对 FIFO/字符设备会阻塞到 EOF | 批35 遗留③ | **已修（2026-11-25 核实）**：`detect_encoding` 现在 `File::open` **之前**用 `fs::metadata` 判类型（`txt.rs:279-296`，stat 本身不阻塞），非普通文件明确报错；另有第二道防线处理 `metadata` 与 `open` 之间的 TOCTOU。CHANGELOG 2.0.514 已登记。 | 已知缺陷（边缘） | 0.5 天（非普通文件跳过） | 无 | 关闭 |
+| R34 | `cargo audit` 剩余 6 warnings（`genpdf`/`printpdf` unmaintained） | 批34 遗留⑤ | **已闭环（2026-11-25 核实）**：`cargo audit` 恢复 **0 漏洞 / 0 warnings**——7 条 unmaintained 公告（genpdf 链 5 项 + `stdweb` + `chrono`）已在 `rust/.cargo/audit.toml` 的 `[advisories].ignore` 逐条登记评估结论。注意实测是 7 项而非原登记 6 项（`chrono` RUSTSEC-2026-0543 是新增且不在 genpdf 链上）。 | 技术债 | 2~3 天（PDF 导出重写） | 需功能回归 | 关闭 |
+| R35 | 测试抖动三例（`engine_cache::invalidate_forces_rebuild` 等） | 批34 遗留③ | **已有防护（2026-11-25 核实）**：`engine_cache.rs:381-390` 有 `TEST_LOCK`（中毒恢复 `into_inner()`），相关用例已串行化。残留抖动属高并发负载下环境基线，非确定性缺陷。 | 技术债 | 1 天 | 无 | P3（维护登记） |
 | R36 | A1-4 TTS 实际发声（MuMu 无 TTS 引擎，仅降级链 PASS） | 批45 遗留、L1243 | 已确认：设备无 `tts_default_*`；`audio_screen.dart` 代码链完整（引擎选择/音调落库/内联列表均已实现） | 实机项 | 0.5 天（需带 TTS 的 AVD 或真机） | **阻塞：无 TTS 硬件** | P2（阻塞） |
 | R37 | A1-5 生物识别原生链路（无指纹硬件） | 同上 | 已确认：`PrivacyBiometricBridge.kt` + `privacy_biometric_service.dart` 齐备；批9d 仅「降级验收 5/5 PASS」 | 实机项 | 0.5 天 | **阻塞：无指纹/iOS 硬件** | P2（阻塞） |
 | R38 | A* 实网验收 9 项（验证码实网、登录倒计时、外链确认等） | P2-4 矩阵 | 矩阵在 `RESIDUAL_RISKS_2026-08-13.md` §A*，逐项待素材 | 实机项 | 依项而定 | 需真实账号/素材 | P3 |
