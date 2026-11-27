@@ -2972,13 +2972,11 @@ class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
       final decoded = jsonDecode(json) as Map<String, dynamic>;
       final b64 = decoded['base64'] as String? ?? '';
       if (b64.isEmpty) {
-        throw Exception('解码结果为空（imageDecode 未返回有效图片数据）');
+        throw Exception(AppStrings.comicDecodeResultEmpty);
       }
       final bytes = base64Decode(b64);
       if (!looksLikeImageBytes(bytes)) {
-        throw Exception(
-          '解码结果不是有效图片（可能 imageDecode/createSymmetricCrypto 失败）',
-        );
+        throw Exception(AppStrings.comicDecodeResultNotImage);
       }
       if (!mounted) return;
       ComicImageDecodeCache.put(widget.bookSourceUrl, widget.url, bytes);
@@ -3238,11 +3236,11 @@ class _LocalCbzImageState extends ConsumerState<_LocalCbzImage> {
       final decoded = jsonDecode(json) as Map<String, dynamic>;
       final b64 = decoded['base64'] as String? ?? '';
       if (b64.isEmpty) {
-        throw Exception('CBZ 页数据为空');
+        throw Exception(AppStrings.comicCbzPageEmpty);
       }
       final bytes = base64Decode(b64);
       if (!looksLikeImageBytes(bytes)) {
-        throw Exception('CBZ 页数据不是有效图片');
+        throw Exception(AppStrings.comicCbzPageNotImage);
       }
       if (!mounted) return;
       ComicImageDecodeCache.put(widget.cacheKey, widget.entry, bytes);

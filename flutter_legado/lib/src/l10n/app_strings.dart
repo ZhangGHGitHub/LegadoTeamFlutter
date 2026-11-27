@@ -5495,6 +5495,18 @@ class AppStrings {
   static String comicPageCount(int page, int total) =>
       _locale == 'zh' ? '页数 $page/$total' : 'Page $page/$total';
 
+  // 漫画图片解码错误（经 errorMessage → ErrorView 展示给用户，L10N 补漏）
+  static String get comicDecodeResultEmpty => _get(
+      '解码结果为空（imageDecode 未返回有效图片数据）',
+      'The decode result is empty (imageDecode returned no valid image data)');
+  static String get comicDecodeResultNotImage => _get(
+      '解码结果不是有效图片（可能 imageDecode/createSymmetricCrypto 失败）',
+      'The decode result is not a valid image (imageDecode/createSymmetricCrypto may have failed)');
+  static String get comicCbzPageEmpty =>
+      _get('CBZ 页数据为空', 'The CBZ page data is empty');
+  static String get comicCbzPageNotImage =>
+      _get('CBZ 页数据不是有效图片', 'The CBZ page data is not a valid image');
+
   // ----- 分组管理（book_group_screen） -----
   static String get editGroup => _get('编辑分组', 'Edit group');
   static String get newGroup => _get('新建分组', 'New group');
