@@ -254,9 +254,7 @@ mixin RustApiSearchRss on RustApiDecode implements BookApi {
       decoded = json;
     }
     if (decoded == false) {
-      throw StateError(
-        'updateRssSource: RSS 源不存在（sourceUrl=${source.sourceUrl}）',
-      );
+      throw StateError(AppStrings.rssSourceNotFound(source.sourceUrl));
     }
   }
 

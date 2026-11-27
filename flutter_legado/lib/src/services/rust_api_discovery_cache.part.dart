@@ -313,7 +313,7 @@ mixin RustApiDiscoveryCache on RustApiDecode implements BookApi {
     );
     final taskId = int.tryParse(json.trim());
     if (taskId == null) {
-      throw Exception('缓存任务启动失败: $json');
+      throw Exception(AppStrings.cacheDownloadInvalidTaskId(json));
     }
     return taskId;
   }

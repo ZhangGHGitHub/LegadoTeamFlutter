@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import '../l10n/app_strings.dart';
+
 /// 漫画电子纸真像素二值化（对齐 EpaperTransformation）
 ///
 /// 1. 按亮度转灰度：`0.299R + 0.587G + 0.114B`（等同 ColorMatrix 去饱和）
@@ -32,7 +34,7 @@ Future<ui.Image> mangaEpaperFromBytes(
   final height = src.height;
   final data = await src.toByteData(format: ui.ImageByteFormat.rawRgba);
   src.dispose();
-  if (data == null) throw StateError('无法读取像素');
+  if (data == null) throw StateError(AppStrings.comicEpaperPixelReadFailed);
   final rgba = Uint8List.fromList(data.buffer.asUint8List());
   binarizeRgbaInPlace(rgba, threshold);
 

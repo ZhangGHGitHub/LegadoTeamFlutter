@@ -641,7 +641,10 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
   Future<String> importOldData(String dirPath) async {
     final dir = Directory(dirPath);
     if (!await dir.exists()) {
-      throw RustApiException('目录不存在: $dirPath', operation: 'importOldData');
+      throw RustApiException(
+        AppStrings.importOldDataDirNotFound(dirPath),
+        operation: 'importOldData',
+      );
     }
     return bridge.importOldData(dir: dirPath);
   }

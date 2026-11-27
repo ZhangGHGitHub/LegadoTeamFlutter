@@ -6968,4 +6968,61 @@ class AppStrings {
         _get('线程数', 'Thread count'),
         _get('本地书籍', 'Local books'),
       ];
+
+  // ----- L10N 批5：漫画电子纸（manga_epaper） -----
+  static String get comicEpaperPixelReadFailed =>
+      _get('无法读取像素', 'Unable to read image pixels');
+
+  // ----- L10N 批5：RSS 分类解析（rss_notifier） -----
+  static String get rssSortsNotArray =>
+      _get('RSS 分类期望 JSON 数组', 'RSS sorts must be a JSON array');
+  static String get rssSortEntryNotObject => _get(
+      'RSS 分类项期望 JSON 对象', 'Each RSS sort entry must be a JSON object');
+  static String get rssSortUrlMissing =>
+      _get('RSS 分类项缺少 url', 'RSS sort entry is missing "url"');
+
+  // ----- L10N 批5：分组私密状态（book_group_screen） -----
+  static String get bookGroupNotFoundPrivateUnsaved => _get(
+      '分组不存在，私密状态未保存',
+      'The group does not exist; its private state was not saved');
+  static String get bookGroupCreatedPrivateSaveFailed => _get(
+      '分组已创建，但私密状态保存失败',
+      'The group was created, but its private state could not be saved');
+
+  // ----- L10N 批5：书源登录 loginUi 解析（classic_login_dialog） -----
+  static String get loginUiNotArray =>
+      _get('loginUi 不是数组', 'loginUi is not a JSON array');
+
+  // ----- L10N 批5：服务层异常（rust_api / deep_link） -----
+  static String importOldDataDirNotFound(String path) =>
+      _locale == 'zh' ? '目录不存在: $path' : 'Directory not found: $path';
+  static String rssSourceNotFound(String url) =>
+      _locale == 'zh' ? 'RSS 源不存在：$url' : 'The RSS source does not exist: $url';
+  static String cacheDownloadInvalidTaskId(String payload) => _locale == 'zh'
+      ? '无效的任务 ID 返回值（$payload）'
+      : 'Invalid task ID response ($payload)';
+  static String get deepLinkCopyNoPath =>
+      _get('文件拷贝失败：未返回路径', 'File copy failed: no path was returned');
+
+  // ----- L10N 批5：JSON 解码诊断（rust_api_decode） -----
+  static String rustApiDecodeListFailed(
+    String method,
+    String actualType,
+    String preview,
+  ) =>
+      _locale == 'zh'
+          ? '$method（RustApi 列表解码）: 期望 JSON 数组，实际为 $actualType，'
+              '原始内容前 120 字符：$preview'
+          : '$method (RustApi list decode): expected a JSON array, got '
+              '$actualType; first 120 characters: $preview';
+  static String rustApiDecodeMapFailed(
+    String method,
+    String actualType,
+    String preview,
+  ) =>
+      _locale == 'zh'
+          ? '$method（RustApi 对象解码）: 期望 JSON 对象，实际为 $actualType，'
+              '原始内容前 120 字符：$preview'
+          : '$method (RustApi object decode): expected a JSON object, got '
+              '$actualType; first 120 characters: $preview';
 }

@@ -488,17 +488,17 @@ class RssNotifier extends Notifier<RssState> {
         .rssSortUrls(source.sourceUrl, sortUrl: sortUrl);
     final decoded = jsonDecode(json);
     if (decoded is! List) {
-      throw const FormatException('rssSortUrls 期望 JSON 数组');
+      throw FormatException(AppStrings.rssSortsNotArray);
     }
     final sorts = <RssSort>[];
     for (final item in decoded) {
       // 形态不符必须显式（防复发规定 §4）：FFI 契约恒为对象数组
       if (item is! Map) {
-        throw const FormatException('rssSortUrls 项期望 JSON 对象');
+        throw FormatException(AppStrings.rssSortEntryNotObject);
       }
       final sort = RssSort.fromJson(Map<String, dynamic>.from(item));
       if (sort.url.isEmpty) {
-        throw const FormatException('rssSortUrls 项缺少 url');
+        throw FormatException(AppStrings.rssSortUrlMissing);
       }
       sorts.add(sort);
     }

@@ -132,7 +132,7 @@ class ClassicLoginDialogState extends State<ClassicLoginDialog> {
         rows = const [];
       } else {
         final decoded = jsonDecode(loginUi);
-        if (decoded is! List) throw const FormatException('loginUi 不是数组');
+        if (decoded is! List) throw FormatException(AppStrings.loginUiNotArray);
         rows = [
           for (final e in decoded)
             if (e is Map)

@@ -186,7 +186,7 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
         // [批9c] updateBookGroup 不带 isPrivate（Rust 保留旧值），
         // 私密位单列落库；返回 false 说明分组行不存在，按失败处理。
         final hit = await api.setBookGroupPrivate(group.groupId, isPrivate);
-        if (!hit) throw StateError('分组不存在，私密状态未保存');
+        if (!hit) throw StateError(AppStrings.bookGroupNotFoundPrivateUnsaved);
       } else {
         final nextOrder = _groups.isEmpty
             ? 0
@@ -203,7 +203,9 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
         // [批9c] 新建分组固定非私密（Rust 语义），拿到 id 后再落私密位
         if (isPrivate) {
           final hit = await api.setBookGroupPrivate(created.groupId, true);
-          if (!hit) throw StateError('分组已创建，但私密状态保存失败');
+          if (!hit) {
+            throw StateError(AppStrings.bookGroupCreatedPrivateSaveFailed);
+          }
         }
       }
       // [批9c] 私密标记变更 → 书架派生过滤/锁定页同步

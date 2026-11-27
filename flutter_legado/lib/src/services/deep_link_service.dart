@@ -634,7 +634,7 @@ class DeepLinkService {
         'persistent': persistent,
       });
       if (path == null || path.isEmpty) {
-        throw StateError('文件拷贝失败：未返回路径');
+        throw StateError(AppStrings.deepLinkCopyNoPath);
       }
       return path;
     } catch (e) {

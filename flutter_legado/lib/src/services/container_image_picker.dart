@@ -18,6 +18,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:saf/saf.dart';
 
+import '../l10n/app_strings.dart';
 import 'theme_background_image_store.dart';
 
 /// 选中图片的字节内容与显示名（SAF/file_picker 统一口径）
@@ -135,7 +136,7 @@ class ContainerImagePicker {
       // [批2b-1b-2a] 刻意不降级 file_picker：Android MediaStore 陈旧缩略图
       // 路径会触发原生 FATAL；SAF 不可用时直接提示重试。
       debugPrint('[ContainerImagePicker] 平台=Android SAF 失败: $e');
-      throw const ContainerImagePickException('无法打开系统图片选择器，请重试');
+      throw ContainerImagePickException(AppStrings.coverAlbumPickerOpenFailed);
     }
   }
 
@@ -169,7 +170,9 @@ class ContainerImagePicker {
           (file.path != null ? await File(file.path!).readAsBytes() : null);
       if (bytes == null) {
         debugPrint('[ContainerImagePicker] 平台=iOS/桌面 file_picker 无路径/字节');
-        throw const ContainerImagePickException('无法读取所选图片');
+        throw ContainerImagePickException(
+          AppStrings.coverAlbumReadImageFailed(file.name),
+        );
       }
       if (bytes.length > maxBytes) {
         throw ContainerImagePickException(_tooLargeMessage(maxBytes));
@@ -179,10 +182,10 @@ class ContainerImagePicker {
       rethrow;
     } catch (e) {
       debugPrint('[ContainerImagePicker] 平台=iOS/桌面 file_picker 失败: $e');
-      throw const ContainerImagePickException('选择图片失败，请重试');
+      throw ContainerImagePickException(AppStrings.coverAlbumPickerFailed);
     }
   }
 
   static String _tooLargeMessage(int maxBytes) =>
-      '图片过大（上限 ${maxBytes ~/ (1024 * 1024)}MB）';
+      AppStrings.imageTooLarge(maxBytes ~/ (1024 * 1024));
 }
