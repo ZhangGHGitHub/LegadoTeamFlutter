@@ -13,13 +13,15 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import '../l10n/app_strings.dart';
+
 /// data: URI 图片解码结果的默认字节上限（32 MiB）
 ///
 /// RSS 图片极少超过该体积；超限按「数据过大」报错，避免一次性解码
 /// 数百 MB 的 base64 导致 OOM。
 const int kMaxImageDataUriBytes = 32 * 1024 * 1024;
 
-/// data: URI 图片解码失败（[message] 为可直接展示的中文文案）
+/// data: URI 图片解码失败（[message] 为可直接展示的文案，随启动 locale 本地化）
 class ImageDataUriException implements Exception {
   const ImageDataUriException(this.message);
 
@@ -122,13 +124,13 @@ RssDataUriImage? parseImageDataUri(
   final roughLimit = encodedLimit * 2 + _kMaxDataUriHeaderBytes;
   if (value.length > roughLimit) {
     throw ImageDataUriException(
-      '图片数据过大（超过 ${_formatMegabytes(maxBytes)}）',
+      AppStrings.imageDataTooLarge(_formatMegabytes(maxBytes)),
     );
   }
 
   final comma = value.indexOf(',');
   if (comma < 0) {
-    throw const ImageDataUriException('data URI 缺少逗号分隔符');
+    throw ImageDataUriException(AppStrings.imageDataMissingComma);
   }
   // 精确预检（不拷贝）：统计逗号后的非空白字符数，超限直接拒绝，
   // 避免为超长输入执行 substring / 去空白 / base64 解码。
@@ -138,14 +140,14 @@ RssDataUriImage? parseImageDataUri(
   }
   if (encodedCount > encodedLimit) {
     throw ImageDataUriException(
-      '图片数据过大（超过 ${_formatMegabytes(maxBytes)}）',
+      AppStrings.imageDataTooLarge(_formatMegabytes(maxBytes)),
     );
   }
 
   final text = value.trim();
   final textComma = text.indexOf(',');
   if (textComma < 0) {
-    throw const ImageDataUriException('data URI 缺少逗号分隔符');
+    throw ImageDataUriException(AppStrings.imageDataMissingComma);
   }
   final header = text.substring('data:'.length, textComma);
   final payload = text.substring(textComma + 1);
@@ -154,7 +156,9 @@ RssDataUriImage? parseImageDataUri(
   final mimeType = parts.first.trim().toLowerCase();
   if (!mimeType.startsWith('image/')) {
     throw ImageDataUriException(
-      mimeType.isEmpty ? 'data URI 未声明图片类型' : '不是图片类型：$mimeType',
+      mimeType.isEmpty
+          ? AppStrings.imageDataMissingMime
+          : AppStrings.imageDataNotImage(mimeType),
     );
   }
 
@@ -162,17 +166,17 @@ RssDataUriImage? parseImageDataUri(
       .skip(1)
       .any((part) => part.trim().toLowerCase() == 'base64');
   if (!hasBase64) {
-    throw const ImageDataUriException('data URI 缺少 base64 编码');
+    throw ImageDataUriException(AppStrings.imageDataMissingBase64);
   }
 
   // data URI 允许换行/空白，解码前统一剥离
   final cleaned = payload.replaceAll(RegExp(r'\s+'), '');
   if (cleaned.isEmpty) {
-    throw const ImageDataUriException('图片数据为空');
+    throw ImageDataUriException(AppStrings.imageDataEmpty);
   }
   if (cleaned.length > encodedLimit) {
     throw ImageDataUriException(
-      '图片数据过大（超过 ${_formatMegabytes(maxBytes)}）',
+      AppStrings.imageDataTooLarge(_formatMegabytes(maxBytes)),
     );
   }
 
@@ -180,14 +184,14 @@ RssDataUriImage? parseImageDataUri(
   try {
     bytes = base64Decode(cleaned);
   } on FormatException {
-    throw const ImageDataUriException('base64 数据无效');
+    throw ImageDataUriException(AppStrings.imageDataBase64Invalid);
   }
   if (bytes.isEmpty) {
-    throw const ImageDataUriException('图片数据为空');
+    throw ImageDataUriException(AppStrings.imageDataEmpty);
   }
   if (bytes.length > maxBytes) {
     throw ImageDataUriException(
-      '图片数据过大（超过 ${_formatMegabytes(maxBytes)}）',
+      AppStrings.imageDataTooLarge(_formatMegabytes(maxBytes)),
     );
   }
 

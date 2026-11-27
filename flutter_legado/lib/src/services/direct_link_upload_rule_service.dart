@@ -16,11 +16,12 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show debugPrint, immutable;
 import 'package:flutter/services.dart' show rootBundle;
 
+import '../l10n/app_strings.dart';
 import 'book_api.dart';
 
 /// 直链上传规则非法（JSON 形态 / 必填字段 / 字段类型）
 ///
-/// [message] 为可直接展示给用户的中文文案。
+/// [message] 为可直接展示给用户的文案（随启动 locale 本地化）。
 class DirectLinkUploadRuleException implements Exception {
   const DirectLinkUploadRuleException(this.message);
 
@@ -47,14 +48,18 @@ class DirectLinkUploadRule {
       final value = json[camel] ?? (snake == null ? null : json[snake]);
       if (value == null) return '';
       if (value is! String) {
-        throw DirectLinkUploadRuleException('字段 $camel 必须是字符串');
+        throw DirectLinkUploadRuleException(
+          AppStrings.directLinkFieldMustBeString(camel),
+        );
       }
       return value;
     }
 
     final compress = json['compress'];
     if (compress != null && compress is! bool) {
-      throw const DirectLinkUploadRuleException('字段 compress 必须是布尔值');
+      throw DirectLinkUploadRuleException(
+        AppStrings.directLinkCompressMustBeBool,
+      );
     }
     return DirectLinkUploadRule(
       uploadUrl: readString('uploadUrl', 'upload_url'),
@@ -83,7 +88,9 @@ class DirectLinkUploadRule {
   void validate() {
     final url = uploadUrl.trim();
     if (url.isEmpty) {
-      throw const DirectLinkUploadRuleException('上传Url不能为空');
+      throw DirectLinkUploadRuleException(
+        AppStrings.directLinkUploadUrlRequired,
+      );
     }
     final comma = url.indexOf(',');
     final urlPart =
@@ -94,13 +101,17 @@ class DirectLinkUploadRule {
     if (uri == null ||
         (uri.scheme != 'http' && uri.scheme != 'https') ||
         uri.host.isEmpty) {
-      throw const DirectLinkUploadRuleException('上传Url不是有效的 http(s) 地址');
+      throw DirectLinkUploadRuleException(
+        AppStrings.directLinkUploadUrlInvalid,
+      );
     }
     if (downloadUrlRule.trim().isEmpty) {
-      throw const DirectLinkUploadRuleException('下载Url规则不能为空');
+      throw DirectLinkUploadRuleException(
+        AppStrings.directLinkDownloadRuleRequired,
+      );
     }
     if (summary.trim().isEmpty) {
-      throw const DirectLinkUploadRuleException('注释不能为空');
+      throw DirectLinkUploadRuleException(AppStrings.directLinkSummaryRequired);
     }
   }
 
@@ -177,23 +188,27 @@ class DirectLinkUploadRuleService {
     try {
       decoded = jsonDecode(raw);
     } on FormatException {
-      throw const DirectLinkUploadRuleException('内置直链上传规则不是有效的 JSON');
+      throw DirectLinkUploadRuleException(AppStrings.directLinkBuiltinNotJson);
     }
     final list = switch (decoded) {
       List<dynamic> value => value,
-      _ => throw const DirectLinkUploadRuleException('内置直链上传规则必须是 JSON 数组'),
+      _ => throw DirectLinkUploadRuleException(
+        AppStrings.directLinkBuiltinNotArray,
+      ),
     };
     final rules = <DirectLinkUploadRule>[];
     for (final item in list) {
       final map = switch (item) {
         Map<String, dynamic> value => value,
-        _ => throw const DirectLinkUploadRuleException('内置直链上传规则条目必须是 JSON 对象'),
+        _ => throw DirectLinkUploadRuleException(
+          AppStrings.directLinkBuiltinEntryNotObject,
+        ),
       };
       final rule = DirectLinkUploadRule.fromJson(map)..validate();
       rules.add(rule);
     }
     if (rules.isEmpty) {
-      throw const DirectLinkUploadRuleException('内置直链上传规则为空');
+      throw DirectLinkUploadRuleException(AppStrings.directLinkBuiltinEmpty);
     }
     _defaultRulesCache = List.unmodifiable(rules);
     return _defaultRulesCache!;
@@ -203,17 +218,19 @@ class DirectLinkUploadRuleService {
   DirectLinkUploadRule parseRule(String ruleJson) {
     final trimmed = ruleJson.trim();
     if (trimmed.isEmpty) {
-      throw const DirectLinkUploadRuleException('规则内容为空');
+      throw DirectLinkUploadRuleException(AppStrings.directLinkRuleEmpty);
     }
     final dynamic decoded;
     try {
       decoded = jsonDecode(trimmed);
     } on FormatException {
-      throw const DirectLinkUploadRuleException('规则不是有效的 JSON');
+      throw DirectLinkUploadRuleException(AppStrings.directLinkRuleNotJson);
     }
     final map = switch (decoded) {
       Map<String, dynamic> value => value,
-      _ => throw const DirectLinkUploadRuleException('规则必须是 JSON 对象'),
+      _ => throw DirectLinkUploadRuleException(
+        AppStrings.directLinkRuleNotObject,
+      ),
     };
     return DirectLinkUploadRule.fromJson(map);
   }

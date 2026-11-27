@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/pref_keys.dart';
+import '../l10n/app_strings.dart';
 import '../utils/error_message.dart';
 
 /// 系统 TTS 引擎哨兵 URL
@@ -343,7 +344,9 @@ class FlutterTtsSystemTtsPlatform implements SystemTtsPlatform {
       'locale': voice.locale,
     });
     if (result == 0) {
-      throw SystemTtsException('音色不可用：${voice.displayName}');
+      throw SystemTtsException(
+        AppStrings.systemTtsVoiceUnavailable(voice.displayName),
+      );
     }
   }
 
@@ -618,7 +621,7 @@ class SystemTtsService {
       taskEpoch = epoch;
       final voices = await _enqueue(() async {
         if (epoch != _epoch) {
-          throw const SystemTtsException('系统 TTS 引擎切换已取消');
+          throw SystemTtsException(AppStrings.systemTtsEngineSwitchCancelled);
         }
         await _applyEngineOnly();
         return _platform.getVoices();
@@ -631,7 +634,7 @@ class SystemTtsService {
             (v) => v.name == selected.name && v.locale == selected.locale,
           )) {
         await selectVoice(null);
-        _pendingNotice = '原音色在当前引擎不可用，已回退系统默认音色';
+        _pendingNotice = AppStrings.systemTtsVoiceFallbackForEngine;
       }
       return voices;
     } catch (e) {
@@ -693,10 +696,10 @@ class SystemTtsService {
   }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) {
-      throw const SystemTtsException('朗读文本为空');
+      throw SystemTtsException(AppStrings.systemTtsTextEmpty);
     }
     if (!await isAvailable()) {
-      throw const SystemTtsUnavailableException('系统未安装可用的 TTS 引擎');
+      throw SystemTtsUnavailableException(AppStrings.systemTtsEngineMissing);
     }
     await loadSelection();
     final dir = await _cacheDirectory();
@@ -985,7 +988,7 @@ class SystemTtsService {
     // [审查回修 P2-B] 旧代际任务直接取消：不得再触碰缓存文件（否则可能
     // 删除 stop 后新代际同 key 的产物）。
     if (epoch != _epoch) {
-      throw const SystemTtsException('系统 TTS 合成已取消');
+      throw SystemTtsException(AppStrings.systemTtsSynthesisCancelled);
     }
     // [审查回修 P3] 上次崩溃可能留下半截文件：合成前先删除，避免
     // 插件跳过写入后被误判为「已有有效产物」。
@@ -1002,7 +1005,7 @@ class SystemTtsService {
       await _platform.synthesizeToFile(text, path).timeout(synthesisTimeout);
       final file = File(path);
       if (!file.existsSync() || file.lengthSync() <= 0) {
-        throw const SystemTtsException('系统 TTS 未生成音频文件');
+        throw SystemTtsException(AppStrings.systemTtsNoGeneratedFile);
       }
       // [设置批5c] 只做数量上限清理；保留时间由用户设置
       // （pruneByRetention）统一负责，避免旧的 48h 默认提前删除 7 天缓存。
@@ -1020,10 +1023,14 @@ class SystemTtsService {
         } catch (_) {}
       }
       if (e is TimeoutException) {
-        throw SystemTtsException('系统 TTS 合成超时（${synthesisTimeout.inSeconds}s）');
+        throw SystemTtsException(
+          AppStrings.systemTtsSynthesisTimeout(synthesisTimeout.inSeconds),
+        );
       }
       if (e is SystemTtsException) rethrow;
-      throw SystemTtsException('系统 TTS 合成失败：${errorMessage(e)}');
+      throw SystemTtsException(
+        AppStrings.systemTtsSynthesisFailed(errorMessage(e)),
+      );
     }
   }
 
@@ -1052,7 +1059,7 @@ class SystemTtsService {
           try {
             await _platform.resetClient();
           } catch (_) {}
-          throw const SystemTtsException('系统 TTS 引擎初始化超时');
+          throw SystemTtsException(AppStrings.systemTtsEngineInitTimeout);
         } catch (e) {
           debugPrint('恢复系统默认 TTS 引擎失败: $e');
         }
@@ -1070,7 +1077,7 @@ class SystemTtsService {
         try {
           await _platform.resetClient();
         } catch (_) {}
-        throw const SystemTtsException('系统 TTS 引擎初始化超时');
+        throw SystemTtsException(AppStrings.systemTtsEngineInitTimeout);
       } catch (e) {
         _engineDirty = true;
         rethrow;
@@ -1119,7 +1126,7 @@ class SystemTtsService {
         } catch (_) {}
         _appliedVoice = null;
         await selectVoice(null);
-        _pendingNotice ??= '音色不可用，已回退系统默认音色';
+        _pendingNotice ??= AppStrings.systemTtsVoiceFallback;
       }
     }
     if (_appliedSpeed != speed) {

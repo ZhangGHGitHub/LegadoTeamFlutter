@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart' show VideoFormat;
 
 import '../../constants/pref_keys.dart';
+import '../../l10n/app_strings.dart';
 import '../../models/book.dart';
 import '../../services/audio_service.dart';
 import '../../services/book_api.dart';
@@ -28,7 +29,7 @@ export 'audio_state.dart';
 /// 展示面复用 [AudioState.errorMessage]（阅读器朗读条警示条 / 听书页错误行），
 /// 不新造 UI；同一朗读会话内只提示一次，用户配置引擎后自动清除。
 /// [A4 | 2026-10-03]
-const String kNoUsableEngineHint = '未配置可用朗读引擎，将按估算节奏朗读';
+String get kNoUsableEngineHint => AppStrings.audioNoUsableEngineHint;
 
 /// 朗读引擎 URL 归一：把历史「名称,URL」复合形态还原为裸 URL 模板
 ///
@@ -395,11 +396,17 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   String get sleepTimerRemainingLabel {
     switch (sleepTimerMode) {
       case SleepTimerMode.chapters:
-        return '剩余 $_chaptersToStopRemaining 章';
+        return AppStrings.readAloudTimerChaptersRemaining(
+          _chaptersToStopRemaining,
+        );
       case SleepTimerMode.duration:
-        return '剩余 ${(_sleepRemainingSeconds + 59) ~/ 60} 分钟';
+        return AppStrings.readAloudTimerRemaining(
+          AppStrings.readAloudTimerMinutes(
+            (_sleepRemainingSeconds + 59) ~/ 60,
+          ),
+        );
       case SleepTimerMode.finishChapter:
-        return '读完本章后停止';
+        return AppStrings.readAloudTimerFinishChapterStop;
       case SleepTimerMode.off:
         return '';
     }
@@ -1214,7 +1221,7 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       if (token != _playToken || _disposed) return;
       _segmentGapActive = false;
       state = state.copyWith(
-        errorMessage: '音频分段播放失败：${errorMessage(e)}',
+        errorMessage: AppStrings.audioSegmentPlayFailed(errorMessage(e)),
         state: PlayerState.error,
       );
       return;
@@ -1265,8 +1272,8 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
           if (index + 1 >= state.chapters.length) {
             state = state.copyWith(
               errorMessage: (!isVolume && mediaUrl.isEmpty)
-                  ? '未获取到资源链接'
-                  : '无可播放章节',
+                  ? AppStrings.audioNoResourceLink
+                  : AppStrings.audioNoPlayableChapter,
               state: PlayerState.error,
             );
             return;
@@ -1326,7 +1333,7 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
           if (fallbackUrl.isEmpty) {
             // 本地播放失败且没有网络地址可回落：与「未获取到资源链接」同语义
             state = state.copyWith(
-              errorMessage: '未获取到资源链接',
+              errorMessage: AppStrings.audioNoResourceLink,
               state: PlayerState.error,
             );
             return;
@@ -1348,7 +1355,7 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
             // 形似 JSON 数组但解析失败 / 数组内无有效地址：对齐原版
             // `getMediaSource` 返回 null → 「url格式错误」，此处复用既有文案
             state = state.copyWith(
-              errorMessage: '未获取到资源链接',
+              errorMessage: AppStrings.audioNoResourceLink,
               state: PlayerState.error,
             );
             return;
@@ -1496,7 +1503,9 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       // [P0 | 2026-10-03] 在线书正文抓取失败（网络/书源失效等）必须有用户
       // 可见提示：errorMessage 由朗读条警示条/听书页错误行展示（不静默）
       state = state.copyWith(
-        errorMessage: '章节正文获取失败，无法朗读：${errorMessage(e)}',
+        errorMessage: AppStrings.audioChapterContentUnavailable(
+          errorMessage(e),
+        ),
         state: PlayerState.error,
       );
     }
@@ -1625,7 +1634,7 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       failure = e;
     }
     if (failure == null && (audioPath == null || audioPath.trim().isEmpty)) {
-      failure = StateError('TTS 合成未返回音频文件（引擎或缓存异常）');
+      failure = StateError(AppStrings.audioTtsNoAudioFile);
     }
     if (_isSpeakStale(token, gen)) return;
 
@@ -1651,7 +1660,9 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     // 降级：合成/播放失败 → 估算时长推进 + 用户可见提示
     // （系统 TTS 分支见 [_speakWithSystemTts]，同一降级语义）
     if (failure != null) {
-      state = state.copyWith(errorMessage: '朗读音频不可用，本段按估算时长继续：$failure');
+      state = state.copyWith(
+        errorMessage: AppStrings.audioPlaybackFallback('$failure'),
+      );
     }
     _scheduleEstimateAdvance(text, config.speed, token, gen);
   }
@@ -1696,7 +1707,7 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       return;
     }
     if (failure == null && (audioPath == null || audioPath.trim().isEmpty)) {
-      failure = StateError('系统 TTS 未返回音频文件');
+      failure = StateError(AppStrings.audioSystemTtsNoAudioFile);
     }
     if (failure == null) {
       try {
@@ -1727,7 +1738,9 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     if (failure is SystemTtsUnavailableException) {
       _showNoEngineHintOnce();
     } else {
-      state = state.copyWith(errorMessage: '系统 TTS 朗读失败，本段按估算时长继续：$failure');
+      state = state.copyWith(
+        errorMessage: AppStrings.audioSystemTtsFallback('$failure'),
+      );
     }
     // [设置批5c] 0 模式：合成产物播放失败/进入估算推进即删除
     await _burnTtsFileIfOwned(resolvedPath, gen);
@@ -2263,7 +2276,9 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   /// （保持既有降级行为，由 Kotlin 侧回退为章节标题）。
   String _composePlaybackLabel() {
     if (state.bookName.isEmpty) return '';
-    final prefix = state.isStreamMode ? '正在播放' : '正在朗读';
+    final prefix = state.isStreamMode
+        ? AppStrings.audioNowPlaying
+        : AppStrings.speaking;
     final remaining = sleepTimerRemainingLabel;
     if (remaining.isEmpty) return '$prefix: ${state.bookName}';
     return '$prefix($remaining): ${state.bookName}';
@@ -2595,7 +2610,7 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       } catch (e) {
         if (_disposed) return;
         state = state.copyWith(
-          errorMessage: '音频分段播放失败：${errorMessage(e)}',
+          errorMessage: AppStrings.audioSegmentPlayFailed(errorMessage(e)),
           state: PlayerState.error,
         );
       }

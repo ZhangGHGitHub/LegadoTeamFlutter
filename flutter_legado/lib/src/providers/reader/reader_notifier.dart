@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../bridge/ffi.dart';
 import '../../constants/pref_keys.dart';
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../services/rust_api.dart';
 import '../../services/settings_service.dart';
@@ -585,8 +586,10 @@ class ReaderNotifier extends Notifier<ReaderState> {
   ///
   /// 成功返回 null；失败返回原因（UI 据此展示失败，**不得提示成功**）。
   Future<String?> reloadAfterCharsetChange(Book book) async =>
-      (await _reloadLocalTocAndContent(book, failureHint: '编码或文件不可读'))
-          .error;
+      (await _reloadLocalTocAndContent(
+        book,
+        failureHint: AppStrings.readerReloadCharsetFailureHint,
+      )).error;
 
   /// 设置 TXT 目录规则后重载目录与当前章正文（批43，对齐 `MenuTocRegex`）
   ///
@@ -599,7 +602,10 @@ class ReaderNotifier extends Notifier<ReaderState> {
   /// `ChapterListResponse.used_custom_rule`——false 表示规则未命中/不可用，
   /// 已回退默认规则（批43b P2-1，UI 据此提示，不假报「已应用」）。
   Future<TocRuleReloadResult> reloadAfterTocRuleChange(Book book) =>
-      _reloadLocalTocAndContent(book, failureHint: '目录规则未命中或文件不可读');
+      _reloadLocalTocAndContent(
+        book,
+        failureHint: AppStrings.readerReloadTocRuleFailureHint,
+      );
 
   /// 本地书目录/正文重载共用实现（编码 / 目录规则变更）
   Future<TocRuleReloadResult> _reloadLocalTocAndContent(
@@ -617,7 +623,9 @@ class ReaderNotifier extends Notifier<ReaderState> {
         return (error: null, usedCustomRule: meta.usedCustomRule);
       }
       if (chapters.isEmpty) {
-        state = state.copyWith(error: '目录加载失败（$failureHint）');
+        state = state.copyWith(
+          error: AppStrings.readerTocLoadFailed(failureHint),
+        );
         return (error: state.error, usedCustomRule: meta.usedCustomRule);
       }
       final index = state.currentChapterIndex
@@ -687,13 +695,18 @@ class ReaderNotifier extends Notifier<ReaderState> {
   // 原版：本地书不显示换源/刷新菜单，此守卫兜底面板侧入口）。
   Future<String?> refreshChapterContent() async {
     final book = state.currentBook;
-    if (book == null || state.chapters.isEmpty) return '没有书籍或目录';
+    if (book == null || state.chapters.isEmpty) {
+      return AppStrings.readerNoBookOrToc;
+    }
     if (book.origin.isEmpty || BookType.isLocalOrigin(book.origin)) {
-      return '本地书不支持刷新正文';
+      return AppStrings.readerLocalBookNoContentRefresh;
     }
     final idx = state.currentChapterIndex;
-    if (idx < 0 || idx >= state.chapters.length) return '无效章节索引';
-    if (_refreshing) return '正文刷新进行中'; // [C5-hunt] 重入守卫
+    if (idx < 0 || idx >= state.chapters.length) {
+      return AppStrings.readerInvalidChapterIndex;
+    }
+    // [C5-hunt] 重入守卫
+    if (_refreshing) return AppStrings.readerContentRefreshInProgress;
     _refreshing = true;
     final chapter = state.chapters[idx];
     final api = ref.read(bookApiProvider);
@@ -711,8 +724,11 @@ class ReaderNotifier extends Notifier<ReaderState> {
       if (content.trim().isEmpty) {
         // 空正文视为抓取失败：保留旧正文（当前章缓存行已失效，
         // 他章不受影响，无整书清理）
-        state = state.copyWith(isLoading: false, error: '正文抓取为空');
-        return '正文抓取为空';
+        state = state.copyWith(
+          isLoading: false,
+          error: AppStrings.readerContentFetchEmpty,
+        );
+        return AppStrings.readerContentFetchEmpty;
       }
       // 3) 成功：持久化新内容（fetch 已自动回写当前章缓存行）
       state = state.copyWith(chapterContent: content, isLoading: false);
@@ -749,10 +765,10 @@ class ReaderNotifier extends Notifier<ReaderState> {
   // 保留，旧正文保留，error 置位供 UI 反馈）。
   Future<String?> reloadAfterSourceChange(String bookUrl) async {
     final book = state.currentBook;
-    if (book == null) return '没有书籍';
+    if (book == null) return AppStrings.readerNoBook;
     // [SB-HUNT | 2026-09-25] 重入兜底：重载阶段在途（或导航阶段
     // 进行中）时直接返回，不重复 getBook/重载目录/清缓存
-    if (_changeSourceFlowActive) return '更换书源进行中';
+    if (_changeSourceFlowActive) return AppStrings.readerSourceChangeInProgress;
     _changeSourceFlowActive = true;
     final oldIndex = state.currentChapterIndex;
     final oldChapter =
@@ -770,7 +786,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
       // 1) 重读书籍记录（换源事务后的新记录）
       final newBook = await api.getBook(bookUrl);
       if (newBook == null) {
-        throw StateError('读取书籍记录失败');
+        throw StateError(AppStrings.readerReadBookRecordFailed);
       }
       // 2) 同步书籍对象（bookUrl 稳定，源相关字段为新值）
       state = state.copyWith(currentBook: newBook);
@@ -780,7 +796,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
         chapters = await api.refreshToc(bookUrl, newBook.origin);
       }
       if (chapters.isEmpty) {
-        throw StateError('目录加载失败（新源无目录）');
+        throw StateError(AppStrings.readerNewSourceNoToc);
       }
       // 4) 章节定位 + 位置保留
       final target = _matchChapterAfterTocReload(chapters, oldTitle, oldIndex);
@@ -801,7 +817,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
       if (err != null) {
         // 正文抓取失败：目录已是新源，保留旧正文，错误显式返回
         state = state.copyWith(isLoading: false, error: err);
-        return '正文刷新失败：${errorMessage(err)}';
+        return AppStrings.readerContentRefreshFailed(errorMessage(err));
       }
       // 持久化换源后的新进度（新章节索引/位置）
       await _saveProgress();

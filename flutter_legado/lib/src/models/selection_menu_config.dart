@@ -15,6 +15,8 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import '../l10n/app_strings.dart';
+
 abstract final class SelectionMenuIds {
   static const copy = 'menu_copy';
   static const share = 'menu_share_str';
@@ -64,21 +66,23 @@ abstract final class SelectionMenuIds {
   };
 
   /// 参考文案（menu_mark 对齐参考版「笔记」；其余对齐 zh-CN）
-  static const Map<String, String> labels = {
-    copy: '复制',
-    share: '分享',
-    browser: '浏览器',
-    aloud: '朗读',
-    bookmark: '书签',
-    mark: '笔记',
-    dict: '字典',
-    replace: '替换',
-    edit: '编辑',
-    aiClean: 'AI 净化',
-    aiRewrite: 'AI 改写',
-    search: '全文搜索',
-    insertBgmBefore: '插入背景音乐（前）',
-    insertBgmAfter: '插入背景音乐（后）',
+  ///
+  /// 经 [AppStrings] 本地化；`SelectionMenuIds` 的 id 是契约值，不随之改变。
+  static Map<String, String> get labels => {
+    copy: AppStrings.selectionMenuCopy,
+    share: AppStrings.selectionMenuShare,
+    browser: AppStrings.selectionMenuBrowser,
+    aloud: AppStrings.readAloud,
+    bookmark: AppStrings.selectionMenuBookmark,
+    mark: AppStrings.note,
+    dict: AppStrings.selectionMenuDict,
+    replace: AppStrings.selectionMenuReplace,
+    edit: AppStrings.edit,
+    aiClean: AppStrings.selectionMenuAiClean,
+    aiRewrite: AppStrings.selectionMenuAiRewrite,
+    search: AppStrings.searchContent,
+    insertBgmBefore: AppStrings.selectionMenuInsertBgmBefore,
+    insertBgmAfter: AppStrings.selectionMenuInsertBgmAfter,
   };
 
   static const Map<String, IconData> icons = {

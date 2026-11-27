@@ -19,6 +19,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart'
     show debugPrint, immutable, visibleForTesting;
 
+import '../l10n/app_strings.dart';
 import 'book_api.dart';
 
 /// 可忽略的备份表（键名逐字对齐参考版 `BackupConfig.dbIgnoreKeys`）
@@ -47,23 +48,32 @@ class BackupContentService {
   /// 参考版有而本应用 schema 无对应表的 4 项（`homepageModules` /
   /// `homepageCustomSets` / `highlightTagRule` / `tagGroupRule`）不列出；
   /// `bookmark` 在参考版同时把守书签与划线/笔记，故标题合并表述。
-  static const entries = <BackupContentEntry>[
-    BackupContentEntry('bookmark', '书签与划线笔记'),
-    BackupContentEntry('bookGroup', '书籍分组'),
-    BackupContentEntry('bookSource', '书源'),
-    BackupContentEntry('rssSource', 'RSS 源'),
-    BackupContentEntry('rssStar', 'RSS 收藏'),
-    BackupContentEntry('replaceRule', '替换规则'),
-    BackupContentEntry('readRecord', '阅读记录'),
-    BackupContentEntry('searchHistory', '搜索历史'),
-    BackupContentEntry('sourceSub', '订阅源'),
-    BackupContentEntry('txtTocRule', 'TXT 目录规则'),
-    BackupContentEntry('httpTTS', '在线朗读引擎'),
-    BackupContentEntry('keyboardAssists', '键盘辅助'),
-    BackupContentEntry('dictRule', '词典规则'),
-    BackupContentEntry('highlightRule', '高亮规则'),
-    BackupContentEntry('server', '服务器配置'),
-  ];
+  ///
+  /// 标题经 [AppStrings] 本地化：首次访问时按启动 locale 生成（与全局
+  /// 语言切换一致，重启生效）。
+  static final List<BackupContentEntry> entries = List.unmodifiable([
+    BackupContentEntry('bookmark', AppStrings.backupContentBookmark),
+    BackupContentEntry('bookGroup', AppStrings.backupContentBookGroup),
+    BackupContentEntry('bookSource', AppStrings.sources),
+    BackupContentEntry('rssSource', AppStrings.backupContentRssSource),
+    BackupContentEntry('rssStar', AppStrings.rssFavorites),
+    BackupContentEntry('replaceRule', AppStrings.backupContentReplaceRule),
+    BackupContentEntry('readRecord', AppStrings.readRecordLabel),
+    BackupContentEntry('searchHistory', AppStrings.searchHistory),
+    BackupContentEntry(
+      'sourceSub',
+      AppStrings.backupContentSourceSubscription,
+    ),
+    BackupContentEntry('txtTocRule', AppStrings.txtTocRulesLabel),
+    BackupContentEntry('httpTTS', AppStrings.backupContentHttpTts),
+    BackupContentEntry(
+      'keyboardAssists',
+      AppStrings.backupContentKeyboardAssists,
+    ),
+    BackupContentEntry('dictRule', AppStrings.backupContentDictRule),
+    BackupContentEntry('highlightRule', AppStrings.highlightRulesMenu),
+    BackupContentEntry('server', AppStrings.webdavServerConfig),
+  ]);
 
   /// 全部合法键
   static Set<String> get keys => {for (final entry in entries) entry.key};

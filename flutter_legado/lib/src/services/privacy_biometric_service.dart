@@ -17,6 +17,8 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../l10n/app_strings.dart';
+
 /// 生成 32 字节随机解锁令牌（标准 Base64）
 ///
 /// 推送进平台 Keystore/Keychain 加密的只有这个令牌，**不是密码**；
@@ -103,19 +105,19 @@ enum PrivacyBiometricCommandError {
     PrivacyBiometricErrorCode.failed => failed,
   };
 
-  /// 中文提示文案
+  /// 用户提示文案（经 [AppStrings] 随启动 locale 本地化）
   String get message => switch (this) {
-    noPassword => '请先设置隐私密码',
-    notConfigured => '生物快捷解锁未开启或已失效，请改用密码',
-    unsupported => '当前系统不支持生物识别',
-    noHardware => '设备不支持指纹或面容识别',
-    notEnrolled => '尚未录入指纹或面容，请先在系统设置中添加',
-    lockedOut => '生物识别暂时锁定，请稍后重试或改用密码',
-    permanentlyLockedOut => '生物识别已被系统锁定，请改用密码，并在解锁后重新开启快捷解锁',
-    keyInvalidated => '指纹或面容已变更，生物快捷解锁已关闭，请改用密码并重新开启',
-    cancelled => '已取消生物识别',
-    timeout => '生物识别超时，请重试或改用密码',
-    failed => '生物识别失败，请重试或改用密码',
+    noPassword => AppStrings.privacyNoPassword,
+    notConfigured => AppStrings.privacyBiometricNotConfigured,
+    unsupported => AppStrings.privacyBiometricUnsupported,
+    noHardware => AppStrings.privacyBiometricNoHardware,
+    notEnrolled => AppStrings.privacyBiometricNotEnrolled,
+    lockedOut => AppStrings.privacyBiometricLockedOut,
+    permanentlyLockedOut => AppStrings.privacyBiometricPermanentlyLockedOut,
+    keyInvalidated => AppStrings.privacyBiometricKeyInvalidated,
+    cancelled => AppStrings.privacyBiometricCancelled,
+    timeout => AppStrings.privacyBiometricTimeout,
+    failed => AppStrings.privacyBiometricFailed,
   };
 }
 

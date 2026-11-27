@@ -6191,4 +6191,274 @@ class AppStrings {
       : 'Failed to run the task: $error';
   static String get autoTaskRunSuccess => _get('成功', 'Success');
   static String get autoTaskRunFailure => _get('失败', 'Failed');
+
+  // ----- L10N 批2：朗读音频（audio_notifier / system_tts_service） -----
+  static String get audioNoUsableEngineHint => _get(
+      '未配置可用朗读引擎，将按估算节奏朗读',
+      'No usable speech engine is configured; reading aloud at the estimated pace');
+  static String get audioNowPlaying => _get('正在播放', 'Now playing');
+  static String audioSegmentPlayFailed(String error) => _locale == 'zh'
+      ? '音频分段播放失败：$error'
+      : 'Audio segment playback failed: $error';
+  static String get audioNoResourceLink =>
+      _get('未获取到资源链接', 'Failed to obtain the resource link');
+  static String get audioNoPlayableChapter =>
+      _get('无可播放章节', 'No playable chapters');
+  static String audioChapterContentUnavailable(String error) => _locale == 'zh'
+      ? '章节正文获取失败，无法朗读：$error'
+      : 'Failed to load the chapter content; cannot read aloud: $error';
+  static String get audioTtsNoAudioFile => _get(
+      'TTS 合成未返回音频文件（引擎或缓存异常）',
+      'TTS synthesis returned no audio file (engine or cache error)');
+  static String audioPlaybackFallback(String failure) => _locale == 'zh'
+      ? '朗读音频不可用，本段按估算时长继续：$failure'
+      : 'Read-aloud audio is unavailable; continuing this segment with the estimated duration: $failure';
+  static String get audioSystemTtsNoAudioFile => _get(
+      '系统 TTS 未返回音频文件', 'System TTS returned no audio file');
+  static String audioSystemTtsFallback(String failure) => _locale == 'zh'
+      ? '系统 TTS 朗读失败，本段按估算时长继续：$failure'
+      : 'System TTS read-aloud failed; continuing this segment with the estimated duration: $failure';
+  static String systemTtsVoiceUnavailable(String voice) => _locale == 'zh'
+      ? '音色不可用：$voice'
+      : 'Voice unavailable: $voice';
+  static String get systemTtsVoiceFallbackForEngine => _get(
+      '原音色在当前引擎不可用，已回退系统默认音色',
+      'The previous voice is unavailable on the current engine; fell back to the system default voice');
+  static String get systemTtsVoiceFallback => _get(
+      '音色不可用，已回退系统默认音色',
+      'Voice unavailable; fell back to the system default voice');
+  static String get systemTtsTextEmpty =>
+      _get('朗读文本为空', 'The read-aloud text is empty');
+  static String get systemTtsEngineMissing => _get(
+      '系统未安装可用的 TTS 引擎',
+      'No usable TTS engine is installed on the system');
+  static String get systemTtsSynthesisCancelled =>
+      _get('系统 TTS 合成已取消', 'System TTS synthesis cancelled');
+  static String get systemTtsEngineSwitchCancelled =>
+      _get('系统 TTS 引擎切换已取消', 'System TTS engine switch cancelled');
+  static String get systemTtsNoGeneratedFile => _get(
+      '系统 TTS 未生成音频文件', 'System TTS did not generate an audio file');
+  static String systemTtsSynthesisTimeout(int seconds) => _locale == 'zh'
+      ? '系统 TTS 合成超时（${seconds}s）'
+      : 'System TTS synthesis timed out (${seconds}s)';
+  static String systemTtsSynthesisFailed(String error) => _locale == 'zh'
+      ? '系统 TTS 合成失败：$error'
+      : 'System TTS synthesis failed: $error';
+  static String get systemTtsEngineInitTimeout => _get(
+      '系统 TTS 引擎初始化超时',
+      'System TTS engine initialization timed out');
+
+  // ----- L10N 批2：阅读器正文/目录重载（reader_notifier） -----
+  static String get readerReloadCharsetFailureHint =>
+      _get('编码或文件不可读', 'The encoding or file is unreadable');
+  static String get readerReloadTocRuleFailureHint => _get(
+      '目录规则未命中或文件不可读',
+      'The TOC rule did not match or the file is unreadable');
+  static String readerTocLoadFailed(String hint) => _locale == 'zh'
+      ? '目录加载失败（$hint）'
+      : 'Failed to load the TOC ($hint)';
+  static String get readerNoBookOrToc => _get('没有书籍或目录', 'No book or TOC');
+  static String get readerLocalBookNoContentRefresh => _get(
+      '本地书不支持刷新正文', 'Local books do not support content refresh');
+  static String get readerInvalidChapterIndex =>
+      _get('无效章节索引', 'Invalid chapter index');
+  static String get readerContentRefreshInProgress =>
+      _get('正文刷新进行中', 'Content refresh in progress');
+  static String get readerContentFetchEmpty =>
+      _get('正文抓取为空', 'The fetched content is empty');
+  static String get readerNoBook => _get('没有书籍', 'No book');
+  static String get readerSourceChangeInProgress =>
+      _get('更换书源进行中', 'Changing the book source is in progress');
+  static String get readerReadBookRecordFailed =>
+      _get('读取书籍记录失败', 'Failed to read the book record');
+  static String get readerNewSourceNoToc => _get(
+      '目录加载失败（新源无目录）',
+      'Failed to load the TOC (the new source has no TOC)');
+  static String readerContentRefreshFailed(String error) => _locale == 'zh'
+      ? '正文刷新失败：$error'
+      : 'Failed to refresh the content: $error';
+
+  // ----- L10N 批2：九宫格点击动作标签（reader_tap_action） -----
+  static String get readerTapMenu => _get('菜单', 'Menu');
+  static String get readerTapNextPage => _get('下一页', 'Next page');
+  static String get readerTapPreviousPage => _get('上一页', 'Previous page');
+  static String get readerTapPreviousParagraph =>
+      _get('朗读上一段', 'Read the previous paragraph');
+  static String get readerTapNextParagraph =>
+      _get('朗读下一段', 'Read the next paragraph');
+  static String get readerTapToggleReplace =>
+      _get('替换开关', 'Toggle replacement');
+  static String get readerTapToggleReadAloud =>
+      _get('朗读暂停继续', 'Pause/resume read-aloud');
+
+  // ----- L10N 批2：正文选择菜单标签（selection_menu_config） -----
+  static String get selectionMenuCopy => _get('复制', 'Copy');
+  static String get selectionMenuShare => _get('分享', 'Share');
+  static String get selectionMenuBrowser => _get('浏览器', 'Browser');
+  static String get selectionMenuBookmark => _get('书签', 'Bookmark');
+  static String get selectionMenuDict => _get('字典', 'Dictionary');
+  static String get selectionMenuReplace => _get('替换', 'Replace');
+  static String get selectionMenuAiClean => _get('AI 净化', 'AI clean');
+  static String get selectionMenuAiRewrite => _get('AI 改写', 'AI rewrite');
+  static String get selectionMenuInsertBgmBefore =>
+      _get('插入背景音乐（前）', 'Insert background music (before)');
+  static String get selectionMenuInsertBgmAfter =>
+      _get('插入背景音乐（后）', 'Insert background music (after)');
+
+  // ----- L10N 批2：备份忽略项标题（backup_content_service） -----
+  static String get backupContentBookmark =>
+      _get('书签与划线笔记', 'Bookmarks and highlights/notes');
+  static String get backupContentBookGroup =>
+      _get('书籍分组', 'Book groups');
+  static String get backupContentRssSource => _get('RSS 源', 'RSS sources');
+  static String get backupContentReplaceRule =>
+      _get('替换规则', 'Replacement rules');
+  static String get backupContentSourceSubscription =>
+      _get('订阅源', 'Subscription sources');
+  static String get backupContentHttpTts =>
+      _get('在线朗读引擎', 'Online speech engines');
+  static String get backupContentKeyboardAssists =>
+      _get('键盘辅助', 'Keyboard assists');
+  static String get backupContentDictRule =>
+      _get('词典规则', 'Dictionary rules');
+
+  // ----- L10N 批2：直链上传规则（direct_link_upload_rule_service） -----
+  static String directLinkFieldMustBeString(String field) => _locale == 'zh'
+      ? '字段 $field 必须是字符串'
+      : 'Field $field must be a string';
+  static String get directLinkCompressMustBeBool => _get(
+      '字段 compress 必须是布尔值', 'Field compress must be a boolean');
+  static String get directLinkUploadUrlRequired =>
+      _get('上传Url不能为空', 'The upload URL cannot be empty');
+  static String get directLinkUploadUrlInvalid => _get(
+      '上传Url不是有效的 http(s) 地址',
+      'The upload URL is not a valid http(s) address');
+  static String get directLinkDownloadRuleRequired =>
+      _get('下载Url规则不能为空', 'The download URL rule cannot be empty');
+  static String get directLinkSummaryRequired =>
+      _get('注释不能为空', 'The summary cannot be empty');
+  static String get directLinkBuiltinNotJson => _get(
+      '内置直链上传规则不是有效的 JSON',
+      'The built-in direct-link upload rules are not valid JSON');
+  static String get directLinkBuiltinNotArray => _get(
+      '内置直链上传规则必须是 JSON 数组',
+      'The built-in direct-link upload rules must be a JSON array');
+  static String get directLinkBuiltinEntryNotObject => _get(
+      '内置直链上传规则条目必须是 JSON 对象',
+      'Each built-in direct-link upload rule must be a JSON object');
+  static String get directLinkBuiltinEmpty =>
+      _get('内置直链上传规则为空', 'The built-in direct-link upload rules are empty');
+  static String get directLinkRuleEmpty =>
+      _get('规则内容为空', 'The rule content is empty');
+  static String get directLinkRuleNotJson =>
+      _get('规则不是有效的 JSON', 'The rule is not valid JSON');
+  static String get directLinkRuleNotObject =>
+      _get('规则必须是 JSON 对象', 'The rule must be a JSON object');
+
+  // ----- L10N 批2：RSS 图片 data URI（image_data_uri） -----
+  static String imageDataTooLarge(String limit) => _locale == 'zh'
+      ? '图片数据过大（超过 $limit）'
+      : 'The image data is too large (over $limit)';
+  static String get imageDataMissingComma => _get(
+      'data URI 缺少逗号分隔符', 'The data URI is missing the comma separator');
+  static String get imageDataMissingMime => _get(
+      'data URI 未声明图片类型', 'The data URI does not declare an image type');
+  static String imageDataNotImage(String mimeType) => _locale == 'zh'
+      ? '不是图片类型：$mimeType'
+      : 'Not an image type: $mimeType';
+  static String get imageDataMissingBase64 => _get(
+      'data URI 缺少 base64 编码', 'The data URI is missing base64 encoding');
+  static String get imageDataEmpty => _get('图片数据为空', 'The image data is empty');
+  static String get imageDataBase64Invalid =>
+      _get('base64 数据无效', 'Invalid base64 data');
+
+  // ----- L10N 批2：生物识别快捷解锁（privacy_biometric_service） -----
+  static String get privacyNoPassword =>
+      _get('请先设置隐私密码', 'Set a privacy password first');
+  static String get privacyBiometricNotConfigured => _get(
+      '生物快捷解锁未开启或已失效，请改用密码',
+      'Biometric quick unlock is off or expired; use the password instead');
+  static String get privacyBiometricUnsupported =>
+      _get('当前系统不支持生物识别', 'This system does not support biometrics');
+  static String get privacyBiometricNoHardware => _get(
+      '设备不支持指纹或面容识别',
+      'This device does not support fingerprint or face recognition');
+  static String get privacyBiometricNotEnrolled => _get(
+      '尚未录入指纹或面容，请先在系统设置中添加',
+      'No fingerprint or face is enrolled; add one in the system settings first');
+  static String get privacyBiometricLockedOut => _get(
+      '生物识别暂时锁定，请稍后重试或改用密码',
+      'Biometrics are temporarily locked; try again later or use the password');
+  static String get privacyBiometricPermanentlyLockedOut => _get(
+      '生物识别已被系统锁定，请改用密码，并在解锁后重新开启快捷解锁',
+      'Biometrics are locked by the system; use the password, then re-enable quick unlock after unlocking');
+  static String get privacyBiometricKeyInvalidated => _get(
+      '指纹或面容已变更，生物快捷解锁已关闭，请改用密码并重新开启',
+      'The fingerprint or face changed; biometric quick unlock was disabled; use the password and re-enable it');
+  static String get privacyBiometricCancelled =>
+      _get('已取消生物识别', 'Biometric authentication cancelled');
+  static String get privacyBiometricTimeout => _get(
+      '生物识别超时，请重试或改用密码',
+      'Biometric authentication timed out; try again or use the password');
+  static String get privacyBiometricFailed => _get(
+      '生物识别失败，请重试或改用密码',
+      'Biometric authentication failed; try again or use the password');
+
+  // ----- L10N 批2：远程服务器行解析（server_service） -----
+  static String serverRowIdShapeMismatch(Object? value) => _locale == 'zh'
+      ? 'servers 行 id 形态不符: $value'
+      : 'servers row id has an unexpected type: $value';
+  static String serverRowNameShapeMismatch(Object? value) => _locale == 'zh'
+      ? 'servers 行 name 形态不符: $value'
+      : 'servers row name has an unexpected type: $value';
+  static String serverRowSortNumberShapeMismatch(Object? value) =>
+      _locale == 'zh'
+      ? 'servers 行 sortNumber 形态不符: $value'
+      : 'servers row sortNumber has an unexpected type: $value';
+  static String serverRowTypeShapeMismatch(Object? value) => _locale == 'zh'
+      ? 'servers 行 type 形态不符: $value'
+      : 'servers row type has an unexpected type: $value';
+  static String serverListNotJsonArray(Object? raw) => _locale == 'zh'
+      ? 'webdavServersList 返回非 JSON 数组: $raw'
+      : 'webdavServersList did not return a JSON array: $raw';
+  static String serverListItemNotObject(int index, Object? item) =>
+      _locale == 'zh'
+      ? 'webdavServersList 第 $index 项不是 JSON 对象: $item'
+      : 'webdavServersList item $index is not a JSON object: $item';
+
+  // ----- L10N 批2：FFI 初始化失败页（main.dart） -----
+  static String get ffiInitFailedTitle =>
+      _get('Rust 引擎初始化失败', 'Rust engine initialization failed');
+  static String get ffiFixHintAndroidHashMismatch => _get(
+      'Android 上 Rust .so 与当前 Dart 桥接代码不同步（content hash 失配）。\n\n'
+      '请在仓库根目录执行：\n'
+      '.\\rust\\scripts\\build-android.ps1 -Mode debug -Targets "aarch64,x86_64"\n\n'
+      '或使用统一入口：\n'
+      '.\\flutter_legado\\scripts\\build-apk.ps1\n\n'
+      '然后重新构建并安装 APK。',
+      'The Rust .so on Android is out of sync with the current Dart bridge code (content hash mismatch).\n\n'
+      'Run this from the repository root:\n'
+      '.\\rust\\scripts\\build-android.ps1 -Mode debug -Targets "aarch64,x86_64"\n\n'
+      'Or use the unified entry point:\n'
+      '.\\flutter_legado\\scripts\\build-apk.ps1\n\n'
+      'Then rebuild and reinstall the APK.');
+  static String get ffiFixHintAndroidBuild => _get(
+      '请确认已构建 Android Rust FFI 动态库：\n'
+      '.\\rust\\scripts\\build-android.ps1 -Mode debug\n'
+      '然后执行 flutter build apk --debug 并重新安装。',
+      'Make sure the Android Rust FFI library is built:\n'
+      '.\\rust\\scripts\\build-android.ps1 -Mode debug\n'
+      'Then run flutter build apk --debug and reinstall.');
+  static String get ffiFixHintWindows => _get(
+      '请使用开发脚本启动（会自动重编译 DLL）：\n'
+      '.\\flutter_legado\\scripts\\run-windows.ps1\n\n'
+      '或手动：cd rust && cargo build -p legado-ffi --features quickjs',
+      'Launch via the development script (it rebuilds the DLL automatically):\n'
+      '.\\flutter_legado\\scripts\\run-windows.ps1\n\n'
+      'Or manually: cd rust && cargo build -p legado-ffi --features quickjs');
+  static String get ffiFixHintGeneric => _get(
+      '请确认已构建 Rust FFI 动态库，然后重新运行应用。\n'
+      '纯 UI 开发可使用：flutter run --dart-define=USE_MOCK=true',
+      'Make sure the Rust FFI library is built, then run the app again.\n'
+      'For pure UI development use: flutter run --dart-define=USE_MOCK=true');
 }

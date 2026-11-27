@@ -7,28 +7,48 @@
 // 编写：全栈工程师（批4a） ｜ 2026-11-04
 import 'package:flutter/foundation.dart' show immutable;
 
+import '../l10n/app_strings.dart';
+
 @immutable
 enum ReaderTapAction {
-  none(-1, '无操作'),
-  menu(0, '菜单'),
-  nextPage(1, '下一页'),
-  previousPage(2, '上一页'),
-  nextChapter(3, '下一章'),
-  previousChapter(4, '上一章'),
-  previousParagraph(5, '朗读上一段'),
-  nextParagraph(6, '朗读下一段'),
-  addBookmark(7, '添加书签'),
-  editContent(8, '编辑内容'),
-  toggleReplace(9, '替换开关'),
-  catalog(10, '目录'),
-  search(11, '全文搜索'),
-  syncProgress(12, '同步阅读进度'),
-  toggleReadAloud(13, '朗读暂停继续');
+  none(-1),
+  menu(0),
+  nextPage(1),
+  previousPage(2),
+  nextChapter(3),
+  previousChapter(4),
+  previousParagraph(5),
+  nextParagraph(6),
+  addBookmark(7),
+  editContent(8),
+  toggleReplace(9),
+  catalog(10),
+  search(11),
+  syncProgress(12),
+  toggleReadAloud(13);
 
   final int code;
-  final String label;
 
-  const ReaderTapAction(this.code, this.label);
+  const ReaderTapAction(this.code);
+
+  /// 显示标签（用户可见；随启动 locale 本地化）
+  String get label => switch (this) {
+    ReaderTapAction.none => AppStrings.tapActionNone,
+    ReaderTapAction.menu => AppStrings.readerTapMenu,
+    ReaderTapAction.nextPage => AppStrings.readerTapNextPage,
+    ReaderTapAction.previousPage => AppStrings.readerTapPreviousPage,
+    ReaderTapAction.nextChapter => AppStrings.nextChapter,
+    ReaderTapAction.previousChapter => AppStrings.previousChapter,
+    ReaderTapAction.previousParagraph => AppStrings.readerTapPreviousParagraph,
+    ReaderTapAction.nextParagraph => AppStrings.readerTapNextParagraph,
+    ReaderTapAction.addBookmark => AppStrings.addBookmark,
+    ReaderTapAction.editContent => AppStrings.editContent,
+    ReaderTapAction.toggleReplace => AppStrings.readerTapToggleReplace,
+    ReaderTapAction.catalog => AppStrings.catalog,
+    ReaderTapAction.search => AppStrings.searchContent,
+    ReaderTapAction.syncProgress => AppStrings.syncReadingProgress,
+    ReaderTapAction.toggleReadAloud => AppStrings.readerTapToggleReadAloud,
+  };
 
   /// 按 legacyValue 解析；未知值回落 none（对齐参考 fromLegacyValue）
   static ReaderTapAction fromCode(int? code) {

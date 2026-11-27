@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../l10n/app_strings.dart';
 import 'book_api.dart';
 import 'crash_log_service.dart';
 import 'settings_service.dart';
@@ -38,20 +39,27 @@ class RemoteBookServerRow {
     // 不静默兜底成 0 / ''）；仅 config 按需求做单行容错。
     final id = switch (json['id']) {
       final num value => value.toInt(),
-      final other => throw FormatException('servers 行 id 形态不符: $other'),
+      final other => throw FormatException(
+        AppStrings.serverRowIdShapeMismatch(other),
+      ),
     };
     final name = switch (json['name']) {
       final String value => value,
-      final other => throw FormatException('servers 行 name 形态不符: $other'),
+      final other => throw FormatException(
+        AppStrings.serverRowNameShapeMismatch(other),
+      ),
     };
     final sortNumber = switch (json['sortNumber']) {
       final num value => value.toInt(),
-      final other =>
-        throw FormatException('servers 行 sortNumber 形态不符: $other'),
+      final other => throw FormatException(
+        AppStrings.serverRowSortNumberShapeMismatch(other),
+      ),
     };
     final type = switch (json['type']) {
       final String value => value,
-      final other => throw FormatException('servers 行 type 形态不符: $other'),
+      final other => throw FormatException(
+        AppStrings.serverRowTypeShapeMismatch(other),
+      ),
     };
     // config 按需求做单行容错：非字符串（如数字）同样只标记该行无效
     final rawConfig = json['config'];
@@ -156,13 +164,13 @@ class ServerService {
     if (raw.trim().isEmpty) return const [];
     final decoded = jsonDecode(raw);
     if (decoded is! List) {
-      throw FormatException('webdavServersList 返回非 JSON 数组: $raw');
+      throw FormatException(AppStrings.serverListNotJsonArray(raw));
     }
     final rows = <RemoteBookServerRow>[];
     for (var i = 0; i < decoded.length; i++) {
       final item = decoded[i];
       if (item is! Map) {
-        throw FormatException('webdavServersList 第 $i 项不是 JSON 对象: $item');
+        throw FormatException(AppStrings.serverListItemNotObject(i, item));
       }
       rows.add(RemoteBookServerRow.fromJson(Map<String, dynamic>.from(item)));
     }
