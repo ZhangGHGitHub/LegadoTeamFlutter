@@ -18,11 +18,16 @@
 | 设备型号 / 系统 | SM-G9900 / Android 15 | `getprop ro.product.model` / `ro.build.version.release` |
 | 屏幕 | physical 1080x1920 @ density 480 | `wm size` / `wm density` |
 | 我方 | **io.legado.flutter_legado 2.0.514（versionCode 515）** | `dumpsys package …` |
-| 参考版 | com.legado.app.release 3.26082823（38268） | 同上 |
+| **原版（Android upstream）** | `com.legado.app.release` 3.26082823（38268） | 同上 |
+| **参考版（kazusa / MD3）** | `io.legato.kazusa` 3.26.19（18759） | 同上 |
 | night 模式 | 采集全程：浅色 `cmd uimode night no`；深色套 `yes`；交付后已复原 `auto` | `cmd uimode night` |
 
-注：任务描述提到「三包版本」，设备上实际只有 **2 个** legado 包（我方 + 参考版），
-无第三个可登记版本。
+注：**主代理 2026-11-28 复核更正**——本报告初版把 `com.legado.app.release` 误标为「参考版」并声称「设备上只有 2 个 legado 包」。实测 `pm list packages | grep -E 'legado|kazusa'` 返回 **3 个**：
+- `io.legado.flutter_legado` = 我方
+- `com.legado.app.release` = **Android 原版**（不是参考版）
+- `io.legato.kazusa` = **参考版**（MD3 fork，3.26.19）
+
+本报告的证据本身不受影响（所有 dump 根包均为 `io.legado.flutter_legado`，采集对象正确），仅包名归属标注已更正。
 
 ### 显示映射实测（本轮两套，均在本次会话内实测）
 
