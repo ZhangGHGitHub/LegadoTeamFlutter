@@ -518,10 +518,17 @@ flutter analyze
 |---|---|---|---:|---:|---:|---|---|
 | 批 1 | ✅ 完成 | `499c063510` | 6 | 162（预估 159） | 120 | +328 / **−0** | analyze 0；unit 3767；widget 2369 |
 | 批 2 | ✅ 完成 | `5665ca78ad` | 11（`file_save_channel` 判为跨语言契约未动） | 149（预估 160） | 101（复用 17） | +270 / **−0** | analyze 0；unit 3767；widget 2369 |
-| 批 3 | 待执行 | — | 21 | ~160 | — | — | — |
-| 批 4 | 待执行 | — | 53 | ~135 | — | — | — |
+| 批 3 | ✅ 完成 | `5e82cd5c63` | 20（`settings_service` 因 const 默认参数顺延） | 136 | 95（复用 23） | +216 / **−0** | analyze 0；unit 3767；widget 2369 |
+| 批 4 | ✅ 完成 | `c6eb602a0b` | 52（4 文件判为 D/B 类未改） | 137 | 72（复用 ~30） | +279 / **−0** | analyze 0；unit 3767；widget 2369 |
 
-**累计进度**：614 行中已处理 **311 行（50.7%）**，涉及 17 个文件。
+**累计进度（四批）**：614 行中已处理 **584 行（95.1%）**，涉及 89 个文件。
+**剩余 30 行**：批 4 判为 D/B 类的 4 个文件 + 批 3 顺延的 `settings_service.dart`（批 4 已连带修复）。
+主代理在批 4 后另发现 `reader_comic_screen.dart` 4 条用户可见异常消息被盘点漏计，已另派补漏。
+
+**连带的 const → getter 改动（批 4，有回归风险已验）**：
+`settings_service.dart` 的 `restoreIgnoreTitles`/`backupIgnoreTitles` 由 `static const List<String>` 改为 getter；
+`restore_ignore_dialog.dart` 的 `titles` 默认值改 `null` + build 回落 `AppStrings.restoreIgnoreTitles`。
+8 项顺序与文案完全不变，`webdav_settings_test.dart`（显式传 `titles`）与全部单测通过。
 
 **主代理独立复核结论（两批均做）**：
 - `app_strings.dart` 两批均为**纯追加**（删除列 0），无覆盖他人 key
@@ -533,3 +540,36 @@ flutter analyze
 2. `server_service.dart` 3 条 `ArgumentError.value`——纯编程误用守卫，正常 UI 路径不触发
 3. `privacy_biometric_service.dart` 5 条 detail——类注释明确「仅日志/测试使用」
 4. `SelectionMenuIds` 的 `menu_*` id、`PrivacyBiometricErrorCode` 的 code、`legacyValue` 码、`servers`/`uploadUrl` 等协议字段——D 类
+
+### 阶段 3 收口结论（2026-11-28）
+
+四批累计处理 **584 / 614 行（95.1%）**，89 个文件。`app_strings.dart` 四批均**纯追加**：
+
+| 批次 | app_strings 增/删 |
+|---|---|
+| 批 1 | +328 / −0 |
+| 批 2 | +270 / −0 |
+| 批 3 | +216 / −0 |
+| 批 4 | +279 / −0 |
+| **合计** | **+1093 / −0** |
+
+**最终引用完整性**：定义 **4081** / 引用 **3969** / 缺失 **0** / 重复定义 **0**
+（主代理用独立脚本复核，非采信子代理自述）。
+
+**剩余 702 行含中文非注释行的构成**（按类别，非欠账）：
+
+| 文件族 | 行数 | 类别 | 理由 |
+|---|---:|---|---|
+| `rss_web_bridge.dart` | 55 | JS 注入体 + 协议 | 跨语言边界，翻译会破坏引号转义 |
+| `mock_book_api_*.part.dart` | ~131 | C 类 | Mock 数据按契约保持原样 |
+| `md3_colors.dart` | 17 | D 类 | 生成产物 + 测试逐字锚点 + 作 `themeName` 提交 Rust |
+| `platform_bridge_service.dart` | 17 | D 类 | WAF 挑战页签名 + 回传书源 JS 的协议串 |
+| `file_save_channel.dart` | 15 | D 类 | 与 Kotlin `SaveFileBridge.reasonOf` 逐条比对的跨语言契约 |
+| 其余长尾 | ~467 | B 类为主 | `debugPrint`/日志/内部守卫 |
+
+**方法论沉淀（三次失真教训）**：
+1. 「54 处」→ 实际 4391（只数了一个文件）
+2. 「4391 处」→ 实际 A 类 614（未区分日志/Mock/协议串）
+3. 「614 行清单」→ 仍漏了 `reader_comic_screen.dart` 4 条（异常消息经 `ErrorView(message: _error!)` 展示）
+
+**结论：任何「剩余 N 处」的数字都必须给出可复核的判定口径（哪类算、哪类不算、判据是什么），否则必然失真。**
