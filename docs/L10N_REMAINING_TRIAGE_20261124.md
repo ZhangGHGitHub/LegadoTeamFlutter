@@ -573,3 +573,50 @@ flutter analyze
 3. 「614 行清单」→ 仍漏了 `reader_comic_screen.dart` 4 条（异常消息经 `ErrorView(message: _error!)` 展示）
 
 **结论：任何「剩余 N 处」的数字都必须给出可复核的判定口径（哪类算、哪类不算、判据是什么），否则必然失真。**
+
+### 批 5（漏计补漏）与 A 类终检（2026-11-28 收尾）
+
+盘点清单本身漏计了一批 A 类，分两轮补完：
+
+| 轮次 | 提交 | 内容 |
+|---|---|---|
+| 补漏 1 | `8c3273022c` | 漫画页 4 条异常（经 `ErrorView(message: _error!)` 展示）+ 终检结论 |
+| 补漏 2（批 5） | `54fa8cb6c2` | 17 处漏计 A 类（清单 18 处中 1 处判 D 不改） |
+
+**批 5 覆盖的漏计项**：
+- `container_image_picker.dart` **整文件此前未进盘点任何表**（4 处，复用已有 `coverAlbumPicker*` / `imageTooLarge` key）
+- `manga_epaper.dart:35`（与已修的 4 条**同一条 ErrorView 链**）
+- `rss_notifier.dart` `_fetchSorts` 3 条（批 3 修了同文件 `_parseArticlesPage` 3 条，**跨批漏计**）
+- `book_group_screen` 2、`classic_login_dialog:135`、`rust_api_reader_data:644`、`rust_api_search_rss:257`、`rust_api_discovery_cache:316`、`deep_link_service:637`、`rust_api_decode` 2
+
+**判 D 不改的关键一例**：`classic_login_dialog.dart:493` 的 `['开','关']` **不是标签而是 toggle 的提交值**
+（`_picked[row.name] = next` → `_loginData()` → 登录脚本 `globalThis.result = $form`；
+Android 原版 `SourceLoginDialog.kt:468` 同样 `loginInfo[name] = char`）。
+翻译会在英文 locale 下改变发给书源的数据，违反对齐约束。
+
+**批 5 顺带做的一件好事**：`rust_api_decode.part.dart` 原注释称「带上下文的诊断串不宜外置」，
+实际可无损迁移——把 `method` / `runtimeType` / 前 120 字符预览**保留为参数**，
+只把中文散文移入 AppStrings，诊断能力与信息量零损失，同时补齐英文。
+
+**最终 A 类终检（主代理独立扫描）**：全库按「`Text('中文…')` / `label|hintText|title|subtitle|message|tooltip|errorText|semanticsLabel|helperText: '中文…'`」模式扫描，
+排除 `app_strings.dart`/`.freezed.dart`/`.g.dart`/`mock_book_api_*`/`md3_colors.dart`/`debugPrint`，
+**命中仅 1 条**：`search_notifier.dart:310` 的 `appLogPush(message: '书源搜索出错…')`——写应用日志非 Text 渲染，B 类。
+
+**结论：A 类用户可见文案已清零（按上述判定口径）。**
+
+### 四次量级失真的完整记录（方法论沉淀）
+
+| 次数 | 当时口径 | 实际 | 失真原因 |
+|---|---|---|---|
+| 1 | 「约 54 处」 | 4391 | 只数了一个文件 |
+| 2 | 「4391 处」 | A 类 614 | 未区分日志/Mock/协议串 |
+| 3 | 「614 行清单」 | 614 内仍有漏 | 未追渲染链（`throw` 不等于不显示） |
+| 4 | 「584 行完成」 | 又漏 22 行 | **整文件未进清单**（`container_image_picker`）+ **跨批漏计**（`rss_notifier` 同文件不同函数）+ **双路径只看了后者**（`rust_api_search_rss:257`） |
+
+**可复用的判定方法（本次最终采用，建议写入 L10N 后续作业规范）**：
+1. **按渲染点判定，不按出现位置**——对每个候选串找 `catch` 点，确认是否进入
+   `Text` / `ErrorView` / `SnackBar` / `_toast` / `state.error` / `errorMessage`
+2. **每轮结束做一次反向扫描**——用「直接渲染模式」正则全库扫，而不是只核对既有清单
+3. **同一文件要整体过一遍**，不要按函数/批次切分（跨批漏计的根因）
+4. **同一异常要找全所有调用路径**（编辑页显示原文 ≠ 管理页走通用兜底）
+5. **任何「剩余 N 处」必须给出判定口径**（哪类算、哪类不算、判据是什么）
