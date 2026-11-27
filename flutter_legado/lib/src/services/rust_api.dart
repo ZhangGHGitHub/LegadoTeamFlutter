@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../bridge/rust_lib.dart' as bridge;
 import '../constants/pref_keys.dart';
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../theme/md3_colors.dart';
 import '../utils/source_json_patch.dart';

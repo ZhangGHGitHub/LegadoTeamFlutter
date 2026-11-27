@@ -1,5 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import '../../l10n/app_strings.dart';
+
 part 'auto_task_state.freezed.dart';
 
 /// 定时任务模型
@@ -137,11 +139,11 @@ class AutoTask {
   String get taskTypeLabel {
     switch (taskType) {
       case 'refreshToc':
-        return '刷新目录';
+        return AppStrings.taskTypeRefreshToc;
       case 'updateSources':
-        return '更新书源';
+        return AppStrings.taskTypeUpdateSources;
       case 'backup':
-        return '自动备份';
+        return AppStrings.webdavAutoBackup;
       default:
         return taskType;
     }

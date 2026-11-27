@@ -1,3 +1,5 @@
+import '../../l10n/app_strings.dart';
+
 /// 远程书库条目（对齐原版 RemoteBook / WebDavFileInfo）
 class RemoteBookItem {
   final String filename;
@@ -241,9 +243,11 @@ String remoteBookImportResultMessage({
   required int ok,
   required List<String> failures,
 }) {
-  if (failures.isEmpty) return '成功导入 $ok 本';
-  final more = failures.length > 1 ? '（另有 ${failures.length - 1} 本）' : '';
+  if (failures.isEmpty) return AppStrings.remoteBookImportedCount(ok);
+  final more = failures.length > 1
+      ? AppStrings.remoteBookImportedMore(failures.length - 1)
+      : '';
   final detail = '${failures.first}$more';
-  if (ok == 0) return '导入失败：$detail';
-  return '成功导入 $ok 本，${failures.length} 本失败：$detail';
+  if (ok == 0) return AppStrings.remoteBookImportFailedDetail(detail);
+  return AppStrings.remoteBookImportPartial(ok, failures.length, detail);
 }

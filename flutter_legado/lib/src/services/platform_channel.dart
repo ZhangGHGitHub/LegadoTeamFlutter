@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 
+import '../l10n/app_strings.dart';
+
 /// Platform Channel 基础架构
 ///
 /// 定义与原生 Android/iOS 通信的 MethodChannel 常量和方法。
@@ -394,7 +396,11 @@ class PlatformChannel {
     required int total,
   }) async {
     if (Platform.isIOS) {
-      await _iosShow(1, '正在下载：$bookName', '$progress / $total');
+      await _iosShow(
+        1,
+        AppStrings.downloadNotificationTitle(bookName),
+        '$progress / $total',
+      );
       return;
     }
     await notification.invokeMethod('showDownloadProgress', {
@@ -435,13 +441,13 @@ class PlatformChannel {
 
   /// 启动前台服务通知（iOS 无前台服务概念，空实现）
   static Future<void> startForegroundService({
-    String title = '阅读服务',
-    String content = '正在后台运行',
+    String? title,
+    String? content,
   }) async {
     if (Platform.isIOS) return;
     await notification.invokeMethod('startForegroundService', {
-      'title': title,
-      'content': content,
+      'title': title ?? AppStrings.foregroundServiceTitle,
+      'content': content ?? AppStrings.foregroundServiceContent,
     });
   }
 

@@ -47,7 +47,7 @@ const Set<MainTab> kHideableMainTabs = {
 ///
 /// 书架/我的沿用 [AppStrings]（系统语言切换入口），其余与参考版文案一致。
 String mainTabLabel(MainTab tab) => switch (tab) {
-  MainTab.home => '首页',
+  MainTab.home => AppStrings.mainTabHome,
   MainTab.bookshelf => AppStrings.bookshelf,
   MainTab.explore => AppStrings.discover,
   MainTab.rss => AppStrings.rss,

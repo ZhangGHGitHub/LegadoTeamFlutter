@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../l10n/app_strings.dart';
+
 /// 漫画色彩滤镜配置（对齐原版 MangaColorFilterConfig）
 ///
 /// r/g/b/a：0–255，矩阵系数 `(255 - v) / 255`；
@@ -155,15 +157,15 @@ class MangaFooterConfig {
       buf.write(' ');
     }
     if (!hidePageNumber && imageCount > 0) {
-      if (!hidePageNumberLabel) buf.write('页数');
+      if (!hidePageNumberLabel) buf.write(AppStrings.mangaPageCount);
       buf.write('${pageIndex + 1}/$imageCount ');
     }
     if (!hideChapter && chapterSize > 0) {
-      if (!hideChapterLabel) buf.write('章节');
+      if (!hideChapterLabel) buf.write(AppStrings.mangaChapterLabel);
       buf.write('${chapterIndex + 1}/$chapterSize ');
     }
     if (!hideProgressRatio && chapterSize > 0) {
-      if (!hideProgressRatioLabel) buf.write('总进度');
+      if (!hideProgressRatioLabel) buf.write(AppStrings.mangaProgressLabel);
       final percent = progressPercent(
         chapterIndex: chapterIndex,
         chapterSize: chapterSize,

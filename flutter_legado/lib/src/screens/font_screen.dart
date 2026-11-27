@@ -62,9 +62,7 @@ class _FontScreenState extends State<FontScreen> {
   List<_FontOption> _customFonts = [];
   bool _importing = false;
 
-  static const _previewText =
-      '天地玄黄，宇宙洪荒。日月盈昃，辰宿列张。\n'
-      'The quick brown fox jumps over the lazy dog. 0123456789';
+  static String get _previewText => AppStrings.fontPreviewBody;
 
   @override
   void initState() {

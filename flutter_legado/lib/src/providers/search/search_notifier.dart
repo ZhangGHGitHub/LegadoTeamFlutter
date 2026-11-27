@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../../bridge/ffi.dart';
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../providers.dart';
 import 'search_state.dart';
@@ -228,7 +229,7 @@ class SearchNotifier extends Notifier<SearchState> {
       // 有筛选条件但解析结果为空，说明所选分组/书源无有效书源
       if (sourceUrls != null && sourceUrls.isEmpty) {
         state = state.copyWith(
-          error: '所选筛选范围内无有效书源，请调整筛选条件',
+          error: AppStrings.searchNoValidSourcesInScope,
           isLoading: false,
         );
         return;
@@ -270,7 +271,7 @@ class SearchNotifier extends Notifier<SearchState> {
       if (seq != _searchSeq) return;
       if (sourceUrls != null && sourceUrls.isEmpty) {
         state = state.copyWith(
-          error: '所选筛选范围内无有效书源，请调整筛选条件',
+          error: AppStrings.searchNoValidSourcesInScope,
           isLoading: false,
         );
         return;
@@ -300,7 +301,8 @@ class SearchNotifier extends Notifier<SearchState> {
           // 不再产生任何「异常书源」弹窗提示路径）— Reasonix
           final batchError = batch['error'] as String?;
           if (batchError != null && batchError.isNotEmpty) {
-            final srcName = (batch['source_name'] as String?) ?? '未知书源';
+            final srcName =
+                (batch['source_name'] as String?) ?? AppStrings.unknownSource;
             // 日志写入失败不阻断搜索主流程（对齐原版 AppLog.put 尽力而为语义）
             unawaited(ref
                 .read(bookApiProvider)

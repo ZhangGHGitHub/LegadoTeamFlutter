@@ -15,7 +15,7 @@ class RestoreIgnoreDialog extends StatefulWidget {
     this.title,
     this.subtitle,
     this.keys = SettingsService.restoreIgnoreKeys,
-    this.titles = SettingsService.restoreIgnoreTitles,
+    this.titles,
   });
 
   final Map<String, bool> initial;
@@ -29,7 +29,7 @@ class RestoreIgnoreDialog extends StatefulWidget {
   /// 可勾选项键（默认恢复忽略 8 项）
   final List<String> keys;
 
-  /// 对应标题（缺省用键名）
+  /// 对应标题（null = 取 [AppStrings.restoreIgnoreTitles]，缺省用键名）
   final List<String>? titles;
 
   @override
@@ -47,6 +47,7 @@ class _RestoreIgnoreDialogState extends State<RestoreIgnoreDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final titles = widget.titles ?? AppStrings.restoreIgnoreTitles;
     return AlertDialog(
       title: Text(widget.title ?? AppStrings.restoreIgnoreTitle),
       content: SizedBox(
@@ -69,9 +70,7 @@ class _RestoreIgnoreDialogState extends State<RestoreIgnoreDialog> {
                   contentPadding: EdgeInsets.zero,
                   value: _checked[widget.keys[i]] == true,
                   title: Text(
-                    widget.titles != null && i < widget.titles!.length
-                        ? widget.titles![i]
-                        : widget.keys[i],
+                    i < titles.length ? titles[i] : widget.keys[i],
                   ),
                   onChanged: (v) {
                     setState(() => _checked[widget.keys[i]] = v == true);

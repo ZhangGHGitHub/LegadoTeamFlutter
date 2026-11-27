@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import '../../l10n/app_strings.dart';
+
 part 'theme_state.freezed.dart';
 
 /// 全局主题 UI 状态（immutable）
@@ -43,7 +45,7 @@ extension ThemeStateDerived on ThemeState {
   /// 「当前字体大小: %.1f」，半角冒号 + 空格，参考 values-zh-rCN/strings.xml :1203）
   String get fontScaleLabel {
     final scale = fontScale;
-    if (scale == null) return '跟随系统';
-    return '当前字体大小: ${scale.toStringAsFixed(1)}';
+    if (scale == null) return AppStrings.themeSystem;
+    return AppStrings.currentFontSize(scale.toStringAsFixed(1));
   }
 }

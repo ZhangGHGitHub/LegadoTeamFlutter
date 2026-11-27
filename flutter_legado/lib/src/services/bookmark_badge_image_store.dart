@@ -15,6 +15,8 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:path_provider/path_provider.dart';
 
+import '../l10n/app_strings.dart';
+
 class BookmarkBadgeImageStore {
   BookmarkBadgeImageStore._();
 
@@ -81,10 +83,14 @@ class BookmarkBadgeImageStore {
     Uint8List bytes, {
     required String originalName,
   }) async {
-    if (kIsWeb) throw UnsupportedError('Web 端不支持书签角标图');
-    if (bytes.isEmpty) throw const FormatException('图片内容为空');
+    if (kIsWeb) {
+      throw UnsupportedError(AppStrings.bookmarkBadgeWebUnsupported);
+    }
+    if (bytes.isEmpty) throw FormatException(AppStrings.imageContentEmpty);
     if (bytes.length > maxBytes) {
-      throw FormatException('图片过大（上限 ${maxBytes ~/ (1024 * 1024)}MB）');
+      throw FormatException(
+        AppStrings.imageTooLarge(maxBytes ~/ (1024 * 1024)),
+      );
     }
     final support = await supportDir();
     final supportPath = support.absolute.path;

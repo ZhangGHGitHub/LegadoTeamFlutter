@@ -22,6 +22,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../constants/pref_keys.dart';
+import '../l10n/app_strings.dart';
 import '../utils/error_message.dart';
 import '../widgets/auto_check_new_backup_dialog.dart';
 import 'book_api.dart';
@@ -310,23 +311,25 @@ class AutoCheckNewBackupScheduler {
           final skipped = result.summary.skippedServerConfigs;
           await _notify(
             skipped > 0
-                ? '恢复完成，但有 $skipped 个服务器配置未恢复（已保留本机配置）'
-                : '恢复成功',
+                ? AppStrings.autoCheckRestorePartial(skipped)
+                : AppStrings.restoreSuccess,
           );
           return _finish(AutoCheckNewBackupDecision.restored);
         case WebDavRestoreStatus.passwordRequired:
           // 已写 seen：同一远端备份本进程/下次启动不再重复弹窗；用户需
           // 前往备份恢复页手动输入密码（差异已登记）。
-          await _notify('该备份需要密码，请在备份恢复页手动恢复');
+          await _notify(AppStrings.autoCheckPasswordRequired);
           return _finish(AutoCheckNewBackupDecision.passwordRequired);
         case WebDavRestoreStatus.busy:
           // 用户确认后撞上并发备份/恢复：seen 已写入，不重试弹窗，
           // 只如实提示稍候（不得提示成功）。
-          await _notify('正在备份或恢复，请稍候');
+          await _notify(AppStrings.webdavBusyHint);
           return _finish(AutoCheckNewBackupDecision.busy);
         case WebDavRestoreStatus.failed:
           final error = result.error;
-          await _notify(error == null ? '恢复失败' : '恢复失败：${errorMessage(error)}');
+          await _notify(error == null
+              ? AppStrings.restoreFailed
+              : AppStrings.restoreFailedWithReason(errorMessage(error)));
           return _finish(AutoCheckNewBackupDecision.restoreFailed);
       }
     } catch (e, stack) {

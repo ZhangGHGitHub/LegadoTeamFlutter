@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 
 /// [P4-3 M1] 目录 bottom sheet（章节列表 + 当前章高亮 + 点击跳章）
@@ -86,7 +87,7 @@ class MangaCatalogSheet extends StatelessWidget {
               alignment: Alignment.centerLeft,
               child: Text(
                 // 参考版 chapter_list_size：目录(N)，N = 章节数
-                '目录(${chapters.length})',
+                AppStrings.mangaCatalogTitle(chapters.length),
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w600,

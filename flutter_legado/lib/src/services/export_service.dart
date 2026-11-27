@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+
+import '../l10n/app_strings.dart';
 import 'book_api.dart';
 
 /// 导出服务
@@ -45,7 +47,7 @@ class ExportService {
     String? fileNameTemplate,
   }) async {
     if (!supportedFormats.contains(format)) {
-      throw ExportException('不支持的导出格式：$format');
+      throw ExportException(AppStrings.exportUnsupportedFormatWith(format));
     }
 
     final options = <String, dynamic>{};
@@ -71,7 +73,7 @@ class ExportService {
     );
 
     if (result['success'] == false) {
-      final error = result['error'] as String? ?? '导出失败';
+      final error = result['error'] as String? ?? AppStrings.exportFailed;
       throw ExportException(error);
     }
     return result;
@@ -83,7 +85,7 @@ class ExportService {
     required String format,
   }) async {
     if (!supportedFormats.contains(format)) {
-      throw ExportException('不支持的导出格式：$format');
+      throw ExportException(AppStrings.exportUnsupportedFormatWith(format));
     }
     return _rustApi.bookExportInfo(bookUrl: bookUrl, format: format);
   }

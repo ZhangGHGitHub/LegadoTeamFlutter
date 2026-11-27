@@ -15,6 +15,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../constants/pref_keys.dart';
+import '../l10n/app_strings.dart';
 import '../models/book.dart';
 import 'book_api.dart';
 import 'restore_ignore_prefs.dart';
@@ -194,7 +195,7 @@ class LocalBackupService {
       final raw = await file.readAsString();
       final decoded = jsonDecode(raw);
       if (decoded is! Map<String, dynamic>) {
-        throw const FormatException('备份 JSON 顶层不是对象');
+        throw FormatException(AppStrings.backupJsonNotObject);
       }
       final books = decoded['books'];
       if (books is List) {
@@ -228,7 +229,7 @@ class LocalBackupService {
           // fail-closed 清理由后续错误提示兜底，删除失败不掩盖原异常
         }
       }
-      throw StateError('备份本地书过滤失败，已取消本次备份');
+      throw StateError(AppStrings.backupFilterLocalBooksFailed);
     }
   }
 
@@ -256,7 +257,7 @@ class LocalBackupService {
         webDavBackupService ?? WebDavBackupService(api: api, settings: s);
     // 先确认配置：未配置时既不应该生成临时备份，也不应该写 lastBackup
     if (await service.resolveConfigJson() == null) {
-      throw StateError('未配置 WebDAV');
+      throw StateError(AppStrings.webdavNotConfiguredTitle);
     }
 
     final base = (tempDirProvider ?? () => Directory.systemTemp)();
@@ -284,7 +285,7 @@ class LocalBackupService {
       final upload = result.upload;
       if (upload == null) {
         await s.setLastBackupTime(previousLastBackup);
-        throw StateError('未配置 WebDAV');
+        throw StateError(AppStrings.webdavNotConfiguredTitle);
       }
       return upload;
     } finally {

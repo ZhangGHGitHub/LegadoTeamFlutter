@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_strings.dart';
+
 /// [P4-3 E5] 长按页操作底栏（保存图片 / 分享图片 / 复制链接）
 ///
 /// 对齐参考版 ui/book/manga/\MangaReaderSheets.kt L179-252
@@ -35,12 +37,12 @@ class MangaPageActionsSheet extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       child: Row(
         children: [
-          _tile(context, Icons.save, '保存图片', onSave),
-          _tile(context, Icons.share, '分享图片', onShare),
+          _tile(context, Icons.save, AppStrings.saveImageTitle, onSave),
+          _tile(context, Icons.share, AppStrings.sourceShareImage, onShare),
           // [P4-3 W2-fix P2-4] 本实现复制的是图片链接文本（URI 复制降级），
           // 文案对齐实际行为：「复制链接」；onCopy 为 null（cbz 页）时隐藏
           if (onCopy != null)
-            _tile(context, Icons.content_copy, '复制链接', onCopy!),
+            _tile(context, Icons.content_copy, AppStrings.copyLink, onCopy!),
         ],
       ),
     );

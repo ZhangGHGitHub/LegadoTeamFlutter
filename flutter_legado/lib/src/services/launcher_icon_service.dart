@@ -59,14 +59,19 @@ class LauncherIconService {
         // 第八轮：现代声明计数（CFBundleIconName，CI 剥离后应为 0；
         // >0 说明所装构建未经剥离步）——-54 复发时一次回报即可归属。
         final modern = res['altModernDecl'] ?? '?';
-        return 'iOS $ver / 声明${canSet == true ? '✓' : '✗'} / '
-            'car $carCount/6 / 散文件$loose / '
-            'car可读${readable == true ? '✓' : '✗'} / 现代声明$modern';
+        return AppStrings.launcherIconDiagnostics(
+          version: '$ver',
+          canSetMark: canSet == true ? '✓' : '✗',
+          carCount: carCount,
+          looseFiles: '$loose',
+          carReadableMark: readable == true ? '✓' : '✗',
+          modernDecl: '$modern',
+        );
       }
     } catch (_) {
       // 自检通道异常不影响主流程
     }
-    return '自检不可用';
+    return AppStrings.launcherIconSelfCheckUnavailable;
   }
 
   /// 切换桌面图标，返回 [LauncherIconResult]。

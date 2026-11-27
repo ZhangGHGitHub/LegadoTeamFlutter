@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../../bridge/ffi.dart';
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../services/book_api.dart';
 import '../providers.dart';
@@ -143,7 +144,9 @@ class TxtTocRulesNotifier extends Notifier<TxtTocRulesState> {
     try {
       await api.txtTocRuleImport(jsonOrUrl: raw, kind: 'text');
     } catch (e) {
-      state = state.copyWith(error: 'TXT 目录规则迁移失败：${_mapError(e)}');
+      state = state.copyWith(
+        error: AppStrings.txtTocRulesMigrateFailed(_mapError(e)),
+      );
       return;
     }
     try {

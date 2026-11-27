@@ -1,3 +1,5 @@
+import '../l10n/app_strings.dart';
+
 /// 翻页模式枚举（高级配置面板使用）
 ///
 /// 与 PageTurnMode 保持 5 种模式一致：
@@ -30,15 +32,15 @@ enum FlipMode {
   String get displayName {
     switch (this) {
       case FlipMode.simulation:
-        return '仿真';
+        return AppStrings.flipSimulate;
       case FlipMode.slide:
-        return '滑动';
+        return AppStrings.flipSlide;
       case FlipMode.cover:
-        return '覆盖';
+        return AppStrings.flipCover;
       case FlipMode.none:
-        return '无动画';
+        return AppStrings.flipNone;
       case FlipMode.scroll:
-        return '滚动';
+        return AppStrings.flipScroll;
     }
   }
 

@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../../bridge/ffi.dart';
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../services/book_api.dart';
 import '../providers.dart';
@@ -141,7 +142,7 @@ class BookMarkingNotifier extends Notifier<BookMarkingListState> {
   }) async {
     final normalized = normalizeMarkingText(selectedText);
     if (normalized.isEmpty) {
-      throw const FormatException('选中文本为空，无法保存笔记');
+      throw FormatException(AppStrings.bookMarkingEmptySelection);
     }
     final anchor = buildBookMarkingAnchor(
       chapterIndex: chapterIndex,

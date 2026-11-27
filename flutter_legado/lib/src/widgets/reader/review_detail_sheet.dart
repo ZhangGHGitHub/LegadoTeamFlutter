@@ -283,7 +283,11 @@ class _ReviewDetailSheetState extends State<ReviewDetailSheet> {
               children: [
                 Expanded(
                   child: Text(
-                    '段评 · ${widget.totalCount > 0 ? widget.totalCount : _items.length}',
+                    AppStrings.reviewSectionTitle(
+                      widget.totalCount > 0
+                          ? widget.totalCount
+                          : _items.length,
+                    ),
                     style: TextStyle(
                       fontSize: 17,
                       fontWeight: FontWeight.w600,

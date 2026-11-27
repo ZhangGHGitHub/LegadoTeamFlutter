@@ -6677,4 +6677,283 @@ class AppStrings {
   static String serversSaveIdMismatch(int id, int expected) => _locale == 'zh'
       ? 'servers 保存返回 id=$id，期望 $expected'
       : 'servers save returned id=$id; expected $expected';
+
+  // ============== L10N 批4：长尾文件文案（收尾） ==============
+
+  // ----- 朗读缓存保留时间（read_aloud_timer_settings） -----
+  static String get raCacheRetentionInstant =>
+      _get('即听即焚', 'Delete right after playback');
+  static String raCacheRetentionDays(int days) =>
+      _locale == 'zh' ? '$days 天' : '$days days';
+  static String raCacheRetentionHours(int hours) =>
+      _locale == 'zh' ? '$hours 小时' : '$hours hours';
+
+  // ----- 启动自动检查备份（auto_check_new_backup_scheduler） -----
+  static String autoCheckRestorePartial(int skipped) => _locale == 'zh'
+      ? '恢复完成，但有 $skipped 个服务器配置未恢复（已保留本机配置）'
+      : 'Restore finished, but $skipped server configs were not restored (local config kept)';
+  static String get autoCheckPasswordRequired => _get(
+      '该备份需要密码，请在备份恢复页手动恢复',
+      'This backup requires a password; restore it manually on the backup restore page');
+
+  // ----- 应用更新（app_update_service） -----
+  static String get appUpdateVersionUnavailable =>
+      _get('无法读取应用版本号', 'Unable to read the app version');
+  static String get appUpdateFetchFailed =>
+      _get('获取新版本出错', 'Failed to fetch the new version');
+  static String appUpdateFetchFailedWithCode(int code) => _locale == 'zh'
+      ? '获取新版本出错($code)'
+      : 'Failed to fetch the new version ($code)';
+
+  // ----- WebDAV 同步时间（sync_state） -----
+  static String get syncNeverSynced => _get('从未同步', 'Never synced');
+  static String get syncJustNow => _get('刚刚', 'Just now');
+  static String syncMinutesAgo(int minutes) =>
+      _locale == 'zh' ? '$minutes 分钟前' : '$minutes min ago';
+  static String syncHoursAgo(int hours) =>
+      _locale == 'zh' ? '$hours 小时前' : '$hours h ago';
+  static String syncDaysAgo(int days) =>
+      _locale == 'zh' ? '$days 天前' : '$days d ago';
+
+  // ----- 阅读背景预设（reader_state） -----
+  static String get readerBgGreen => _get('绿色', 'Green');
+  static String get readerBgBrown => _get('棕色', 'Brown');
+  static String get readerBgEyeProtect => _get('护眼', 'Eye comfort');
+
+  // ----- 隐私策略解析（privacy_notifier） -----
+  static String privacyPolicyTypeMismatch(String key, Object? value) =>
+      _locale == 'zh'
+          ? '隐私策略 $key 类型不符：$value'
+          : 'Privacy policy $key has an unexpected type: $value';
+
+  // ----- 发现页（explore_notifier） -----
+  static String exploreLoadSourcesFailed(String error) =>
+      _locale == 'zh' ? '加载书源失败：$error' : 'Failed to load sources: $error';
+  static String exploreDeleteFailed(String error) =>
+      _locale == 'zh' ? '卸载失败：$error' : 'Uninstall failed: $error';
+
+  // ----- 远端备份恢复（webdav_restore_service） -----
+  static String get webdavRemoteBackupNameInvalid =>
+      _get('远端备份文件名无效', 'Invalid remote backup file name');
+
+  // ----- 本地备份（local_backup_service） -----
+  static String get backupJsonNotObject => _get(
+      '备份 JSON 顶层不是对象', 'The backup JSON top level is not an object');
+  static String get backupFilterLocalBooksFailed => _get(
+      '备份本地书过滤失败，已取消本次备份',
+      'Failed to filter local books; this backup was cancelled');
+
+  // ----- iOS 桌面图标自检（launcher_icon_service） -----
+  static String launcherIconDiagnostics({
+    required String version,
+    required String canSetMark,
+    required int carCount,
+    required String looseFiles,
+    required String carReadableMark,
+    required String modernDecl,
+  }) =>
+      _locale == 'zh'
+          ? 'iOS $version / 声明$canSetMark / '
+              'car $carCount/6 / 散文件$looseFiles / '
+              'car可读$carReadableMark / 现代声明$modernDecl'
+          : 'iOS $version / declared $canSetMark / '
+              'car $carCount/6 / loose $looseFiles / '
+              'car readable $carReadableMark / modern decl $modernDecl';
+  static String get launcherIconSelfCheckUnavailable =>
+      _get('自检不可用', 'Self-check unavailable');
+
+  // ----- 远程书库批量导入结果（remote_book_state） -----
+  static String remoteBookImportedCount(int ok) =>
+      _locale == 'zh' ? '成功导入 $ok 本' : 'Imported $ok book(s)';
+  static String remoteBookImportedMore(int count) =>
+      _locale == 'zh' ? '（另有 $count 本）' : ' ($count more)';
+  static String remoteBookImportFailedDetail(String detail) =>
+      _locale == 'zh' ? '导入失败：$detail' : 'Import failed: $detail';
+  static String remoteBookImportPartial(int ok, int failed, String detail) =>
+      _locale == 'zh'
+          ? '成功导入 $ok 本，$failed 本失败：$detail'
+          : 'Imported $ok book(s); $failed failed: $detail';
+
+  // ----- 平台通道通知（platform_channel） -----
+  static String downloadNotificationTitle(String bookName) =>
+      _locale == 'zh' ? '正在下载：$bookName' : 'Downloading: $bookName';
+  static String get foregroundServiceTitle =>
+      _get('阅读服务', 'Reading service');
+  static String get foregroundServiceContent =>
+      _get('正在后台运行', 'Running in the background');
+
+  // ----- 导出格式（export_service） -----
+  static String exportUnsupportedFormatWith(String format) => _locale == 'zh'
+      ? '不支持的导出格式：$format'
+      : 'Unsupported export format: $format';
+
+  // ----- 堆转储（crash_log_service） -----
+  static String get heapDumpNoPath =>
+      _get('堆转储未返回文件路径', 'The heap dump returned no file path');
+
+  // ----- 封面相册（cover_album_store） -----
+  static String get coverAlbumWebUnsupported => _get(
+      'Web 端不支持封面相册', 'Cover albums are not supported on the web');
+  static String get coverAlbumSaveFailedInjected => _get(
+      '保存封面相册失败（测试注入）',
+      'Failed to save the cover album (test injection)');
+
+  // ----- 书签角标图（bookmark_badge_image_store） -----
+  static String get bookmarkBadgeWebUnsupported => _get(
+      'Web 端不支持书签角标图',
+      'Bookmark badge images are not supported on the web');
+
+  // ----- 自动刷新书架结果（auto_refresh_book_scheduler） -----
+  static String autoRefreshBooksUpdated(int count) => _locale == 'zh'
+      ? '已更新 $count 本书的目录'
+      : 'Updated the TOC of $count book(s)';
+  static String autoRefreshNewChapters(int count) =>
+      _locale == 'zh' ? '，新增 $count 章' : '; $count new chapter(s)';
+  static String autoRefreshSuperseded(int count) => _locale == 'zh'
+      ? '（$count 本被同书新刷新取代）'
+      : ' ($count superseded by a newer refresh of the same book)';
+
+  // ----- 欢迎页（welcome_screen） -----
+  static String get welcomeTagline =>
+      _get('品读万千故事', 'Discover countless stories');
+  static String get welcomeTitleVertical => _get('阅\n读', 'Read');
+  static String get welcomeSubtitleVertical =>
+      _get('享\n受\n美\n好\n时\n光', 'Enjoy\nthe\nmoment');
+
+  // ----- 换源进度（change_source_state） -----
+  static String changeSourceProgressWithName(
+    int resultCount,
+    int done,
+    int total,
+    String name,
+  ) =>
+      _locale == 'zh'
+          ? '结果 $resultCount，进度 $done/$total：$name'
+          : 'Results $resultCount, progress $done/$total: $name';
+  static String changeSourceProgressNoName(
+    int resultCount,
+    int done,
+    int total,
+  ) =>
+      _locale == 'zh'
+          ? '结果 $resultCount，进度 $done/$total'
+          : 'Results $resultCount, progress $done/$total';
+  static String changeSourceSearching(int resultCount) => _locale == 'zh'
+      ? '结果 $resultCount，搜索中…'
+      : 'Results $resultCount, searching...';
+
+  // ----- 备份探测（backup_inspect_info） -----
+  static String backupInspectUnknownFormat(Object? raw) => _locale == 'zh'
+      ? 'backupInspect 返回未知的备份格式: $raw'
+      : 'backupInspect returned an unknown backup format: $raw';
+  static String backupInspectPasswordRequiredNotBool(Object? value) =>
+      _locale == 'zh'
+          ? 'backupInspect 返回的 passwordRequired 不是布尔值: $value'
+          : 'backupInspect passwordRequired is not a boolean: $value';
+  static String backupInspectPasswordFilesNotList(Object? value) =>
+      _locale == 'zh'
+          ? 'backupInspect 返回的 passwordProtectedFiles 不是数组: $value'
+          : 'backupInspect passwordProtectedFiles is not an array: $value';
+  static String backupInspectPasswordFileNotString(int index, Object? value) =>
+      _locale == 'zh'
+          ? 'backupInspect 返回的 passwordProtectedFiles 第 $index 项不是字符串: $value'
+          : 'backupInspect passwordProtectedFiles item $index is not a string: $value';
+  static String backupInspectJsonDecodeFailed(String? message) =>
+      _locale == 'zh'
+          ? 'backupInspect 返回的 JSON 无法解析: $message'
+          : 'backupInspect JSON could not be decoded: $message';
+  static String backupInspectJsonNotObject(Object? value) => _locale == 'zh'
+      ? 'backupInspect 返回的 JSON 不是对象: $value'
+      : 'backupInspect JSON is not an object: $value';
+
+  // ----- 本地书籍导入（rust_api_search_rss.part） -----
+  static String get importLocalBookUnknownError =>
+      _get('未知导入错误', 'Unknown import error');
+  static String get importLocalBookMissingBookData =>
+      _get('导入成功但缺少书籍数据', 'Import succeeded but the book data is missing');
+
+  // ----- RSS 宿主桥信封（rss_web_bridge） -----
+  static String get rssBridgeEnvelopeInvalidJson =>
+      _get('宿主信封不是合法 JSON', 'The host envelope is not valid JSON');
+  static String get rssBridgeEnvelopeNotObject =>
+      _get('宿主信封必须是 JSON 对象', 'The host envelope must be a JSON object');
+
+  // ----- 字体导入（app_font_notifier） -----
+  static String get appFontImportFailedRetry =>
+      _get('字体导入失败，请重试', 'Font import failed. Please try again');
+
+  // ----- 搜索范围（search_notifier） -----
+  static String get searchNoValidSourcesInScope => _get(
+      '所选筛选范围内无有效书源，请调整筛选条件',
+      'No valid sources in the selected scope; adjust the filters');
+
+  // ----- 段评（review_detail_sheet） -----
+  static String reviewSectionTitle(int count) =>
+      _locale == 'zh' ? '段评 · $count' : 'Comments · $count';
+
+  // ----- RSS 登录脚本（rss_source_login） -----
+  static String get rssLoginInvalidEnvelope => _get(
+      'RSS 登录脚本返回非法信封',
+      'The RSS login script returned an invalid envelope');
+  static String get rssLoginScriptFailed =>
+      _get('登录脚本执行失败', 'The login script failed');
+
+  // ----- WebDAV 远端列目录（webdav_backup_candidates） -----
+  static String get webdavListDirNotArray => _get(
+      'webdavListDir 返回的不是数组', 'webdavListDir did not return an array');
+
+  // ----- 书源打开浏览器拦截（source_browser_block） -----
+  static String get sourceBrowserBlocked => _get(
+      '已阻止书源打开浏览器', 'Blocked the source from opening a browser');
+
+  // ----- 书签导出（bookmark_export） -----
+  static String get bookmarkExportPickDirectory =>
+      _get('选择书签导出目录', 'Choose the bookmark export folder');
+
+  // ----- 漫画目录（manga_catalog_sheet） -----
+  static String mangaCatalogTitle(int count) =>
+      _locale == 'zh' ? '目录($count)' : 'Contents ($count)';
+
+  // ----- 字体预览（font_screen） -----
+  static String get fontPreviewBody => _get(
+      '天地玄黄，宇宙洪荒。日月盈昃，辰宿列张。\n'
+          'The quick brown fox jumps over the lazy dog. 0123456789',
+      'The quick brown fox jumps over the lazy dog. 0123456789');
+
+  // ----- 旧规则迁移失败（txt_toc_rules / dict） -----
+  static String txtTocRulesMigrateFailed(String error) => _locale == 'zh'
+      ? 'TXT 目录规则迁移失败：$error'
+      : 'TXT TOC rule migration failed: $error';
+  static String dictRulesMigrateFailed(String error) => _locale == 'zh'
+      ? '词典规则迁移失败：$error'
+      : 'Dictionary rule migration failed: $error';
+
+  // ----- 高亮规则批量删除（highlight_rules_notifier） -----
+  static String highlightRuleDeleteNotEffective(String name) => _locale == 'zh'
+      ? '$name: 删除未生效'
+      : '$name: deletion did not take effect';
+
+  // ----- 标记笔记（book_marking_notifier） -----
+  static String get bookMarkingEmptySelection => _get(
+      '选中文本为空，无法保存笔记',
+      'The selected text is empty; cannot save the note');
+
+  // ----- 订阅内容解析（rule_sub_screen） -----
+  static String get ruleSubContentNotJson =>
+      _get('订阅内容不是 JSON 数组或对象', 'The subscription content is not JSON');
+
+  // ----- 主导航页签（main_tab） -----
+  static String get mainTabHome => _get('首页', 'Home');
+
+  // ----- 恢复/备份忽略项标题（settings_service / restore_ignore_dialog） -----
+  static List<String> get restoreIgnoreTitles => [
+        _get('阅读界面配置', 'Reader display settings'),
+        _get('主题模式', 'Theme mode'),
+        _get('主题配置', 'Theme config'),
+        _get('封面规则', 'Cover rules'),
+        _get('书架布局', 'Bookshelf layout'),
+        _get('显示订阅', 'Show RSS'),
+        _get('线程数', 'Thread count'),
+        _get('本地书籍', 'Local books'),
+      ];
 }

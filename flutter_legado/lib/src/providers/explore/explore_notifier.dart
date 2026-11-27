@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../../bridge/ffi.dart';
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../services/book_api.dart';
 import '../providers.dart';
@@ -67,7 +68,7 @@ class ExploreNotifier extends Notifier<ExploreState> {
     } catch (e) {
       _sourcesLoaded = true;
       state = state.copyWith(
-        error: '加载书源失败：${_mapError(e)}',
+        error: AppStrings.exploreLoadSourcesFailed(_mapError(e)),
         isLoading: false,
       );
     }
@@ -205,7 +206,7 @@ class ExploreNotifier extends Notifier<ExploreState> {
       );
       return true;
     } catch (e) {
-      state = state.copyWith(error: '卸载失败：${_mapError(e)}');
+      state = state.copyWith(error: AppStrings.exploreDeleteFailed(_mapError(e)));
       return false;
     }
   }

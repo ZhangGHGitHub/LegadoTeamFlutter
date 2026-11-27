@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/pref_keys.dart';
+import '../l10n/app_strings.dart';
 
 /// 朗读定时模式（设置批5c）
 ///
@@ -209,9 +210,13 @@ class ReadAloudTimerSettings {
 
 /// 缓存保留时间的展示文案（设置页/Sheet 共用）
 String readAloudCacheRetentionLabel(int minutes) {
-  if (minutes <= 0) return '即听即焚';
-  if (minutes < 60) return '$minutes 分钟';
-  if (minutes % 1440 == 0) return '${minutes ~/ 1440} 天';
-  if (minutes % 60 == 0) return '${minutes ~/ 60} 小时';
-  return '$minutes 分钟';
+  if (minutes <= 0) return AppStrings.raCacheRetentionInstant;
+  if (minutes < 60) return AppStrings.readAloudTimerMinutes(minutes);
+  if (minutes % 1440 == 0) {
+    return AppStrings.raCacheRetentionDays(minutes ~/ 1440);
+  }
+  if (minutes % 60 == 0) {
+    return AppStrings.raCacheRetentionHours(minutes ~/ 60);
+  }
+  return AppStrings.readAloudTimerMinutes(minutes);
 }

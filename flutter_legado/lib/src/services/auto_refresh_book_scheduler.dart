@@ -25,6 +25,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import '../constants/pref_keys.dart';
+import '../l10n/app_strings.dart';
 import '../models/book.dart';
 import '../models/book_chapter.dart';
 import 'book_api.dart';
@@ -88,9 +89,11 @@ class AutoRefreshBookResult {
     if (outcome != AutoRefreshBookOutcome.completed || succeeded == 0) {
       return null;
     }
-    final base = '已更新 $succeeded 本书的目录';
-    final chapterPart = newChapters > 0 ? '，新增 $newChapters 章' : '';
-    final cancelPart = cancelled > 0 ? '（$cancelled 本被同书新刷新取代）' : '';
+    final base = AppStrings.autoRefreshBooksUpdated(succeeded);
+    final chapterPart =
+        newChapters > 0 ? AppStrings.autoRefreshNewChapters(newChapters) : '';
+    final cancelPart =
+        cancelled > 0 ? AppStrings.autoRefreshSuperseded(cancelled) : '';
     return '$base$chapterPart$cancelPart';
   }
 }

@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../l10n/app_strings.dart';
+
 /// 底栏皮肤文件名逻辑（对齐原版 BottomBarSkinFormat，无平台依赖）
 class BottomBarSkinFormat {
   BottomBarSkinFormat._();
@@ -131,12 +133,12 @@ class BottomBarSkinFormat {
   }
 
   /// 槽位中文标签（分配页）
-  static const slotLabels = {
-    'bookshelf': '书架',
-    'home': '发现',
-    'notes': '订阅',
-    'settings': '我的',
-  };
+  static Map<String, String> get slotLabels => {
+        'bookshelf': AppStrings.bookshelf,
+        'home': AppStrings.discover,
+        'notes': AppStrings.rss,
+        'settings': AppStrings.my,
+      };
 
   static String _truncate(String value, int maxCodePoints, int maxBytes) {
     final result = StringBuffer();

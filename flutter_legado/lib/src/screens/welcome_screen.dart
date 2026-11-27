@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../constants/pref_keys.dart';
+import '../l10n/app_strings.dart';
 import '../models/book.dart';
 import '../providers/providers.dart';
 import '../routes.dart';
@@ -223,7 +224,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
                     padding: const EdgeInsets.only(bottom: 32),
                     child: showText
                         ? Text(
-                            '品读万千故事',
+                            AppStrings.welcomeTagline,
                             style: TextStyle(
                               fontSize: 16,
                               letterSpacing: 1.6,
@@ -270,7 +271,7 @@ class _WelcomeTitle extends StatelessWidget {
           children: [
             // 竖排「阅读」
             Text(
-              '阅\n读',
+              AppStrings.welcomeTitleVertical,
               style: TextStyle(
                 fontSize: 48,
                 height: 1.05,
@@ -285,7 +286,7 @@ class _WelcomeTitle extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.only(top: 58),
           child: Text(
-            '享\n受\n美\n好\n时\n光',
+            AppStrings.welcomeSubtitleVertical,
             style: TextStyle(
               fontSize: 15,
               height: 1.25,

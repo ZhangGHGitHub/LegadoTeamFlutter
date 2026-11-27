@@ -6,6 +6,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/pref_keys.dart';
+import '../l10n/app_strings.dart';
 
 /// 检查更新结果（对齐 AppUpdate.UpdateInfo）
 class AppUpdateInfo {
@@ -65,7 +66,7 @@ class AppUpdateService {
     final info = await PackageInfo.fromPlatform();
     final version = info.version.trim();
     if (version.isEmpty) {
-      throw StateError('无法读取应用版本号');
+      throw StateError(AppStrings.appUpdateVersionUnavailable);
     }
     _cachedVersionName = version;
     return version;
@@ -170,13 +171,13 @@ class AppUpdateService {
         )
         .timeout(const Duration(seconds: 10));
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw StateError('获取新版本出错(${res.statusCode})');
+      throw StateError(AppStrings.appUpdateFetchFailedWithCode(res.statusCode));
     }
     if (res.body.trim().isEmpty) {
-      throw StateError('获取新版本出错');
+      throw StateError(AppStrings.appUpdateFetchFailed);
     }
     final decoded = jsonDecode(res.body);
-    if (decoded is! List) throw StateError('获取新版本出错');
+    if (decoded is! List) throw StateError(AppStrings.appUpdateFetchFailed);
     final out = <_ReleaseCandidate>[];
     for (final item in decoded) {
       if (item is! Map<String, dynamic>) continue;

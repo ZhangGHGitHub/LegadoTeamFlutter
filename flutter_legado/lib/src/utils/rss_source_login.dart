@@ -176,10 +176,12 @@ Future<String> runRssLoginScript(
   );
   final decoded = jsonDecode(envelope);
   if (decoded is! Map) {
-    throw const FormatException('RSS 登录脚本返回非法信封');
+    throw FormatException(AppStrings.rssLoginInvalidEnvelope);
   }
   if (decoded['ok'] != true) {
-    throw StateError('${decoded['error'] ?? '登录脚本执行失败'}');
+    throw StateError(
+      '${decoded['error'] ?? AppStrings.rssLoginScriptFailed}',
+    );
   }
   return decoded['value']?.toString() ?? '';
 }

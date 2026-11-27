@@ -164,8 +164,8 @@ class _EditBookInfoScreenState extends ConsumerState<EditBookInfoScreen> {
               Card(
                 child: ListTile(
                   leading: const Icon(Symbols.group_rounded),
-                  title: const Text('角色'),
-                  subtitle: const Text('手动建档，详情页展示角色卡'),
+                  title: Text(AppStrings.charactersLabel),
+                  subtitle: Text(AppStrings.characterManageEntryDesc),
                   trailing: const Icon(Symbols.chevron_right_rounded),
                   onTap: _saving ? null : _openCharacterManage,
                 ),

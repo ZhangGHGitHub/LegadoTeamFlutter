@@ -1,5 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 
 part 'change_source_state.freezed.dart';
@@ -58,9 +59,9 @@ extension ChangeSourceStateDisplay on ChangeSourceState {
     if (x != null && y != null && y > 0) {
       final name = progressLastSourceName;
       return name != null && name.isNotEmpty
-          ? '结果 $resultCount，进度 $x/$y：$name'
-          : '结果 $resultCount，进度 $x/$y';
+          ? AppStrings.changeSourceProgressWithName(resultCount, x, y, name)
+          : AppStrings.changeSourceProgressNoName(resultCount, x, y);
     }
-    return '结果 $resultCount，搜索中…';
+    return AppStrings.changeSourceSearching(resultCount);
   }
 }

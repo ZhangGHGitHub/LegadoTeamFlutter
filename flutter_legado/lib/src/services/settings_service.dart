@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/pref_keys.dart';
+import '../l10n/app_strings.dart';
 import '../theme/md3_colors.dart';
 
 /// 阅读设置持久化服务
@@ -1141,16 +1142,9 @@ class SettingsService {
   ];
 
   /// 忽略项标题（对齐 BackupConfig.ignoreTitle）
-  static const restoreIgnoreTitles = <String>[
-    '阅读界面配置',
-    '主题模式',
-    '主题配置',
-    '封面规则',
-    '书架布局',
-    '显示订阅',
-    '线程数',
-    '本地书籍',
-  ];
+  ///
+  /// 走 [AppStrings]（L10N 批4）：依赖运行期 locale，故为 getter 而非 const。
+  static List<String> get restoreIgnoreTitles => AppStrings.restoreIgnoreTitles;
 
   static const _keyRestoreIgnore = 'restoreIgnore';
 
@@ -1195,7 +1189,7 @@ class SettingsService {
   static const backupIgnoreKeys = restoreIgnoreKeys;
 
   /// 备份忽略项标题
-  static const backupIgnoreTitles = restoreIgnoreTitles;
+  static List<String> get backupIgnoreTitles => restoreIgnoreTitles;
 
   static const _keyBackupIgnore = 'backupIgnore';
 

@@ -529,7 +529,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
     final decoded = jsonDecode(response.body);
     if (decoded is List) return decoded;
     if (decoded is Map<String, dynamic>) return [decoded];
-    throw const FormatException('订阅内容不是 JSON 数组或对象');
+    throw FormatException(AppStrings.ruleSubContentNotJson);
   }
 }
 

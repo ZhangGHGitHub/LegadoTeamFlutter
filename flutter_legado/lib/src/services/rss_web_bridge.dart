@@ -53,6 +53,7 @@ import 'package:webview_flutter/webview_flutter.dart'
     show WebViewCookie, WebViewCookieManager;
 
 import 'book_api.dart';
+import '../l10n/app_strings.dart';
 import 'rss_web_config.dart' show kRssConsoleHookScript;
 
   /// 对外方法白名单（与 Rust `rss_web_bridge::PUBLIC_METHODS` 对齐）
@@ -136,10 +137,16 @@ class RssWebBridgeEnvelope {
     try {
       decoded = jsonDecode(raw);
     } catch (_) {
-      return RssWebBridgeEnvelope(ok: false, error: '宿主信封不是合法 JSON');
+      return RssWebBridgeEnvelope(
+        ok: false,
+        error: AppStrings.rssBridgeEnvelopeInvalidJson,
+      );
     }
     if (decoded is! Map) {
-      return const RssWebBridgeEnvelope(ok: false, error: '宿主信封必须是 JSON 对象');
+      return RssWebBridgeEnvelope(
+        ok: false,
+        error: AppStrings.rssBridgeEnvelopeNotObject,
+      );
     }
     final map = Map<String, dynamic>.from(decoded);
     final actions = <Map<String, dynamic>>[];

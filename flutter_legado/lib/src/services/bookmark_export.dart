@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:saf/saf.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 
 /// 书签导出服务（对齐原版 TocViewModel.saveBookmark / saveBookmarkMd）
@@ -135,7 +136,7 @@ class BookmarkExport {
     String? initialDirectory,
   ) async {
     final dir = await FilePicker.platform.getDirectoryPath(
-      dialogTitle: '选择书签导出目录',
+      dialogTitle: AppStrings.bookmarkExportPickDirectory,
       initialDirectory:
           (initialDirectory != null && initialDirectory.isNotEmpty)
               ? initialDirectory

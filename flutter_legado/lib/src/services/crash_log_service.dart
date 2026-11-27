@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../l10n/app_strings.dart';
+
 /// 日志条目（对应 Android 原版 [`AppLog`](https://github.com/PAPro-Nightmare/LegadoTeam/blob/main/app/src/main/java/io/legado/app/help/AppLog.kt)）中的 Triple
 class LogEntry {
   /// 时间戳（毫秒）
@@ -475,17 +477,17 @@ class CrashLogService {
   Future<String> createHeapDump() async {
     final isAndroid = platformIsAndroidOverride ?? Platform.isAndroid;
     if (kIsWeb || !isAndroid) {
-      throw UnsupportedError('当前平台不支持创建堆转储');
+      throw UnsupportedError(AppStrings.heapDumpUnsupported);
     }
     try {
       final path = await const MethodChannel('legado/heap_dump')
           .invokeMethod<String>('dump');
       if (path == null || path.isEmpty) {
-        throw StateError('堆转储未返回文件路径');
+        throw StateError(AppStrings.heapDumpNoPath);
       }
       return path;
     } on MissingPluginException {
-      throw UnsupportedError('当前平台不支持创建堆转储');
+      throw UnsupportedError(AppStrings.heapDumpUnsupported);
     }
   }
 

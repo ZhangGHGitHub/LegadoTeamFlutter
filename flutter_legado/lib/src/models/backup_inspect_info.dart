@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../l10n/app_strings.dart';
+
 /// 备份容器格式（契约 §2.11 `backupInspect` 的 `format` 字段）
 enum BackupFormat {
   /// 原版多文件 zip 备份
@@ -18,7 +20,7 @@ enum BackupFormat {
     for (final format in BackupFormat.values) {
       if (format.wireName == raw) return format;
     }
-    throw FormatException('backupInspect 返回未知的备份格式: $raw');
+    throw FormatException(AppStrings.backupInspectUnknownFormat(raw));
   }
 }
 
@@ -63,14 +65,14 @@ class BackupInspectInfo {
     final rawRequired = json['passwordRequired'];
     if (rawRequired is! bool) {
       throw FormatException(
-        'backupInspect 返回的 passwordRequired 不是布尔值: $rawRequired',
+        AppStrings.backupInspectPasswordRequiredNotBool(rawRequired),
       );
     }
 
     final rawFiles = json['passwordProtectedFiles'];
     if (rawFiles is! List) {
       throw FormatException(
-        'backupInspect 返回的 passwordProtectedFiles 不是数组: $rawFiles',
+        AppStrings.backupInspectPasswordFilesNotList(rawFiles),
       );
     }
     final files = <String>[];
@@ -78,7 +80,7 @@ class BackupInspectInfo {
       final item = rawFiles[i];
       if (item is! String) {
         throw FormatException(
-          'backupInspect 返回的 passwordProtectedFiles 第 $i 项不是字符串: $item',
+          AppStrings.backupInspectPasswordFileNotString(i, item),
         );
       }
       files.add(item);
@@ -107,10 +109,12 @@ class BackupInspectInfo {
     try {
       decoded = jsonDecode(raw);
     } on FormatException catch (e) {
-      throw FormatException('backupInspect 返回的 JSON 无法解析: ${e.message}');
+      throw FormatException(
+        AppStrings.backupInspectJsonDecodeFailed(e.message),
+      );
     }
     if (decoded is! Map) {
-      throw FormatException('backupInspect 返回的 JSON 不是对象: $decoded');
+      throw FormatException(AppStrings.backupInspectJsonNotObject(decoded));
     }
     return BackupInspectInfo.fromJson(
       decoded.map((key, value) => MapEntry('$key', value)),

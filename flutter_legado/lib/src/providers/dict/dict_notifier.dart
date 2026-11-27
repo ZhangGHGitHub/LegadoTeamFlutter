@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../../bridge/ffi.dart';
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../services/book_api.dart';
 import '../providers.dart';
@@ -148,7 +149,7 @@ class DictNotifier extends Notifier<DictState> {
       await api.dictRuleImport(jsonOrUrl: raw, kind: 'text');
     } catch (e) {
       // 旧数据损坏：保留原键供人工排查，不阻断词典功能
-      state = state.copyWith(error: '词典规则迁移失败：${_mapError(e)}');
+      state = state.copyWith(error: AppStrings.dictRulesMigrateFailed(_mapError(e)));
       return;
     }
     try {

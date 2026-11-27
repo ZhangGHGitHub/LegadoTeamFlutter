@@ -12,6 +12,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../l10n/app_strings.dart';
+
 /// 远端备份候选（列表过滤后的单条记录）
 @immutable
 class RemoteBackupCandidate {
@@ -34,7 +36,7 @@ class RemoteBackupCandidate {
 List<RemoteBackupCandidate> parseRemoteBackupCandidates(String rawJson) {
   final decoded = jsonDecode(rawJson);
   if (decoded is! List) {
-    throw const FormatException('webdavListDir 返回的不是数组');
+    throw FormatException(AppStrings.webdavListDirNotArray);
   }
   final candidates = <RemoteBackupCandidate>[];
   for (final item in decoded) {

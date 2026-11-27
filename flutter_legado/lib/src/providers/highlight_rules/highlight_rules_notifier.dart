@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../../bridge/ffi.dart';
+import '../../l10n/app_strings.dart';
 import '../providers.dart';
 import 'highlight_rules_state.dart';
 
@@ -93,7 +94,7 @@ class HighlightRulesNotifier extends Notifier<HighlightRulesState> {
       try {
         final deleted = await api.highlightRuleDelete(id: rule.id);
         if (deleted != true) {
-          errors.add('${rule.displayName}: 删除未生效');
+          errors.add(AppStrings.highlightRuleDeleteNotEffective(rule.displayName));
         }
       } catch (e) {
         errors.add('${rule.displayName}: ${_mapError(e)}');

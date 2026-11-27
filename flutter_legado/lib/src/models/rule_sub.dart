@@ -1,3 +1,5 @@
+import '../l10n/app_strings.dart';
+
 /// 规则订阅模型（对齐 Rust RuleSubRecord JSON，契约 §2.39）
 ///
 /// 对标 Android 原版 `RuleSub.kt` 实体 + DB v100 补全字段
@@ -60,9 +62,9 @@ class RuleSub {
 
   /// 类型标签（对标原版 arrays.xml rule_type：书源/订阅源/替换规则）
   String get typeLabel => switch (subType) {
-        rssSource => '订阅源',
-        replaceRule => '替换规则',
-        _ => '书源',
+        rssSource => AppStrings.rssSourceNoun,
+        replaceRule => AppStrings.replaceRulesLabel,
+        _ => AppStrings.sources,
       };
 
   factory RuleSub.fromJson(Map<String, dynamic> json) {

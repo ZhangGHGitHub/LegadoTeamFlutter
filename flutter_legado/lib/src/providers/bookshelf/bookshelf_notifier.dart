@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../../bridge/ffi.dart';
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../services/book_api.dart' show DeleteBooksResult;
 import '../../services/privacy_content_service.dart';
@@ -151,9 +152,9 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
       // 无自定义分组时仅单一「全部」组（此时 UI 不显示 TabBar）
       // 合成组 order=-10 对齐原版种子（AppDatabase.kt:206-208），确保早于
       // 视频组（order=-5，AppDatabase.kt:241-244）与自定义组（order≥0）
-      final allGroup = const BookGroup(
+      final allGroup = BookGroup(
         groupId: BookGroupId.all,
-        groupName: '全部',
+        groupName: AppStrings.allBooks,
         order: -10,
       );
       final hasAll = visible.any((g) => g.groupId == BookGroupId.all);
@@ -202,7 +203,11 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
       // 合成组对齐原版种子：order=-5、show=1（AppDatabase.kt:241-244）
       next = [
         ...groups,
-        const BookGroup(groupId: BookGroupId.video, groupName: '视频', order: -5),
+        BookGroup(
+          groupId: BookGroupId.video,
+          groupName: AppStrings.sourceTypeVideo,
+          order: -5,
+        ),
       ]..sort((a, b) => a.order.compareTo(b.order));
     } else {
       // 当前体系 DB 无 -6 行，列表中 -6 组必为合成组（见方法注释）

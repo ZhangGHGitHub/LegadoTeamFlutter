@@ -18,6 +18,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/backup_inspect_info.dart';
 import '../models/book.dart';
 import '../models/restore_summary.dart';
@@ -191,11 +192,11 @@ class WebDavRestoreService {
     if (remoteName.contains('/') ||
         remoteName.contains('\\') ||
         remoteName.contains('..')) {
-      throw const FormatException('远端备份文件名无效');
+      throw FormatException(AppStrings.webdavRemoteBackupNameInvalid);
     }
     final safeName = _sanitizeFileName(remoteName);
     if (safeName.isEmpty || safeName == '.' || safeName == '..') {
-      throw const FormatException('远端备份文件名无效');
+      throw FormatException(AppStrings.webdavRemoteBackupNameInvalid);
     }
     final base = _tempDirProvider();
     final dir = await Directory(
@@ -236,7 +237,7 @@ class WebDavRestoreService {
       () async {
         final config = configJson ?? await _webDavBackup.resolveConfigJson();
         if (config == null) {
-          throw StateError('未配置 WebDAV');
+          throw StateError(AppStrings.webdavNotConfiguredTitle);
         }
         final path = await downloadRemoteBackup(
           configJson: config,

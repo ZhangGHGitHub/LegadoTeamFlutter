@@ -1,5 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../providers/privacy/privacy_state.dart';
 import '../../utils/book_display_tags.dart';
@@ -276,7 +277,7 @@ extension BookshelfStateGrouping on BookshelfState {
   /// 不改数据源；选中组被隐藏时由调用方回退索引 0。
   List<BookGroup> visibleGroups({bool hideEmpty = true}) {
     if (groups.isEmpty) {
-      return const [BookGroup(groupId: BookGroupId.all, groupName: '全部')];
+      return [BookGroup(groupId: BookGroupId.all, groupName: AppStrings.allBooks)];
     }
     if (!hideEmpty) return groups;
     final visible = groups
@@ -285,7 +286,7 @@ extension BookshelfStateGrouping on BookshelfState {
         )
         .toList();
     return visible.isEmpty
-        ? const [BookGroup(groupId: BookGroupId.all, groupName: '全部')]
+        ? [BookGroup(groupId: BookGroupId.all, groupName: AppStrings.allBooks)]
         : visible;
   }
 
@@ -317,7 +318,9 @@ extension BookshelfStateGrouping on BookshelfState {
   String _getGroupKey(Book book) {
     switch (groupMode) {
       case GroupMode.bySource:
-        return book.originName.isNotEmpty ? book.originName : '本地';
+        return book.originName.isNotEmpty
+            ? book.originName
+            : AppStrings.bookTypeLocal;
       case GroupMode.byGroup:
         // 展示组名而不是 groupId 数字：位掩码可能命中多个组，按组顺序
         // 「、」连接；无匹配组名时回落「分组」，未分组回落「默认」。

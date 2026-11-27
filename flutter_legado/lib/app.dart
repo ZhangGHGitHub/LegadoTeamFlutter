@@ -29,6 +29,7 @@ import 'src/services/settings_service.dart';
 import 'src/services/temp_dir_cleaner.dart';
 import 'src/services/video_float_window.dart';
 import 'src/constants/pref_keys.dart';
+import 'src/l10n/app_strings.dart';
 import 'src/theme/app_theme.dart';
 import 'src/theme/theme_engine_parameterized.dart';
 import 'package:dynamic_color/dynamic_color.dart';
@@ -386,7 +387,7 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
       videoUrl: state.directUrl ?? book?.bookUrl ?? '',
       title: state.chapterTitle?.isNotEmpty == true
           ? state.chapterTitle!
-          : (state.title.isNotEmpty ? state.title : '视频播放'),
+          : (state.title.isNotEmpty ? state.title : AppStrings.videoPlayTitle),
       book: book,
       presetUrl: state.url,
       presetHeaders: state.headers,

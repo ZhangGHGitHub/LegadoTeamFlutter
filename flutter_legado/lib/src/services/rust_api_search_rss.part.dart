@@ -478,12 +478,16 @@ mixin RustApiSearchRss on RustApiDecode implements BookApi {
     final result = _decodeMap(json, 'bookApi');
     final success = result['success'] as bool? ?? false;
     if (!success) {
-      final error = result['error'] as String? ?? '未知导入错误';
+      final error = result['error'] as String? ??
+          AppStrings.importLocalBookUnknownError;
       throw RustApiException(error, operation: 'importLocalBook');
     }
     final bookMap = result['book'] as Map<String, dynamic>?;
     if (bookMap == null) {
-      throw RustApiException('导入成功但缺少书籍数据', operation: 'importLocalBook');
+      throw RustApiException(
+        AppStrings.importLocalBookMissingBookData,
+        operation: 'importLocalBook',
+      );
     }
     return Book.fromJson(bookMap);
   }

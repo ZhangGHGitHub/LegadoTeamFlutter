@@ -24,6 +24,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../constants/pref_keys.dart';
+import '../../l10n/app_strings.dart';
 import '../../services/privacy_api_json.dart';
 import '../../services/privacy_biometric_service.dart';
 import '../providers.dart';
@@ -101,21 +102,27 @@ class PrivacyPolicyStore {
     if (!prefs.containsKey(key)) return fallback;
     final value = prefs.get(key);
     if (value is bool) return value;
-    throw FormatException('隐私策略 $key 类型不符：$value');
+    throw FormatException(
+      AppStrings.privacyPolicyTypeMismatch(key, value),
+    );
   }
 
   static String? _readString(SharedPreferences prefs, String key) {
     if (!prefs.containsKey(key)) return null;
     final value = prefs.get(key);
     if (value is String) return value;
-    throw FormatException('隐私策略 $key 类型不符：$value');
+    throw FormatException(
+      AppStrings.privacyPolicyTypeMismatch(key, value),
+    );
   }
 
   static int? _readInt(SharedPreferences prefs, String key) {
     if (!prefs.containsKey(key)) return null;
     final value = prefs.get(key);
     if (value is int) return value;
-    throw FormatException('隐私策略 $key 类型不符：$value');
+    throw FormatException(
+      AppStrings.privacyPolicyTypeMismatch(key, value),
+    );
   }
 }
 

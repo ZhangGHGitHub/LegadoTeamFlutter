@@ -8,6 +8,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../../l10n/app_strings.dart';
 import '../../services/app_font_store.dart';
 
 /// 应用字体错误来源（用于全局提示去重）
@@ -159,7 +160,7 @@ class AppFontNotifier extends Notifier<AppFontState> {
     } on AppFontPickException catch (e) {
       return AppFontImportOutcome.failed(e.message);
     } catch (_) {
-      return const AppFontImportOutcome.failed('无法打开系统文件选择器，请重试');
+      return AppFontImportOutcome.failed(AppStrings.appFontPickerOpenFailed);
     }
     if (picked == null) return const AppFontImportOutcome.canceled();
 
@@ -178,7 +179,7 @@ class AppFontNotifier extends Notifier<AppFontState> {
     } on FormatException catch (e) {
       return AppFontImportOutcome.failed(e.message);
     } catch (_) {
-      return const AppFontImportOutcome.failed('字体导入失败，请重试');
+      return AppFontImportOutcome.failed(AppStrings.appFontImportFailedRetry);
     }
     final generation = ++_generation;
     final error = await _load(

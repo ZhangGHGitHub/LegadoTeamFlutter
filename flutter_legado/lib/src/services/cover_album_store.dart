@@ -165,7 +165,7 @@ class CoverAlbumStore {
   static const String legacyAlbumId = 'default-cover';
 
   /// 迁移目标相册默认名（参考版 `R.string.default_cover`）
-  static const String legacyAlbumName = '默认封面';
+  static String get legacyAlbumName => AppStrings.defaultCover;
 
   /// 单张图大小上限（32MB）
   static const int maxBytes = 32 * 1024 * 1024;
@@ -280,7 +280,7 @@ class CoverAlbumStore {
   }
 
   static void _ensureNotWeb() {
-    if (kIsWeb) throw UnsupportedError('Web 端不支持封面相册');
+    if (kIsWeb) throw UnsupportedError(AppStrings.coverAlbumWebUnsupported);
   }
 
   List<CoverAlbum> get albums => List<CoverAlbum>.unmodifiable(_albums);
@@ -1059,7 +1059,7 @@ class CoverAlbumStore {
   void _persistIndex(String root, List<CoverAlbum> albums) {
     if (failNextIndexWrite) {
       failNextIndexWrite = false;
-      throw const CoverAlbumException('保存封面相册失败（测试注入）');
+      throw CoverAlbumException(AppStrings.coverAlbumSaveFailedInjected);
     }
     final decoded = <String, Object?>{
       'formatVersion': formatVersion,

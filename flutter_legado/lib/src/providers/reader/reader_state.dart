@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 
 part 'reader_state.freezed.dart';
@@ -20,15 +21,15 @@ enum PageTurnMode {
   String get displayName {
     switch (this) {
       case PageTurnMode.scroll:
-        return '滚动';
+        return AppStrings.flipScroll;
       case PageTurnMode.slide:
-        return '滑动';
+        return AppStrings.flipSlide;
       case PageTurnMode.simulate:
-        return '仿真';
+        return AppStrings.flipSimulate;
       case PageTurnMode.none:
-        return '无动画';
+        return AppStrings.flipNone;
       case PageTurnMode.cover:
-        return '覆盖';
+        return AppStrings.flipCover;
     }
   }
 
@@ -76,7 +77,13 @@ class ReaderBackground {
   static const eyeProtect = Color(0xFFE8E0C8);
 
   static const List<Color> presets = [white, green, brown, eyeProtect, dark];
-  static const List<String> labels = ['白色', '绿色', '棕色', '护眼', '夜间'];
+  static List<String> get labels => [
+        AppStrings.whiteColor,
+        AppStrings.readerBgGreen,
+        AppStrings.readerBgBrown,
+        AppStrings.readerBgEyeProtect,
+        AppStrings.nightMode,
+      ];
 }
 
 /// [M1 深色态默认修复] 阅读背景默认解析（纯函数，可单测）

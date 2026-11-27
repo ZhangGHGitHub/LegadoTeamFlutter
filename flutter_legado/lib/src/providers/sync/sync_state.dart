@@ -1,5 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import '../../l10n/app_strings.dart';
+
 part 'sync_state.freezed.dart';
 
 /// 同步状态
@@ -56,12 +58,12 @@ extension SyncStateDerived on SyncState {
 
   /// 上次同步时间展示文本（对齐原版相对时间描述）
   String get lastSyncTimeLabel {
-    if (lastSyncTime == null) return '从未同步';
+    if (lastSyncTime == null) return AppStrings.syncNeverSynced;
     final now = DateTime.now();
     final diff = now.difference(lastSyncTime!);
-    if (diff.inMinutes < 1) return '刚刚';
-    if (diff.inMinutes < 60) return '${diff.inMinutes} 分钟前';
-    if (diff.inHours < 24) return '${diff.inHours} 小时前';
-    return '${diff.inDays} 天前';
+    if (diff.inMinutes < 1) return AppStrings.syncJustNow;
+    if (diff.inMinutes < 60) return AppStrings.syncMinutesAgo(diff.inMinutes);
+    if (diff.inHours < 24) return AppStrings.syncHoursAgo(diff.inHours);
+    return AppStrings.syncDaysAgo(diff.inDays);
   }
 }

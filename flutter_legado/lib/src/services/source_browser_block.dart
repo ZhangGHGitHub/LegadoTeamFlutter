@@ -13,11 +13,12 @@
 ///   一律豁免。
 library;
 
+import '../l10n/app_strings.dart';
 import '../providers/ui_settings/ui_settings_notifier.dart';
 import '../utils/legado_deep_link.dart';
 
 /// 拦截提示文案（与参考版 `block_source_browser_error` 语义一致）
-const String kSourceBrowserBlockedMessage = '已阻止书源打开浏览器';
+String get kSourceBrowserBlockedMessage => AppStrings.sourceBrowserBlocked;
 
 /// 当前是否拦截书源打开浏览器
 ///
