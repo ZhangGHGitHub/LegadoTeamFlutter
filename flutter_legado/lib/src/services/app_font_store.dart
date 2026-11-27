@@ -27,6 +27,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/pref_keys.dart';
+import '../l10n/app_strings.dart';
 
 /// 用户选中的字体文件（字节 + 原始文件名）
 class AppFontPick {
@@ -157,7 +158,7 @@ class AppFontStore {
   /// [AppFontPickException]（中文提示）。校验失败抛 [FormatException]。
   static Future<AppFontPick?> pick() async {
     if (kIsWeb) {
-      throw const AppFontPickException('当前平台不支持自定义应用字体');
+      throw AppFontPickException(AppStrings.appFontUnsupportedPlatform);
     }
     try {
       return await picker();
@@ -166,7 +167,7 @@ class AppFontStore {
     } on AppFontPickException {
       rethrow;
     } catch (e) {
-      throw const AppFontPickException('无法打开系统文件选择器，请重试');
+      throw AppFontPickException(AppStrings.appFontPickerOpenFailed);
     }
   }
 
@@ -187,14 +188,16 @@ class AppFontStore {
     required String originalName,
     bool keepPrevious = false,
   }) async {
-    if (kIsWeb) throw UnsupportedError('当前平台不支持自定义应用字体');
-    if (bytes.isEmpty) throw const FormatException('字体文件为空');
+    if (kIsWeb) throw UnsupportedError(AppStrings.appFontUnsupportedPlatform);
+    if (bytes.isEmpty) throw FormatException(AppStrings.appFontFileEmpty);
     if (bytes.length > maxBytes) {
-      throw FormatException('字体文件过大（上限 ${maxBytes ~/ (1024 * 1024)}MB）');
+      throw FormatException(
+        AppStrings.appFontFileTooLarge(maxBytes ~/ (1024 * 1024)),
+      );
     }
     final ext = _extensionOf(originalName);
     if (ext == null) {
-      throw const FormatException('不支持的字体格式（仅支持 TTF / OTF / TTC）');
+      throw FormatException(AppStrings.appFontUnsupportedFormat);
     }
     _validateFontBytes(bytes);
 
@@ -297,9 +300,11 @@ class AppFontStore {
   static Future<String> importFile(String sourcePath) async {
     final file = File(sourcePath);
     final length = await file.length();
-    if (length <= 0) throw const FormatException('字体文件为空');
+    if (length <= 0) throw FormatException(AppStrings.appFontFileEmpty);
     if (length > maxBytes) {
-      throw FormatException('字体文件过大（上限 ${maxBytes ~/ (1024 * 1024)}MB）');
+      throw FormatException(
+        AppStrings.appFontFileTooLarge(maxBytes ~/ (1024 * 1024)),
+      );
     }
     final bytes = await file.readAsBytes();
     return importBytes(bytes, originalName: _baseName(sourcePath));
@@ -425,21 +430,21 @@ class AppFontStore {
     Duration timeout = defaultLoadTimeout,
   }) async {
     if (stored.isEmpty) {
-      return const AppFontLoadResult.failure('未设置应用字体');
+      return AppFontLoadResult.failure(AppStrings.appFontNotSet);
     }
     await ensureWarm();
     final path = resolveSync(stored);
     if (path.isEmpty) {
-      return const AppFontLoadResult.failure('自定义字体文件缺失，已回退默认字体');
+      return AppFontLoadResult.failure(AppStrings.appFontFileMissingFallback);
     }
     final file = File(path);
     if (!file.existsSync()) {
-      return const AppFontLoadResult.failure('自定义字体文件缺失，已回退默认字体');
+      return AppFontLoadResult.failure(AppStrings.appFontFileMissingFallback);
     }
     // 先复用同步可用性检查（大小/文件头/表目录长度），避免把明显无效的
     // 文件整体读入内存；随后再读字节做完整表目录校验。
     if (!isUsableSync(stored)) {
-      return const AppFontLoadResult.failure('自定义字体文件已损坏，已回退默认字体');
+      return AppFontLoadResult.failure(AppStrings.appFontFileCorruptFallback);
     }
     Uint8List bytes;
     try {
@@ -448,7 +453,7 @@ class AppFontStore {
     } on FormatException catch (e) {
       return AppFontLoadResult.failure(_withFallbackHint(e.message));
     } catch (_) {
-      return const AppFontLoadResult.failure('自定义字体读取失败，已回退默认字体');
+      return AppFontLoadResult.failure(AppStrings.appFontReadFailedFallback);
     }
     final family = familyForBytes(bytes);
     try {
@@ -456,11 +461,11 @@ class AppFontStore {
       await engineLoader(family, data).timeout(timeout);
       return AppFontLoadResult.success(family);
     } on TimeoutException {
-      return const AppFontLoadResult.failure('自定义字体加载超时，已回退默认字体');
+      return AppFontLoadResult.failure(AppStrings.appFontLoadTimeoutFallback);
     } on FormatException catch (e) {
       return AppFontLoadResult.failure(_withFallbackHint(e.message));
     } catch (_) {
-      return const AppFontLoadResult.failure('自定义字体加载失败，已回退默认字体');
+      return AppFontLoadResult.failure(AppStrings.appFontLoadFailedFallback);
     }
   }
 
@@ -470,7 +475,7 @@ class AppFontStore {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: allowedExtensions.toList(growable: false),
-      dialogTitle: '选择字体文件',
+      dialogTitle: AppStrings.pickFontFile,
       allowCompression: false,
       // 不在选择阶段把整文件读入内存：先按平台元数据/stat 拦截超限，
       // 通过后再读字节（Android 内容 URI 由插件落缓存路径后读取）
@@ -479,21 +484,27 @@ class AppFontStore {
     if (result == null || result.files.isEmpty) return null;
     final picked = result.files.single;
     if (picked.size > maxBytes) {
-      throw FormatException('字体文件过大（上限 ${maxBytes ~/ (1024 * 1024)}MB）');
+      throw FormatException(
+        AppStrings.appFontFileTooLarge(maxBytes ~/ (1024 * 1024)),
+      );
     }
     final path = picked.path;
     if (path == null) {
-      throw const FormatException('无法读取所选字体文件');
+      throw FormatException(AppStrings.appFontCannotReadPicked);
     }
     final file = File(path);
     final length = await file.length();
-    if (length <= 0) throw const FormatException('字体文件为空');
+    if (length <= 0) throw FormatException(AppStrings.appFontFileEmpty);
     if (length > maxBytes) {
-      throw FormatException('字体文件过大（上限 ${maxBytes ~/ (1024 * 1024)}MB）');
+      throw FormatException(
+        AppStrings.appFontFileTooLarge(maxBytes ~/ (1024 * 1024)),
+      );
     }
     final bytes = await file.readAsBytes();
     if (bytes.length > maxBytes) {
-      throw FormatException('字体文件过大（上限 ${maxBytes ~/ (1024 * 1024)}MB）');
+      throw FormatException(
+        AppStrings.appFontFileTooLarge(maxBytes ~/ (1024 * 1024)),
+      );
     }
     return AppFontPick(bytes: bytes, name: picked.name);
   }
@@ -509,7 +520,9 @@ class AppFontStore {
   /// 加载失败提示统一带「已回退默认字体」，避免只报格式错误让用户
   /// 误以为界面仍在使用自定义字体。
   static String _withFallbackHint(String message) =>
-      message.contains('默认字体') ? message : '$message，已回退默认字体';
+      message.endsWith(AppStrings.appFontFallbackSuffix)
+          ? message
+          : AppStrings.appFontWithFallback(message);
 
   /// 扩展名白名单校验；不在白名单返回 null
   static String? _extensionOf(String path) {
@@ -602,32 +615,32 @@ class AppFontStore {
 
   /// 校验字体文件：扩展名已在上层校验，这里按文件头 + 表目录判断。
   static void _validateFontBytes(Uint8List bytes) {
-    if (bytes.isEmpty) throw const FormatException('字体文件为空');
+    if (bytes.isEmpty) throw FormatException(AppStrings.appFontFileEmpty);
     if (bytes.length < 12) {
-      throw const FormatException('字体文件内容无效或已损坏');
+      throw FormatException(AppStrings.appFontFileInvalidOrCorrupt);
     }
     final tag = _u32(bytes, 0);
     if (tag == _ttcTag) {
       final numFonts = _u32(bytes, 8);
       if (numFonts <= 0 || numFonts > 1024) {
-        throw const FormatException('字体集合（TTC）内容无效或已损坏');
+        throw FormatException(AppStrings.appFontTtcInvalidOrCorrupt);
       }
       if (bytes.length < 12 + 4 * numFonts) {
-        throw const FormatException('字体文件内容无效或已损坏');
+        throw FormatException(AppStrings.appFontFileInvalidOrCorrupt);
       }
       for (var i = 0; i < numFonts; i++) {
         final offset = _u32(bytes, 12 + 4 * i);
         if (!_validateSfntAt(bytes, offset)) {
-          throw const FormatException('字体文件内容无效或已损坏');
+          throw FormatException(AppStrings.appFontFileInvalidOrCorrupt);
         }
       }
       return;
     }
     if (!_isKnownSfntTag(tag)) {
-      throw const FormatException('不是有效的 TTF / OTF / TTC 字体文件');
+      throw FormatException(AppStrings.appFontNotValidFont);
     }
     if (!_validateSfntAt(bytes, 0)) {
-      throw const FormatException('字体文件内容无效或已损坏');
+      throw FormatException(AppStrings.appFontFileInvalidOrCorrupt);
     }
   }
 

@@ -5863,4 +5863,332 @@ class AppStrings {
       _get('确定删除角色「$name」？', 'Delete character "$name"?');
   static String get characterManageEntryDesc =>
       _get('手动建档，详情页展示角色卡', 'Add characters manually; shown on book details');
+
+  // ----- L10N 批1：关联导入 / 主题包 / 书源导入 / 应用字体 / 阅读主题 / 定时任务 -----
+
+  // 关联导入（association_notifier）
+  static String associationHttpStatusFailed(int code) => _locale == 'zh'
+      ? 'HTTP 请求失败：状态码 $code'
+      : 'HTTP request failed: status code $code';
+  static String associationLoadFromUrlFailed(String error) => _locale == 'zh'
+      ? '从 URL 加载失败：$error'
+      : 'Failed to load from the URL: $error';
+  static String associationFileNotExist(String path) => _locale == 'zh'
+      ? '文件不存在：$path'
+      : 'File not found: $path';
+  static String associationReadFileFailed(String error) => _locale == 'zh'
+      ? '读取文件失败：$error'
+      : 'Failed to read the file: $error';
+  static String get associationContentEmpty => _get('内容为空', 'Content is empty');
+  static String associationReadClipboardFailed(String error) => _locale == 'zh'
+      ? '读取剪贴板失败：$error'
+      : 'Failed to read the clipboard: $error';
+  static String get associationExpectedJsonArrayOrObject => _get(
+      '格式错误：期望 JSON 数组或对象',
+      'Invalid format: expected a JSON array or object');
+  static String associationJsonParseFailed(String error) => _locale == 'zh'
+      ? 'JSON 解析错误：$error'
+      : 'JSON parse error: $error';
+  static String get associationNoValidEntries =>
+      _get('格式错误，未解析到有效条目', 'Invalid format: no valid entries parsed');
+  static String get associationFormatInvalid => _get('格式不对', 'Invalid format');
+  static String get associationUnitBookSource => _get('书源', 'Book source');
+  static String get associationUnitRssSource => _get('RSS 源', 'RSS source');
+  static String get associationUnitReplaceRule =>
+      _get('替换规则', 'Replacement rule');
+  static String get associationUnitTheme => _get('主题配置', 'Theme config');
+  static String get associationUnitHttpTts => _get('HTTP TTS', 'HTTP TTS');
+  static String get associationUnitDictRule => _get('字典规则', 'Dictionary rule');
+  static String get associationUnitTxtTocRule =>
+      _get('TXT 目录规则', 'TXT TOC rule');
+  static String get associationUnitHighlightRule =>
+      _get('高亮规则', 'Highlight rule');
+  static String get associationUnitAutoTask =>
+      _get('自动任务', 'Scheduled task');
+  static String get associationMissingName => _get('缺少名称', 'Missing name');
+  static String associationImportReplaceRuleFailed(String name, String error) =>
+      _locale == 'zh'
+          ? '导入替换规则「$name」失败：$error'
+          : 'Failed to import replacement rule "$name": $error';
+  static String associationImportThemeFailed(String error) => _locale == 'zh'
+      ? '导入主题配置失败：$error'
+      : 'Failed to import the theme config: $error';
+  static String get associationMissingNameOrRegex =>
+      _get('缺少名称或正则', 'Missing name or regex pattern');
+  static String associationImportDictRuleFailed(String name, String error) =>
+      _locale == 'zh'
+          ? '导入字典规则「$name」失败：$error'
+          : 'Failed to import dictionary rule "$name": $error';
+  static String associationImportTxtTocRuleFailed(String name, String error) =>
+      _locale == 'zh'
+          ? '导入 TXT 规则「$name」失败：$error'
+          : 'Failed to import TXT rule "$name": $error';
+  static String get associationUuidInvalid => _get('uuid 非法', 'Invalid uuid');
+  static String get associationPatternEmpty =>
+      _get('匹配模式为空', 'Match pattern is empty');
+  static String associationInvalidRegex(String pattern) => _locale == 'zh'
+      ? '正则表达式无效: $pattern'
+      : 'Invalid regular expression: $pattern';
+  static String get associationUuidDuplicate =>
+      _get('uuid 重复', 'Duplicate uuid');
+  static String associationImportHighlightRuleFailed(
+          String name, String error) =>
+      _locale == 'zh'
+          ? '导入高亮规则「$name」失败：$error'
+          : 'Failed to import highlight rule "$name": $error';
+  static String associationSaveHighlightRulesFailed(String error) =>
+      _locale == 'zh'
+          ? '写入高亮规则失败：$error'
+          : 'Failed to save the highlight rules: $error';
+  static String get associationImportAutoTaskMissingName => _get(
+      '导入自动任务失败：缺少任务名称',
+      'Failed to import scheduled task: missing task name');
+  static String associationImportAutoTaskInvalidCron(String name) =>
+      _locale == 'zh'
+          ? '导入自动任务「$name」失败：请输入有效的五段 Cron 计划'
+          : 'Failed to import scheduled task "$name": enter a valid 5-field cron schedule';
+  static String associationImportAutoTaskMissingScript(String name) =>
+      _locale == 'zh'
+          ? '导入自动任务「$name」失败：请输入 JavaScript 任务脚本'
+          : 'Failed to import scheduled task "$name": enter a JavaScript task script';
+  static String associationImportAutoTaskFailed(String name, String error) =>
+      _locale == 'zh'
+          ? '导入自动任务「$name」失败：$error'
+          : 'Failed to import scheduled task "$name": $error';
+
+  // 主题包导入/导出（theme_package_service）
+  static String themePackageEntryTooLarge(String entry) => _locale == 'zh'
+      ? '主题包条目过大：$entry（上限 32MB）'
+      : 'Theme package entry too large: $entry (limit 32MB)';
+  static String get themePackageContentTooLarge => _get(
+      '主题包内容过大（上限 512MB）',
+      'Theme package content too large (limit 512MB)');
+  static String themePackageReadFailed(String error) => _locale == 'zh'
+      ? '无法读取主题包：$error'
+      : 'Unable to read the theme package: $error';
+  static String get themePackageUnreadable => _get(
+      '无法读取主题包（文件格式不正确）',
+      'Unable to read the theme package (invalid file format)');
+  static String get themePackageFileEmpty =>
+      _get('主题包文件为空', 'The theme package file is empty');
+  static String get themePackageFileTooLarge => _get(
+      '主题包文件过大（上限 512MB）',
+      'Theme package file too large (limit 512MB)');
+  static String get themePackageMultiVolumeUnsupported => _get(
+      '不支持分卷主题包', 'Multi-volume theme packages are not supported');
+  static String get themePackageManifestTooLarge => _get(
+      '主题包清单过大（上限 4MB）',
+      'Theme package manifest too large (limit 4MB)');
+  static String get themePackageTooManyEntries => _get(
+      '主题包条目过多（上限 4096）',
+      'Too many entries in the theme package (limit 4096)');
+  static String themePackageIllegalPath(String path) => _locale == 'zh'
+      ? '主题包包含非法路径：$path'
+      : 'The theme package contains an illegal path: $path';
+  static String themePackageSymlinkEntry(String entry) => _locale == 'zh'
+      ? '主题包包含符号链接条目：$entry'
+      : 'The theme package contains a symbolic link entry: $entry';
+  static String themePackageEncryptedEntry(String entry) => _locale == 'zh'
+      ? '主题包包含加密条目：$entry'
+      : 'The theme package contains an encrypted entry: $entry';
+  static String themePackageEntryHeaderCorrupt(String entry) => _locale == 'zh'
+      ? '无法读取主题包（$entry 头部损坏）'
+      : 'Unable to read the theme package ($entry has a corrupt header)';
+  static String themePackageCompressionUnsupported(String entry) =>
+      _locale == 'zh'
+          ? '主题包压缩方式不支持：$entry'
+          : 'Unsupported compression method in the theme package: $entry';
+  static String get themePackageManifestIncomplete => _get(
+      '主题包清单不完整', 'The theme package manifest is incomplete');
+  static String themePackageVersionUnsupported(int? version) => _locale == 'zh'
+      ? '不支持的主题包版本: ${version ?? '未知'}'
+      : 'Unsupported theme package version: ${version ?? 'unknown'}';
+  static String themePackageExtractFailed(String entry) => _locale == 'zh'
+      ? '无法读取主题包（$entry 解压失败）'
+      : 'Unable to read the theme package (failed to extract $entry)';
+  static String get themePackageBackgroundTooLarge => _get(
+      '背景图片过大（上限 32MB）', 'Background image too large (limit 32MB)');
+
+  // 书源导入（source_import_service）
+  static String get sourceImportInvalidJsonFormat => _get(
+      '无效的 JSON 格式：期望数组或对象',
+      'Invalid JSON format: expected an array or object');
+  static String sourceImportItemNotObject(int index) => _locale == 'zh'
+      ? '第 $index 项不是有效的 JSON 对象'
+      : 'Item $index is not a valid JSON object';
+  static String sourceImportItemValidationFailed(int index, String errors) =>
+      _locale == 'zh'
+          ? '第 $index 项校验失败：$errors'
+          : 'Item $index failed validation: $errors';
+  static String sourceImportNoValidSource(int failed, String? firstError) =>
+      _locale == 'zh'
+          ? '未解析到有效书源（失败 $failed 项）${firstError == null ? '' : '：$firstError'}'
+          : 'No valid book source parsed ($failed item(s) failed)${firstError == null ? '' : ': $firstError'}';
+  static String get sourceImportUnknownSourceName =>
+      _get('未知书源', 'Unknown book source');
+  static String sourceImportNamedSourceFailed(String name, String error) =>
+      _locale == 'zh'
+          ? '导入「$name」失败：$error'
+          : 'Failed to import "$name": $error';
+  static String sourceImportJsonParseFailed(String error) => _locale == 'zh'
+      ? 'JSON 解析错误：$error'
+      : 'JSON parse error: $error';
+  static String sourceImportHttpStatusFailed(int code) => _locale == 'zh'
+      ? 'HTTP 请求失败：状态码 $code'
+      : 'HTTP request failed: status code $code';
+  static String sourceImportTimeout(String error) => _locale == 'zh'
+      ? '网络请求超时：$error'
+      : 'Network request timed out: $error';
+  static String sourceImportFromUrlFailed(String error) => _locale == 'zh'
+      ? '从 URL 导入失败：$error'
+      : 'Failed to import from the URL: $error';
+  static String sourceImportReadFileFailed(String error) => _locale == 'zh'
+      ? '读取文件失败：$error'
+      : 'Failed to read the file: $error';
+  static String sourceImportFileNotExist(String path) => _locale == 'zh'
+      ? '文件不存在：$path'
+      : 'File not found: $path';
+  static String sourceImportMissingField(String field) => _locale == 'zh'
+      ? '缺少 $field'
+      : 'Missing $field';
+  static String sourceImportSummary(int total, String unit, String parts) =>
+      _locale == 'zh'
+          ? '共 $total 个$unit：$parts'
+          : 'Total $total $unit(s): $parts';
+  static String sourceImportPartSuccess(int count) =>
+      _locale == 'zh' ? '成功 $count' : 'Success $count';
+  static String sourceImportPartFailed(int count) =>
+      _locale == 'zh' ? '失败 $count' : 'Failed $count';
+  static String sourceImportPartSkipped(int count) =>
+      _locale == 'zh' ? '跳过 $count' : 'Skipped $count';
+  static String get sourceImportUnitBookSource => _get('书源', 'Book source');
+
+  // 应用字体（app_font_store）
+  static String get appFontUnsupportedPlatform => _get(
+      '当前平台不支持自定义应用字体',
+      'Custom app fonts are not supported on this platform');
+  static String get appFontPickerOpenFailed => _get(
+      '无法打开系统文件选择器，请重试',
+      'Unable to open the system file picker. Please try again');
+  static String get appFontFileEmpty => _get('字体文件为空', 'The font file is empty');
+  static String appFontFileTooLarge(int mb) => _locale == 'zh'
+      ? '字体文件过大（上限 ${mb}MB）'
+      : 'Font file too large (limit ${mb}MB)';
+  static String get appFontUnsupportedFormat => _get(
+      '不支持的字体格式（仅支持 TTF / OTF / TTC）',
+      'Unsupported font format (TTF / OTF / TTC only)');
+  static String get appFontNotSet => _get('未设置应用字体', 'No app font set');
+  static String get appFontFileMissingFallback => _get(
+      '自定义字体文件缺失，已回退默认字体',
+      'Custom font file is missing; fell back to the default font');
+  static String get appFontFileCorruptFallback => _get(
+      '自定义字体文件已损坏，已回退默认字体',
+      'Custom font file is corrupted; fell back to the default font');
+  static String get appFontReadFailedFallback => _get(
+      '自定义字体读取失败，已回退默认字体',
+      'Failed to read the custom font; fell back to the default font');
+  static String get appFontLoadTimeoutFallback => _get(
+      '自定义字体加载超时，已回退默认字体',
+      'Timed out loading the custom font; fell back to the default font');
+  static String get appFontLoadFailedFallback => _get(
+      '自定义字体加载失败，已回退默认字体',
+      'Failed to load the custom font; fell back to the default font');
+  static String get appFontCannotReadPicked => _get(
+      '无法读取所选字体文件', 'Unable to read the selected font file');
+  static String get appFontFallbackSuffix =>
+      _locale == 'zh' ? '，已回退默认字体' : ', fell back to the default font';
+  static String appFontWithFallback(String message) =>
+      '$message$appFontFallbackSuffix';
+  static String get appFontFileInvalidOrCorrupt => _get(
+      '字体文件内容无效或已损坏', 'The font file is invalid or corrupted');
+  static String get appFontTtcInvalidOrCorrupt => _get(
+      '字体集合（TTC）内容无效或已损坏',
+      'The font collection (TTC) is invalid or corrupted');
+  static String get appFontNotValidFont => _get(
+      '不是有效的 TTF / OTF / TTC 字体文件',
+      'Not a valid TTF / OTF / TTC font file');
+
+  // 阅读主题（reader_theme）
+  static String readerThemeColorUnparsable(String raw) => _locale == 'zh'
+      ? '无法解析颜色：$raw'
+      : 'Unable to parse the color: $raw';
+  static String readerThemeColorTypeInvalid(String type) => _locale == 'zh'
+      ? '颜色字段类型非法：$type'
+      : 'Invalid color field type: $type';
+  static String readerThemeFieldShouldBeNumber(String key) => _locale == 'zh'
+      ? '$key 应为数字'
+      : '$key must be a number';
+  static String readerThemeFieldShouldBeInt(String key) => _locale == 'zh'
+      ? '$key 应为整数'
+      : '$key must be an integer';
+  static String readerThemeFieldShouldBeBool(String key) => _locale == 'zh'
+      ? '$key 应为布尔值'
+      : '$key must be a boolean';
+  static String readerThemeFieldShouldBeString(String key) => _locale == 'zh'
+      ? '$key 应为字符串'
+      : '$key must be a string';
+  static String get readerThemeNameMissing =>
+      _get('主题名称缺失或为空', 'Theme name is missing or empty');
+  static String get readerThemeStyleMissing =>
+      _get('缺少 style 样式对象', 'Missing style object');
+  static String readerThemeInvalidJson(String error) => _locale == 'zh'
+      ? '不是有效的 JSON：$error'
+      : 'Invalid JSON: $error';
+  static String get readerThemeListEmpty =>
+      _get('主题列表为空', 'The theme list is empty');
+  static String get readerThemeListNonObjectEntry => _get(
+      '主题列表中存在非对象条目',
+      'The theme list contains a non-object entry');
+  static String get readerThemeJsonTopLevelInvalid => _get(
+      'JSON 顶层应为对象或数组',
+      'The JSON top level must be an object or array');
+  static String get readerThemeDefaultName =>
+      _get('阅读主题', 'Reading theme');
+  // 内置阅读主题名：`kBuiltInReaderThemes` 必须保持 const（测试与
+  // `ReaderThemeState` 的 const 构造依赖），故此处只能提供编译期常量，
+  // 无法走 _get 运行时切换；D5=B 口径下保持中文。
+  static const String readerThemeBuiltinWechat = '微信读书';
+  static const String readerThemeBuiltinPreset1 = '预设1';
+  static const String readerThemeBuiltinPreset2 = '预设2';
+  static const String readerThemeBuiltinPreset3 = '预设3';
+  static const String readerThemeBuiltinPreset4 = '预设4';
+
+  // 定时任务错误态（auto_task_notifier）
+  static String get autoTaskFfiUnavailableLoad => _get(
+      'FFI 不可用，无法加载定时任务',
+      'FFI is unavailable; cannot load scheduled tasks');
+  static String autoTaskLoadFailed(String error) => _locale == 'zh'
+      ? '加载任务失败: $error'
+      : 'Failed to load tasks: $error';
+  static String get autoTaskFfiUnavailableCreate => _get(
+      'FFI 不可用，无法创建任务',
+      'FFI is unavailable; cannot create the task');
+  static String autoTaskCreateFailed(String error) => _locale == 'zh'
+      ? '创建任务失败: $error'
+      : 'Failed to create the task: $error';
+  static String autoTaskUpdateInvalidJson(String error) => _locale == 'zh'
+      ? '更新任务失败: 规则 JSON 无效: $error'
+      : 'Failed to update the task: invalid rule JSON: $error';
+  static String get autoTaskUpdateMissingId => _get(
+      '更新任务失败: 缺少任务 id', 'Failed to update the task: missing task id');
+  static String get autoTaskFfiUnavailableUpdate => _get(
+      'FFI 不可用，无法更新任务',
+      'FFI is unavailable; cannot update the task');
+  static String autoTaskUpdateFailed(String error) => _locale == 'zh'
+      ? '更新任务失败: $error'
+      : 'Failed to update the task: $error';
+  static String get autoTaskFfiUnavailableDelete => _get(
+      'FFI 不可用，无法删除任务',
+      'FFI is unavailable; cannot delete the task');
+  static String autoTaskDeleteFailed(String error) => _locale == 'zh'
+      ? '删除任务失败: $error'
+      : 'Failed to delete the task: $error';
+  static String get autoTaskFfiUnavailableRun => _get(
+      'FFI 不可用，无法运行任务',
+      'FFI is unavailable; cannot run the task');
+  static String autoTaskRunFailed(String error) => _locale == 'zh'
+      ? '运行任务失败: $error'
+      : 'Failed to run the task: $error';
+  static String get autoTaskRunSuccess => _get('成功', 'Success');
+  static String get autoTaskRunFailure => _get('失败', 'Failed');
 }

@@ -44,6 +44,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../constants/pref_keys.dart';
+import '../l10n/app_strings.dart';
 import '../providers/theme/theme_colors_notifier.dart';
 import 'theme_config_json.dart';
 
@@ -135,10 +136,12 @@ class _BoundedOutputStream extends OutputStream {
   void _reserve(int count) {
     final next = _length + count;
     if (next > maxEntryBytes) {
-      throw ThemePackageException('主题包条目过大：$entryName（上限 32MB）');
+      throw ThemePackageException(
+        AppStrings.themePackageEntryTooLarge(entryName),
+      );
     }
     if (next > maxTotalBytes) {
-      throw const ThemePackageException('主题包内容过大（上限 512MB）');
+      throw ThemePackageException(AppStrings.themePackageContentTooLarge);
     }
   }
 
@@ -298,19 +301,19 @@ abstract final class ThemePackageService {
     } on ThemePackageException {
       rethrow;
     } on FileSystemException catch (e) {
-      throw ThemePackageException('无法读取主题包：${e.message}');
+      throw ThemePackageException(AppStrings.themePackageReadFailed(e.message));
     } catch (_) {
-      throw const ThemePackageException('无法读取主题包（文件格式不正确）');
+      throw ThemePackageException(AppStrings.themePackageUnreadable);
     }
   }
 
   static Future<ThemePackageData> _importThemePackage(File zip) async {
     final fileLength = await zip.length();
     if (fileLength <= 0) {
-      throw const ThemePackageException('主题包文件为空');
+      throw ThemePackageException(AppStrings.themePackageFileEmpty);
     }
     if (fileLength > maxTotalBytes) {
-      throw const ThemePackageException('主题包文件过大（上限 512MB）');
+      throw ThemePackageException(AppStrings.themePackageFileTooLarge);
     }
     // 解压前先读 EOCD：条目数与中央目录大小可伪造，但先挡住明显超限包，
     // 避免为 5000+ 条目/超大目录做完整解析。
@@ -321,19 +324,21 @@ abstract final class ThemePackageService {
       final directory = ZipDirectory();
       directory.read(input);
       if (directory.filePosition < 0) {
-        throw const ThemePackageException('无法读取主题包（文件格式不正确）');
+        throw ThemePackageException(AppStrings.themePackageUnreadable);
       }
       // zip64 可能把 EOCD 的 0xFFFF/0xFFFFFFFF 覆盖为真实值，解析后再复检
       if (directory.numberOfThisDisk != 0 ||
           directory.diskWithTheStartOfTheCentralDirectory != 0) {
-        throw const ThemePackageException('不支持分卷主题包');
+        throw ThemePackageException(
+          AppStrings.themePackageMultiVolumeUnsupported,
+        );
       }
       if (directory.centralDirectorySize > maxCentralDirectoryBytes) {
-        throw const ThemePackageException('主题包清单过大（上限 4MB）');
+        throw ThemePackageException(AppStrings.themePackageManifestTooLarge);
       }
       if (directory.totalCentralDirectoryEntries > maxEntries ||
           directory.fileHeaders.length > maxEntries) {
-        throw const ThemePackageException('主题包条目过多（上限 4096）');
+        throw ThemePackageException(AppStrings.themePackageTooManyEntries);
       }
 
       final headers = <String, ZipFileHeader>{};
@@ -341,40 +346,52 @@ abstract final class ThemePackageService {
       for (final header in directory.fileHeaders) {
         final entryName = header.filename;
         if (!_isSafeEntryName(entryName)) {
-          throw ThemePackageException('主题包包含非法路径：$entryName');
+          throw ThemePackageException(
+            AppStrings.themePackageIllegalPath(entryName),
+          );
         }
         final fileType = (header.externalFileAttributes >> 16) & 0xf000;
         if (fileType == 0xa000) {
-          throw ThemePackageException('主题包包含符号链接条目：$entryName');
+          throw ThemePackageException(
+            AppStrings.themePackageSymlinkEntry(entryName),
+          );
         }
         if ((header.generalPurposeBitFlag & 0x1) != 0) {
-          throw ThemePackageException('主题包包含加密条目：$entryName');
+          throw ThemePackageException(
+            AppStrings.themePackageEncryptedEntry(entryName),
+          );
         }
         if (entryName.endsWith('/') || fileType == 0x4000) continue;
 
         // 中央目录声明大小只用于提前拒绝；真正解压仍按实际写出字节限长。
         if (header.uncompressedSize > maxEntryBytes) {
-          throw ThemePackageException('主题包条目过大：$entryName（上限 32MB）');
+          throw ThemePackageException(
+            AppStrings.themePackageEntryTooLarge(entryName),
+          );
         }
         declaredTotal += header.uncompressedSize;
         if (declaredTotal > maxTotalBytes) {
-          throw const ThemePackageException('主题包内容过大（上限 512MB）');
+          throw ThemePackageException(AppStrings.themePackageContentTooLarge);
         }
         final file = header.file;
         if (file == null) {
-          throw ThemePackageException('无法读取主题包（$entryName 头部损坏）');
+          throw ThemePackageException(
+            AppStrings.themePackageEntryHeaderCorrupt(entryName),
+          );
         }
         if (header.compressionMethod != 0 &&
             header.compressionMethod != 8 &&
             header.compressionMethod != 12) {
-          throw ThemePackageException('主题包压缩方式不支持：$entryName');
+          throw ThemePackageException(
+            AppStrings.themePackageCompressionUnsupported(entryName),
+          );
         }
         headers[entryName] = header;
       }
 
       final manifestHeader = headers['manifest.json'];
       if (manifestHeader == null) {
-        throw const ThemePackageException('主题包清单不完整');
+        throw ThemePackageException(AppStrings.themePackageManifestIncomplete);
       }
       final budget = _EntryBudget();
       final manifest = _decodeManifest(
@@ -383,15 +400,17 @@ abstract final class ThemePackageService {
 
       final version = _asNullableInt(manifest['formatVersion']);
       if (version != formatVersion) {
-        throw ThemePackageException('不支持的主题包版本: ${version ?? '未知'}');
+        throw ThemePackageException(
+          AppStrings.themePackageVersionUnsupported(version),
+        );
       }
       final config = manifest['config'];
       if (config is! Map<String, dynamic>) {
-        throw const ThemePackageException('主题包清单不完整');
+        throw ThemePackageException(AppStrings.themePackageManifestIncomplete);
       }
       final colorsRaw = config['colors'];
       if (colorsRaw is! Map<String, dynamic>) {
-        throw const ThemePackageException('主题包清单不完整');
+        throw ThemePackageException(AppStrings.themePackageManifestIncomplete);
       }
 
       final lightPath = _resolveBackgroundPath(manifest, headers.keys, 'light');
@@ -449,7 +468,7 @@ abstract final class ThemePackageService {
       await raf.setPosition(fileLength - tailLength);
       final tail = await raf.read(tailLength);
       if (tail.length < 22) {
-        throw const ThemePackageException('无法读取主题包（文件格式不正确）');
+        throw ThemePackageException(AppStrings.themePackageUnreadable);
       }
       var index = -1;
       for (var i = tail.length - 22; i >= 0; i--) {
@@ -462,7 +481,7 @@ abstract final class ThemePackageService {
         }
       }
       if (index < 0) {
-        throw const ThemePackageException('无法读取主题包（文件格式不正确）');
+        throw ThemePackageException(AppStrings.themePackageUnreadable);
       }
       int u16(int offset) =>
           tail[index + offset] | (tail[index + offset + 1] << 8);
@@ -473,24 +492,26 @@ abstract final class ThemePackageService {
           (tail[index + offset + 3] << 24);
 
       if (u16(4) != 0 || u16(6) != 0) {
-        throw const ThemePackageException('不支持分卷主题包');
+        throw ThemePackageException(
+          AppStrings.themePackageMultiVolumeUnsupported,
+        );
       }
       final entries = u16(10);
       final centralDirectorySize = u32(12);
       final centralDirectoryOffset = u32(16);
       if (entries != 0xffff && entries > maxEntries) {
-        throw const ThemePackageException('主题包条目过多（上限 4096）');
+        throw ThemePackageException(AppStrings.themePackageTooManyEntries);
       }
       if (centralDirectorySize != 0xffffffff) {
         if (centralDirectorySize > maxCentralDirectoryBytes) {
-          throw const ThemePackageException('主题包清单过大（上限 4MB）');
+          throw ThemePackageException(AppStrings.themePackageManifestTooLarge);
         }
         if (centralDirectorySize > maxTotalBytes) {
-          throw const ThemePackageException('主题包内容过大（上限 512MB）');
+          throw ThemePackageException(AppStrings.themePackageContentTooLarge);
         }
         if (centralDirectoryOffset != 0xffffffff &&
             centralDirectoryOffset + centralDirectorySize > fileLength) {
-          throw const ThemePackageException('无法读取主题包（文件格式不正确）');
+          throw ThemePackageException(AppStrings.themePackageUnreadable);
         }
       }
     } finally {
@@ -503,10 +524,10 @@ abstract final class ThemePackageService {
     try {
       decoded = jsonDecode(utf8.decode(bytes, allowMalformed: true));
     } catch (_) {
-      throw const ThemePackageException('主题包清单不完整');
+      throw ThemePackageException(AppStrings.themePackageManifestIncomplete);
     }
     if (decoded is! Map<String, dynamic>) {
-      throw const ThemePackageException('主题包清单不完整');
+      throw ThemePackageException(AppStrings.themePackageManifestIncomplete);
     }
     return decoded;
   }
@@ -519,7 +540,9 @@ abstract final class ThemePackageService {
   }) {
     final file = header.file;
     if (file == null) {
-      throw ThemePackageException('无法读取主题包（${header.filename} 头部损坏）');
+      throw ThemePackageException(
+        AppStrings.themePackageEntryHeaderCorrupt(header.filename),
+      );
     }
     final sink = _BoundedOutputStream(
       entryName: header.filename,
@@ -532,7 +555,9 @@ abstract final class ThemePackageService {
     } on ThemePackageException {
       rethrow;
     } catch (_) {
-      throw ThemePackageException('无法读取主题包（${header.filename} 解压失败）');
+      throw ThemePackageException(
+        AppStrings.themePackageExtractFailed(header.filename),
+      );
     }
     budget.used += sink.length;
     return sink.getBytes();
@@ -607,7 +632,7 @@ abstract final class ThemePackageService {
     final length = await file.length();
     if (length <= 0) return null;
     if (length > maxEntryBytes) {
-      throw const ThemePackageException('背景图片过大（上限 32MB）');
+      throw ThemePackageException(AppStrings.themePackageBackgroundTooLarge);
     }
     final bytes = await file.readAsBytes();
     return ('$entryPrefix.${_imageExtension(file.path)}', bytes);
@@ -631,7 +656,7 @@ abstract final class ThemePackageService {
     if (referenced is String && referenced.trim().isNotEmpty) {
       path = referenced.trim();
       if (!_isSafeEntryName(path) || !path.startsWith('assets/background/')) {
-        throw ThemePackageException('主题包包含非法路径：$path');
+        throw ThemePackageException(AppStrings.themePackageIllegalPath(path));
       }
       return available.contains(path) ? path : null;
     }

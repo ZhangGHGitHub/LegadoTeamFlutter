@@ -20,6 +20,8 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show immutable;
 
+import '../l10n/app_strings.dart';
+
 /// 阅读主题 JSON 结构版本（导入时只做提示，不强制拒绝高版本）
 const int kReaderThemeSchemaVersion = 1;
 
@@ -51,9 +53,11 @@ int decodeReaderThemeColor(Object? raw) {
         final argb = int.tryParse(hex, radix: 16);
         if (argb != null) return argb;
       }
-      throw FormatException('无法解析颜色：$text');
+      throw FormatException(AppStrings.readerThemeColorUnparsable(text));
     default:
-      throw FormatException('颜色字段类型非法：${raw.runtimeType}');
+      throw FormatException(
+        AppStrings.readerThemeColorTypeInvalid('${raw.runtimeType}'),
+      );
   }
 }
 
@@ -214,7 +218,7 @@ class ReaderThemeStyle {
       final value = json[key];
       if (value == null) return fallback;
       if (value is num) return value.toDouble();
-      throw FormatException('$key 应为数字');
+      throw FormatException(AppStrings.readerThemeFieldShouldBeNumber(key));
     }
 
     int readInt(String key, int fallback) {
@@ -222,21 +226,21 @@ class ReaderThemeStyle {
       if (value == null) return fallback;
       if (value is int) return value;
       if (value is num) return value.round();
-      throw FormatException('$key 应为整数');
+      throw FormatException(AppStrings.readerThemeFieldShouldBeInt(key));
     }
 
     bool readBool(String key, bool fallback) {
       final value = json[key];
       if (value == null) return fallback;
       if (value is bool) return value;
-      throw FormatException('$key 应为布尔值');
+      throw FormatException(AppStrings.readerThemeFieldShouldBeBool(key));
     }
 
     String readString(String key, String fallback) {
       final value = json[key];
       if (value == null) return fallback;
       if (value is String) return value;
-      throw FormatException('$key 应为字符串');
+      throw FormatException(AppStrings.readerThemeFieldShouldBeString(key));
     }
 
     final rawTextColor = json['textColor'];
@@ -367,11 +371,11 @@ class ReaderTheme {
   factory ReaderTheme.fromJson(Map<String, dynamic> json) {
     final rawName = json['name'];
     if (rawName is! String || rawName.trim().isEmpty) {
-      throw const FormatException('主题名称缺失或为空');
+      throw FormatException(AppStrings.readerThemeNameMissing);
     }
     final rawStyle = json['style'];
     if (rawStyle is! Map) {
-      throw const FormatException('缺少 style 样式对象');
+      throw FormatException(AppStrings.readerThemeStyleMissing);
     }
     return ReaderTheme(
       id: json['id'] is String ? json['id'] as String : '',
@@ -421,22 +425,26 @@ class ReaderThemeCodec {
     try {
       decoded = jsonDecode(text);
     } on FormatException catch (e) {
-      throw FormatException('不是有效的 JSON：${e.message}');
+      throw FormatException(AppStrings.readerThemeInvalidJson(e.message));
     }
     switch (decoded) {
       case final List<dynamic> list:
-        if (list.isEmpty) throw const FormatException('主题列表为空');
+        if (list.isEmpty) {
+          throw FormatException(AppStrings.readerThemeListEmpty);
+        }
         return <ReaderTheme>[
           for (final item in list)
             if (item is Map)
               ReaderTheme.fromJson(Map<String, dynamic>.from(item))
             else
-              throw const FormatException('主题列表中存在非对象条目'),
+              throw FormatException(
+                AppStrings.readerThemeListNonObjectEntry,
+              ),
         ];
       case final Map<String, dynamic> map:
         return <ReaderTheme>[ReaderTheme.fromJson(map)];
       default:
-        throw const FormatException('JSON 顶层应为对象或数组');
+        throw FormatException(AppStrings.readerThemeJsonTopLevelInvalid);
     }
   }
 
@@ -489,7 +497,8 @@ class ReaderThemeCodec {
 /// 因此必须避免重名（名称是用户唯一可辨识的标识）。
 String uniqueReaderThemeName(String base, Iterable<String> existingNames) {
   final trimmed = base.trim();
-  final normalized = trimmed.isEmpty ? '阅读主题' : trimmed;
+  final normalized =
+      trimmed.isEmpty ? AppStrings.readerThemeDefaultName : trimmed;
   final names = existingNames.toSet();
   if (!names.contains(normalized)) return normalized;
   var index = 2;
@@ -511,7 +520,7 @@ String uniqueReaderThemeName(String base, Iterable<String> existingNames) {
 const List<ReaderTheme> kBuiltInReaderThemes = <ReaderTheme>[
   ReaderTheme(
     id: 'builtin-wechat-read',
-    name: '微信读书',
+    name: AppStrings.readerThemeBuiltinWechat,
     builtIn: true,
     style: ReaderThemeStyle(
       fontSize: 24.0,
@@ -528,25 +537,25 @@ const List<ReaderTheme> kBuiltInReaderThemes = <ReaderTheme>[
   ),
   ReaderTheme(
     id: 'builtin-preset-1',
-    name: '预设1',
+    name: AppStrings.readerThemeBuiltinPreset1,
     builtIn: true,
     style: ReaderThemeStyle(backgroundColor: 0xFFFFFFFF, textColor: 0xFF000000),
   ),
   ReaderTheme(
     id: 'builtin-preset-2',
-    name: '预设2',
+    name: AppStrings.readerThemeBuiltinPreset2,
     builtIn: true,
     style: ReaderThemeStyle(backgroundColor: 0xFFDDC090, textColor: 0xFF3E3422),
   ),
   ReaderTheme(
     id: 'builtin-preset-3',
-    name: '预设3',
+    name: AppStrings.readerThemeBuiltinPreset3,
     builtIn: true,
     style: ReaderThemeStyle(backgroundColor: 0xFFC2D8AA, textColor: 0xFF596C44),
   ),
   ReaderTheme(
     id: 'builtin-preset-4',
-    name: '预设4',
+    name: AppStrings.readerThemeBuiltinPreset4,
     builtIn: true,
     style: ReaderThemeStyle(backgroundColor: 0xFFDBB8E2, textColor: 0xFF68516C),
   ),

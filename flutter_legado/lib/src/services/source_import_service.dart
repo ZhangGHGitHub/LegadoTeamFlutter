@@ -5,6 +5,7 @@ import 'dart:io';
 import 'bridge_http.dart';
 
 import '../bridge/ffi.dart' show BridgeError;
+import '../l10n/app_strings.dart';
 import 'book_api.dart';
 import '../utils/error_message.dart';
 
@@ -25,7 +26,7 @@ class ImportResult {
   /// 错误信息列表
   final List<String> errors;
 
-  /// 单位名（如「书源」「替换规则」），用于汇总文案
+  /// 单位名（如「书源」「替换规则」），用于汇总文案；空串时按「书源」
   final String unit;
 
   const ImportResult({
@@ -34,7 +35,7 @@ class ImportResult {
     required this.failed,
     required this.skipped,
     required this.errors,
-    this.unit = '书源',
+    this.unit = '',
   });
 
   /// 是否有错误
@@ -43,10 +44,16 @@ class ImportResult {
   /// 汇总信息
   String get summary {
     final parts = <String>[];
-    if (success > 0) parts.add('成功 $success');
-    if (failed > 0) parts.add('失败 $failed');
-    if (skipped > 0) parts.add('跳过 $skipped');
-    return '共 $total 个$unit：${parts.join('，')}';
+    if (success > 0) parts.add(AppStrings.sourceImportPartSuccess(success));
+    if (failed > 0) parts.add(AppStrings.sourceImportPartFailed(failed));
+    if (skipped > 0) parts.add(AppStrings.sourceImportPartSkipped(skipped));
+    final unitLabel =
+        unit.isEmpty ? AppStrings.sourceImportUnitBookSource : unit;
+    return AppStrings.sourceImportSummary(
+      total,
+      unitLabel,
+      parts.join(AppStrings.commaJoinSeparator),
+    );
   }
 }
 
@@ -113,7 +120,9 @@ class SourceImportService {
       timeout: const Duration(seconds: 30),
     );
     if (!response.isSuccess) {
-      throw FormatException('HTTP 请求失败：状态码 ${response.statusCode}');
+      throw FormatException(
+        AppStrings.sourceImportHttpStatusFailed(response.statusCode),
+      );
     }
     return parseSourcesText(response.body);
   }
@@ -122,7 +131,9 @@ class SourceImportService {
   Future<List<SourcePreview>> fetchSourcesFromFile(String filePath) async {
     final file = File(filePath);
     if (!await file.exists()) {
-      throw FormatException('文件不存在：$filePath');
+      throw FormatException(
+        AppStrings.sourceImportFileNotExist(filePath),
+      );
     }
     final content = await file.readAsString(encoding: utf8);
     return parseSourcesText(content);
@@ -142,7 +153,7 @@ class SourceImportService {
     } else if (decoded is Map<String, dynamic>) {
       sourceList = [decoded];
     } else {
-      throw const FormatException('无效的 JSON 格式：期望数组或对象');
+      throw FormatException(AppStrings.sourceImportInvalidJsonFormat);
     }
 
     final sources = <SourcePreview>[];
@@ -152,13 +163,16 @@ class SourceImportService {
       final item = sourceList[i];
       if (item is! Map<String, dynamic>) {
         failed++;
-        firstError ??= '第 ${i + 1} 项不是有效的 JSON 对象';
+        firstError ??= AppStrings.sourceImportItemNotObject(i + 1);
         continue;
       }
       final validationErrors = validateSource(item);
       if (validationErrors.isNotEmpty) {
         failed++;
-        firstError ??= '第 ${i + 1} 项校验失败：${validationErrors.join('；')}';
+        firstError ??= AppStrings.sourceImportItemValidationFailed(
+          i + 1,
+          validationErrors.join(AppStrings.semicolonJoinSeparator),
+        );
         continue;
       }
       sources.add(SourcePreview.fromRaw(item));
@@ -166,7 +180,8 @@ class SourceImportService {
     if (sources.isEmpty) {
       // 不再静默吞掉失败：全部失败时抛出明确错误，由调用方提示用户
       throw FormatException(
-          '未解析到有效书源（失败 $failed 项）${firstError == null ? '' : '：$firstError'}');
+        AppStrings.sourceImportNoValidSource(failed, firstError),
+      );
     }
     return sources;
   }
@@ -176,7 +191,7 @@ class SourceImportService {
   /// 支持单个书源对象或书源数组。[unit] 用于结果汇总文案（默认「书源」）。
   Future<ImportResult> importFromJson(
     String jsonStr, {
-    String unit = '书源',
+    String unit = '',
   }) async {
     final errors = <String>[];
     var total = 0;
@@ -198,7 +213,7 @@ class SourceImportService {
           success: 0,
           failed: 0,
           skipped: 0,
-          errors: ['无效的 JSON 格式：期望数组或对象'],
+          errors: [AppStrings.sourceImportInvalidJsonFormat],
           unit: unit,
         );
       }
@@ -209,15 +224,17 @@ class SourceImportService {
         final item = sourceList[i];
         if (item is! Map<String, dynamic>) {
           failed++;
-          errors.add('第 ${i + 1} 项不是有效的 JSON 对象');
+          errors.add(AppStrings.sourceImportItemNotObject(i + 1));
           continue;
         }
 
         final validationErrors = validateSource(item);
         if (validationErrors.isNotEmpty) {
           skipped++;
-          errors.add(
-              '第 ${i + 1} 项校验失败：${validationErrors.join('；')}');
+          errors.add(AppStrings.sourceImportItemValidationFailed(
+            i + 1,
+            validationErrors.join(AppStrings.semicolonJoinSeparator),
+          ));
           continue;
         }
 
@@ -235,10 +252,11 @@ class SourceImportService {
           success++;
         } catch (e) {
           failed++;
-          final name = item['bookSourceName'] ?? '未知书源';
+          final name =
+              item['bookSourceName'] ?? AppStrings.sourceImportUnknownSourceName;
           // BridgeError 取 message，避免显示 "Instance of 'BridgeError'"
           final msg = e is BridgeError ? e.message : e.toString();
-          errors.add('导入「$name」失败：$msg');
+          errors.add(AppStrings.sourceImportNamedSourceFailed('$name', msg));
         }
       }
     } on FormatException catch (e) {
@@ -247,7 +265,7 @@ class SourceImportService {
         success: 0,
         failed: 0,
         skipped: 0,
-        errors: ['JSON 解析错误：${e.message}'],
+        errors: [AppStrings.sourceImportJsonParseFailed(e.message)],
         unit: unit,
       );
     }
@@ -265,7 +283,7 @@ class SourceImportService {
   /// 从 URL 导入书源
   Future<ImportResult> importFromUrl(
     String url, {
-    String unit = '书源',
+    String unit = '',
   }) async {
     try {
       final response = await bridgeHttpGet(
@@ -280,7 +298,7 @@ class SourceImportService {
           success: 0,
           failed: 0,
           skipped: 0,
-          errors: ['HTTP 请求失败：状态码 ${response.statusCode}'],
+          errors: [AppStrings.sourceImportHttpStatusFailed(response.statusCode)],
           unit: unit,
         );
       }
@@ -292,7 +310,7 @@ class SourceImportService {
         success: 0,
         failed: 0,
         skipped: 0,
-        errors: ['网络请求超时：${errorMessage(e)}'],
+        errors: [AppStrings.sourceImportTimeout(errorMessage(e))],
         unit: unit,
       );
     } catch (e) {
@@ -301,7 +319,7 @@ class SourceImportService {
         success: 0,
         failed: 0,
         skipped: 0,
-        errors: ['从 URL 导入失败：${errorMessage(e)}'],
+        errors: [AppStrings.sourceImportFromUrlFailed(errorMessage(e))],
         unit: unit,
       );
     }
@@ -310,7 +328,7 @@ class SourceImportService {
   /// 从文件导入书源
   Future<ImportResult> importFromFile(
     String filePath, {
-    String unit = '书源',
+    String unit = '',
   }) async {
     try {
       final file = File(filePath);
@@ -320,7 +338,7 @@ class SourceImportService {
           success: 0,
           failed: 0,
           skipped: 0,
-          errors: ['文件不存在：$filePath'],
+          errors: [AppStrings.sourceImportFileNotExist(filePath)],
           unit: unit,
         );
       }
@@ -333,7 +351,7 @@ class SourceImportService {
         success: 0,
         failed: 0,
         skipped: 0,
-        errors: ['读取文件失败：${errorMessage(e)}'],
+        errors: [AppStrings.sourceImportReadFileFailed(errorMessage(e))],
         unit: unit,
       );
     }
@@ -371,11 +389,11 @@ class SourceImportService {
     // 用 toString 宽容判空，避免第三方书源非字符串类型触发 cast 异常
     final url = source['bookSourceUrl']?.toString();
     if (url == null || url.isEmpty) {
-      errors.add('缺少 bookSourceUrl');
+      errors.add(AppStrings.sourceImportMissingField('bookSourceUrl'));
     }
     final name = source['bookSourceName']?.toString();
     if (name == null || name.isEmpty) {
-      errors.add('缺少 bookSourceName');
+      errors.add(AppStrings.sourceImportMissingField('bookSourceName'));
     }
     return errors;
   }

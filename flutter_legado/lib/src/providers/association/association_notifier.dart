@@ -16,6 +16,7 @@ import '../../services/settings_service.dart';
 import '../../services/source_import_service.dart';
 import '../providers.dart';
 import 'association_state.dart';
+import '../../l10n/app_strings.dart';
 import '../../utils/error_message.dart';
 
 export 'association_state.dart';
@@ -64,7 +65,7 @@ class AssociationNotifier extends Notifier<AssociationState> {
       );
       if (!response.isSuccess) {
         state = state.copyWith(
-          error: 'HTTP 请求失败：状态码 ${response.statusCode}',
+          error: AppStrings.associationHttpStatusFailed(response.statusCode),
           isLoading: false,
         );
         return;
@@ -72,7 +73,10 @@ class AssociationNotifier extends Notifier<AssociationState> {
       await _parseAndSet(response.body, typeHint);
     } catch (e) {
       final msg = e is BridgeError ? e.message : '$e';
-      state = state.copyWith(error: '从 URL 加载失败：$msg', isLoading: false);
+      state = state.copyWith(
+        error: AppStrings.associationLoadFromUrlFailed(msg),
+        isLoading: false,
+      );
     }
   }
 
@@ -82,14 +86,20 @@ class AssociationNotifier extends Notifier<AssociationState> {
     try {
       final file = File(path);
       if (!await file.exists()) {
-        state = state.copyWith(error: '文件不存在：$path', isLoading: false);
+        state = state.copyWith(
+          error: AppStrings.associationFileNotExist(path),
+          isLoading: false,
+        );
         return;
       }
       final content = await file.readAsString(encoding: utf8);
       await _parseAndSet(content, typeHint);
     } catch (e) {
       final msg = e is BridgeError ? e.message : '$e';
-      state = state.copyWith(error: '读取文件失败：$msg', isLoading: false);
+      state = state.copyWith(
+        error: AppStrings.associationReadFileFailed(msg),
+        isLoading: false,
+      );
     }
   }
 
@@ -99,13 +109,19 @@ class AssociationNotifier extends Notifier<AssociationState> {
     try {
       final text = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
       if (text == null || text.trim().isEmpty) {
-        state = state.copyWith(error: '剪贴板为空', isLoading: false);
+        state = state.copyWith(
+          error: AppStrings.sourceClipboardEmpty,
+          isLoading: false,
+        );
         return;
       }
       await loadFromText(text, typeHint: typeHint);
     } catch (e) {
       final msg = e is BridgeError ? e.message : '$e';
-      state = state.copyWith(error: '读取剪贴板失败：$msg', isLoading: false);
+      state = state.copyWith(
+        error: AppStrings.associationReadClipboardFailed(msg),
+        isLoading: false,
+      );
     }
   }
 
@@ -116,7 +132,10 @@ class AssociationNotifier extends Notifier<AssociationState> {
   Future<void> loadFromText(String content, {ImportType? typeHint}) async {
     final trimmed = content.trim();
     if (trimmed.isEmpty) {
-      state = state.copyWith(error: '内容为空', isLoading: false);
+      state = state.copyWith(
+        error: AppStrings.associationContentEmpty,
+        isLoading: false,
+      );
       return;
     }
     state = state.copyWith(isLoading: true, error: null, items: []);
@@ -142,20 +161,23 @@ class AssociationNotifier extends Notifier<AssociationState> {
         maps = [Map<String, dynamic>.from(decoded)];
       } else {
         state = state.copyWith(
-          error: '格式错误：期望 JSON 数组或对象',
+          error: AppStrings.associationExpectedJsonArrayOrObject,
           isLoading: false,
         );
         return;
       }
     } on FormatException catch (e) {
-      state = state.copyWith(error: 'JSON 解析错误：${e.message}', isLoading: false);
+      state = state.copyWith(
+        error: AppStrings.associationJsonParseFailed(e.message),
+        isLoading: false,
+      );
       return;
     }
 
     if (maps.isEmpty) {
       // 对应原版 successLiveData(0) → wrong_format
       state = state.copyWith(
-        error: '格式错误，未解析到有效条目',
+        error: AppStrings.associationNoValidEntries,
         items: [],
         isLoading: false,
       );
@@ -165,7 +187,10 @@ class AssociationNotifier extends Notifier<AssociationState> {
     final type = hint ?? detectType(maps.first);
     if (type == null) {
       // 对应原版「格式不对」
-      state = state.copyWith(error: '格式不对', isLoading: false);
+      state = state.copyWith(
+        error: AppStrings.associationFormatInvalid,
+        isLoading: false,
+      );
       return;
     }
 
@@ -174,7 +199,7 @@ class AssociationNotifier extends Notifier<AssociationState> {
         type == ImportType.highlightRule ? _highlightRuleEntryMaps(maps) : maps;
     if (itemMaps.isEmpty) {
       state = state.copyWith(
-        error: '格式错误，未解析到有效条目',
+        error: AppStrings.associationNoValidEntries,
         items: [],
         isLoading: false,
       );
@@ -507,15 +532,15 @@ class AssociationNotifier extends Notifier<AssociationState> {
 
   /// 结果汇总单位名（按类型区分，避免规则类导入显示「书源」）
   static String _unitName(ImportType type) => switch (type) {
-        ImportType.bookSource => '书源',
-        ImportType.rssSource => 'RSS 源',
-        ImportType.replaceRule => '替换规则',
-        ImportType.theme => '主题配置',
-        ImportType.httpTts => 'HTTP TTS',
-        ImportType.dictRule => '字典规则',
-        ImportType.txtTocRule => 'TXT 目录规则',
-        ImportType.highlightRule => '高亮规则',
-        ImportType.autoTask => '自动任务',
+        ImportType.bookSource => AppStrings.associationUnitBookSource,
+        ImportType.rssSource => AppStrings.associationUnitRssSource,
+        ImportType.replaceRule => AppStrings.associationUnitReplaceRule,
+        ImportType.theme => AppStrings.associationUnitTheme,
+        ImportType.httpTts => AppStrings.associationUnitHttpTts,
+        ImportType.dictRule => AppStrings.associationUnitDictRule,
+        ImportType.txtTocRule => AppStrings.associationUnitTxtTocRule,
+        ImportType.highlightRule => AppStrings.associationUnitHighlightRule,
+        ImportType.autoTask => AppStrings.associationUnitAutoTask,
       };
 
   // ===== 导入阶段（对应原版各 importSelect）=====
@@ -588,7 +613,7 @@ class AssociationNotifier extends Notifier<AssociationState> {
     for (final item in items) {
       try {
         final rule = ReplaceRule.fromJson(item);
-        if (rule.name.isEmpty) throw Exception('缺少名称');
+        if (rule.name.isEmpty) throw Exception(AppStrings.associationMissingName);
         final local = locals[rule.name];
         if (local == null) {
           await _api.addReplaceRule(rule);
@@ -597,7 +622,10 @@ class AssociationNotifier extends Notifier<AssociationState> {
         }
         success++;
       } catch (e) {
-        errors.add('导入替换规则「${item['name']}」失败：${errorMessage(e)}');
+        errors.add(AppStrings.associationImportReplaceRuleFailed(
+          '${item['name']}',
+          errorMessage(e),
+        ));
       }
     }
     return ImportResult(
@@ -655,7 +683,7 @@ class AssociationNotifier extends Notifier<AssociationState> {
         }
         success++;
       } catch (e) {
-        errors.add('导入主题配置失败：${errorMessage(e)}');
+        errors.add(AppStrings.associationImportThemeFailed(errorMessage(e)));
       }
     }
     return ImportResult(
@@ -697,12 +725,15 @@ class AssociationNotifier extends Notifier<AssociationState> {
     for (final item in items) {
       try {
         final name = item['name']?.toString().trim() ?? '';
-        if (name.isEmpty) throw Exception('缺少名称');
+        if (name.isEmpty) throw Exception(AppStrings.associationMissingName);
         // 逐条导入：单条失败可定位到具体规则名（批量失败无此粒度）
         await _api.dictRuleImport(jsonOrUrl: jsonEncode(item), kind: 'text');
         success++;
       } catch (e) {
-        errors.add('导入字典规则「${item['name']}」失败：${errorMessage(e)}');
+        errors.add(AppStrings.associationImportDictRuleFailed(
+          '${item['name']}',
+          errorMessage(e),
+        ));
       }
     }
     return ImportResult(
@@ -729,7 +760,7 @@ class AssociationNotifier extends Notifier<AssociationState> {
       try {
         final rule = TxtTocRule.fromJson(item);
         if (rule.name.isEmpty || rule.rule.isEmpty) {
-          throw Exception('缺少名称或正则');
+          throw Exception(AppStrings.associationMissingNameOrRegex);
         }
         // 逐条导入：单条失败可定位到具体规则名（批量失败无此粒度）
         await _api.txtTocRuleImport(
@@ -738,7 +769,10 @@ class AssociationNotifier extends Notifier<AssociationState> {
         );
         success++;
       } catch (e) {
-        errors.add('导入 TXT 规则「${item['name']}」失败：${errorMessage(e)}');
+        errors.add(AppStrings.associationImportTxtTocRuleFailed(
+          '${item['name']}',
+          errorMessage(e),
+        ));
       }
     }
     return ImportResult(
@@ -768,7 +802,7 @@ class AssociationNotifier extends Notifier<AssociationState> {
   static String normalizeHighlightRuleUuid(Object? raw) {
     final text = (raw?.toString() ?? '').trim();
     if (!_canonicalUuidPattern.hasMatch(text)) {
-      throw const FormatException('uuid 非法');
+      throw FormatException(AppStrings.associationUuidInvalid);
     }
     return text.toLowerCase();
   }
@@ -807,13 +841,13 @@ class AssociationNotifier extends Notifier<AssociationState> {
 
     final pattern = rule['pattern']?.toString() ?? '';
     if (pattern.isEmpty) {
-      throw const FormatException('匹配模式为空');
+      throw FormatException(AppStrings.associationPatternEmpty);
     }
     if (_boolValue(rule['isRegex'], false)) {
       try {
         RegExp(pattern);
       } on FormatException {
-        throw FormatException('正则表达式无效: $pattern');
+        throw FormatException(AppStrings.associationInvalidRegex(pattern));
       }
     }
     return rule;
@@ -880,11 +914,14 @@ class AssociationNotifier extends Notifier<AssociationState> {
         final rule = normalizeHighlightRuleForImport(item);
         final uuid = rule['uuid'] as String;
         if (!seenUuids.add(uuid)) {
-          throw const FormatException('uuid 重复');
+          throw FormatException(AppStrings.associationUuidDuplicate);
         }
         imported.add(rule);
       } catch (e) {
-        errors.add('导入高亮规则「$name」失败：${errorMessage(e)}');
+        errors.add(AppStrings.associationImportHighlightRuleFailed(
+          name,
+          errorMessage(e),
+        ));
       }
     }
 
@@ -898,7 +935,9 @@ class AssociationNotifier extends Notifier<AssociationState> {
           if (seenUuids.contains(uuid)) success++;
         }
       } catch (e) {
-        errors.add('写入高亮规则失败：${errorMessage(e)}');
+        errors.add(
+          AppStrings.associationSaveHighlightRulesFailed(errorMessage(e)),
+        );
       }
     }
 
@@ -933,7 +972,7 @@ class AssociationNotifier extends Notifier<AssociationState> {
       final task = Map<String, dynamic>.of(items[i]);
       final name = (task['name']?.toString() ?? '').trim();
       if (name.isEmpty) {
-        errors.add('导入自动任务失败：缺少任务名称');
+        errors.add(AppStrings.associationImportAutoTaskMissingName);
         continue;
       }
       task['name'] = name;
@@ -952,7 +991,7 @@ class AssociationNotifier extends Notifier<AssociationState> {
         fromMs: DateTime.now().millisecondsSinceEpoch,
       );
       if (due < 0) {
-        errors.add('导入自动任务「$name」失败：请输入有效的五段 Cron 计划');
+        errors.add(AppStrings.associationImportAutoTaskInvalidCron(name));
         continue;
       }
 
@@ -961,7 +1000,7 @@ class AssociationNotifier extends Notifier<AssociationState> {
       final normalizedScript =
           await _api.autoTaskNormalizeScript(script: rawScript);
       if (normalizedScript.trim().isEmpty) {
-        errors.add('导入自动任务「$name」失败：请输入 JavaScript 任务脚本');
+        errors.add(AppStrings.associationImportAutoTaskMissingScript(name));
         continue;
       }
       task['script'] = normalizedScript;
@@ -993,7 +1032,10 @@ class AssociationNotifier extends Notifier<AssociationState> {
         await _api.autoTaskCreateRule(ruleJson: jsonEncode(task));
         success++;
       } catch (e) {
-        errors.add('导入自动任务「${task['name']}」失败：${errorMessage(e)}');
+        errors.add(AppStrings.associationImportAutoTaskFailed(
+          '${task['name']}',
+          errorMessage(e),
+        ));
       }
     }
 

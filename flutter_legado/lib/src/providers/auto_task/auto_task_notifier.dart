@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../../services/book_api.dart';
 import '../providers.dart';
 import 'auto_task_state.dart';
+import '../../l10n/app_strings.dart';
 import '../../utils/error_message.dart';
 
 export 'auto_task_state.dart';
@@ -47,7 +48,7 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
     if (rustApi == null) {
       state = state.copyWith(
         tasks: [],
-        error: 'FFI 不可用，无法加载定时任务',
+        error: AppStrings.autoTaskFfiUnavailableLoad,
         isLoading: false,
       );
       return;
@@ -62,7 +63,7 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
     } catch (e) {
       state = state.copyWith(
         tasks: [],
-        error: '加载任务失败: ${errorMessage(e)}',
+        error: AppStrings.autoTaskLoadFailed(errorMessage(e)),
         isLoading: false,
       );
     }
@@ -72,14 +73,16 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
   Future<void> createTask(AutoTask task) async {
     final rustApi = _rustApi;
     if (rustApi == null) {
-      state = state.copyWith(error: 'FFI 不可用，无法创建任务');
+      state = state.copyWith(error: AppStrings.autoTaskFfiUnavailableCreate);
       return;
     }
     try {
       await rustApi.autoTaskCreateRule(ruleJson: jsonEncode(task.toJson()));
       await loadTasks(silent: true);
     } catch (e) {
-      state = state.copyWith(error: '创建任务失败: ${errorMessage(e)}');
+      state = state.copyWith(
+        error: AppStrings.autoTaskCreateFailed(errorMessage(e)),
+      );
     }
   }
 
@@ -94,7 +97,7 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
   Future<bool> createTaskRaw(String ruleJson) async {
     final rustApi = _rustApi;
     if (rustApi == null) {
-      state = state.copyWith(error: 'FFI 不可用，无法创建任务');
+      state = state.copyWith(error: AppStrings.autoTaskFfiUnavailableCreate);
       return false;
     }
     try {
@@ -102,7 +105,9 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
       await loadTasks(silent: true);
       return true;
     } catch (e) {
-      state = state.copyWith(error: '创建任务失败: ${errorMessage(e)}');
+      state = state.copyWith(
+        error: AppStrings.autoTaskCreateFailed(errorMessage(e)),
+      );
       return false;
     }
   }
@@ -121,16 +126,18 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
       final decoded = jsonDecode(ruleJson);
       id = decoded is Map ? decoded['id']?.toString() ?? '' : '';
     } catch (e) {
-      state = state.copyWith(error: '更新任务失败: 规则 JSON 无效: ${errorMessage(e)}');
+      state = state.copyWith(
+        error: AppStrings.autoTaskUpdateInvalidJson(errorMessage(e)),
+      );
       return false;
     }
     if (id.isEmpty) {
-      state = state.copyWith(error: '更新任务失败: 缺少任务 id');
+      state = state.copyWith(error: AppStrings.autoTaskUpdateMissingId);
       return false;
     }
     final rustApi = _rustApi;
     if (rustApi == null) {
-      state = state.copyWith(error: 'FFI 不可用，无法更新任务');
+      state = state.copyWith(error: AppStrings.autoTaskFfiUnavailableUpdate);
       return false;
     }
     try {
@@ -138,7 +145,9 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
       await loadTasks(silent: true);
       return true;
     } catch (e) {
-      state = state.copyWith(error: '更新任务失败: ${errorMessage(e)}');
+      state = state.copyWith(
+        error: AppStrings.autoTaskUpdateFailed(errorMessage(e)),
+      );
       return false;
     }
   }
@@ -157,7 +166,10 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
 
     final rustApi = _rustApi;
     if (rustApi == null) {
-      state = state.copyWith(tasks: previous, error: 'FFI 不可用，无法更新任务');
+      state = state.copyWith(
+        tasks: previous,
+        error: AppStrings.autoTaskFfiUnavailableUpdate,
+      );
       return;
     }
     try {
@@ -167,7 +179,10 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
       );
       await loadTasks(silent: true);
     } catch (e) {
-      state = state.copyWith(tasks: previous, error: '更新任务失败: ${errorMessage(e)}');
+      state = state.copyWith(
+        tasks: previous,
+        error: AppStrings.autoTaskUpdateFailed(errorMessage(e)),
+      );
     }
   }
 
@@ -175,14 +190,16 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
   Future<void> deleteTask(String id) async {
     final rustApi = _rustApi;
     if (rustApi == null) {
-      state = state.copyWith(error: 'FFI 不可用，无法删除任务');
+      state = state.copyWith(error: AppStrings.autoTaskFfiUnavailableDelete);
       return;
     }
     try {
       await rustApi.autoTaskDeleteRule(id: id);
       await loadTasks(silent: true);
     } catch (e) {
-      state = state.copyWith(error: '删除任务失败: ${errorMessage(e)}');
+      state = state.copyWith(
+        error: AppStrings.autoTaskDeleteFailed(errorMessage(e)),
+      );
     }
   }
 
@@ -190,7 +207,7 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
   Future<void> runNow(String id) async {
     final rustApi = _rustApi;
     if (rustApi == null) {
-      state = state.copyWith(error: 'FFI 不可用，无法运行任务');
+      state = state.copyWith(error: AppStrings.autoTaskFfiUnavailableRun);
       return;
     }
     try {
@@ -210,14 +227,18 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
           if (t.id == id) {
             return t.copyWith(
               lastRunAt: _formatNow(),
-              lastResult: success ? '成功' : '失败',
+              lastResult: success
+                  ? AppStrings.autoTaskRunSuccess
+                  : AppStrings.autoTaskRunFailure,
             );
           }
           return t;
         }).toList(),
       );
     } catch (e) {
-      state = state.copyWith(error: '运行任务失败: ${errorMessage(e)}');
+      state = state.copyWith(
+        error: AppStrings.autoTaskRunFailed(errorMessage(e)),
+      );
     }
   }
 
