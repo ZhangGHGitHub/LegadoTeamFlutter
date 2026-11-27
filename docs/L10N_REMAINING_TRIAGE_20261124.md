@@ -509,3 +509,27 @@ flutter analyze
 ---
 
 编写者：调研员（调研子代理） ｜ 2026-11-24
+
+---
+
+## 八、执行进度（2026-11-28 追加）
+
+| 批次 | 状态 | 提交 | 文件数 | 实际改动处 | 新增 key | app_strings 增/删 | 门禁 |
+|---|---|---|---:|---:|---:|---|---|
+| 批 1 | ✅ 完成 | `499c063510` | 6 | 162（预估 159） | 120 | +328 / **−0** | analyze 0；unit 3767；widget 2369 |
+| 批 2 | ✅ 完成 | `5665ca78ad` | 11（`file_save_channel` 判为跨语言契约未动） | 149（预估 160） | 101（复用 17） | +270 / **−0** | analyze 0；unit 3767；widget 2369 |
+| 批 3 | 待执行 | — | 21 | ~160 | — | — | — |
+| 批 4 | 待执行 | — | 53 | ~135 | — | — | — |
+
+**累计进度**：614 行中已处理 **311 行（50.7%）**，涉及 17 个文件。
+
+**主代理独立复核结论（两批均做）**：
+- `app_strings.dart` 两批均为**纯追加**（删除列 0），无覆盖他人 key
+- 引用完整性：定义 3914 / 引用 3798 / **缺失 0** / 重复定义 0
+- `flutter analyze` 0 issues；`flutter test test/widget/` 2369 例全过（主代理独立重跑，非采信子代理自述）
+
+**批 2 判为「A 类但不改」的重点项（供批 3/4 沿用该口径）**：
+1. `file_save_channel.dart` 的 `errorReasons` 15 条——与 Kotlin `SaveFileBridge.reasonOf` 逐条比对的跨语言契约，`file_save_error_codes_test.dart` 直读源码，**动则破测试**
+2. `server_service.dart` 3 条 `ArgumentError.value`——纯编程误用守卫，正常 UI 路径不触发
+3. `privacy_biometric_service.dart` 5 条 detail——类注释明确「仅日志/测试使用」
+4. `SelectionMenuIds` 的 `menu_*` id、`PrivacyBiometricErrorCode` 的 code、`legacyValue` 码、`servers`/`uploadUrl` 等协议字段——D 类
