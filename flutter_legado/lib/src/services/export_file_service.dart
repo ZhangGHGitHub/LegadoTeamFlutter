@@ -28,6 +28,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../l10n/app_strings.dart';
 import 'file_save_channel.dart';
 
 /// 导出文件服务
@@ -218,7 +219,7 @@ class ExportFileService {
     final extension = _extensionOf(effectiveName);
 
     final path = await FilePicker.platform.saveFile(
-      dialogTitle: '保存 $effectiveName',
+      dialogTitle: AppStrings.exportSaveDialogTitle(effectiveName),
       fileName: effectiveName,
       type: extension == null ? FileType.any : FileType.custom,
       allowedExtensions: extension == null ? null : <String>[extension],
@@ -250,13 +251,19 @@ class ExportFileService {
     final name = saved.fileName ?? normalizeFileName(requestedFileName);
     if (saved.viaTree) {
       final directory = _displayTreeDirectory(saved.displayPath);
-      return directory == null ? '已保存：$name' : '已保存到「$directory」：$name';
+      return directory == null
+          ? AppStrings.exportSavedName(name)
+          : AppStrings.exportSavedToDirectory(directory, name);
     }
     if (saved.viaMediaStoreFallback) {
       final directory = _displayDownloadDirectory(saved.downloadDirectory);
-      return directory == null ? '已保存到下载目录：$name' : '已保存到「$directory」：$name';
+      return directory == null
+          ? AppStrings.exportSavedToDownloadDirectory(name)
+          : AppStrings.exportSavedToDirectory(directory, name);
     }
-    return mobile ? '已保存：$name' : '已保存到：${saved.location}';
+    return mobile
+        ? AppStrings.exportSavedName(name)
+        : AppStrings.exportSavedToLocation(saved.location);
   }
 
   /// 目录树显示路径的提示文案规范化（`Download/legado` → `下载/legado`）

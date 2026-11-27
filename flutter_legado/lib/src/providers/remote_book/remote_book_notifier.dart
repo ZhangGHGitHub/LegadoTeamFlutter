@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../../l10n/app_strings.dart';
 import '../../models/book.dart';
 import '../../services/server_service.dart';
 import '../../services/settings_service.dart';
@@ -224,7 +225,7 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
       return false;
     }
     if (!deleted) {
-      state = state.copyWith(serverError: '服务器不存在或已被删除');
+      state = state.copyWith(serverError: AppStrings.remoteBookServerMissing);
       return false;
     }
     try {
@@ -264,7 +265,7 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
           isLoading: false,
           items: const [],
           // 选中项缺失/无效已回退默认 WebDAV，此处只剩「默认也未配置」
-          error: '请先在备份设置中配置默认 WebDAV，或在「服务器配置」中添加服务器',
+          error: AppStrings.remoteBookDefaultServerHint,
         );
         return;
       }
@@ -272,7 +273,7 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
       final raw = await api.webdavListDir(config, state.listPath);
       final decoded = jsonDecode(raw);
       if (decoded is! List) {
-        throw Exception('目录列表格式错误');
+        throw Exception(AppStrings.remoteBookDirListFormatError);
       }
       final shelf = await api.getBooks();
       final onShelf = <String>{};
@@ -405,7 +406,7 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
       // [P3-3] 早退也必须清空上次导入结果：否则页面会用残留的
       // importedCount/importFailures 拼出「成功导入 N 本」的假提示。
       state = state.copyWith(
-        error: '请先选择要导入的书籍',
+        error: AppStrings.remoteBookSelectBooksFirst,
         clearImported: true,
       );
       return;
@@ -413,7 +414,10 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
     final config = await buildActiveConfigJson();
     if (config == null) {
       // [P3-3] 同上：配置错误的早退不得复用上一次的成功计数。
-      state = state.copyWith(error: 'WebDAV 未配置', clearImported: true);
+      state = state.copyWith(
+        error: AppStrings.remoteBookWebdavNotConfigured,
+        clearImported: true,
+      );
       return;
     }
     state = state.copyWith(isImporting: true, clearError: true, clearImported: true);
@@ -478,7 +482,7 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
       // 全部失败时保留单条汇总错误（页面错误态）；部分失败改由
       // importFailures + 结果文案展示，不污染页面级 error。
       error: ok == 0
-          ? (failures.isNotEmpty ? failures.first : '导入失败')
+          ? (failures.isNotEmpty ? failures.first : AppStrings.importFailedShort)
           : null,
       clearError: ok > 0,
     );

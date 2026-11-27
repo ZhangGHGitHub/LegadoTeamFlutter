@@ -24,6 +24,8 @@
 
 import 'dart:convert';
 
+import '../l10n/app_strings.dart';
+
 /// 正文图片点击方式默认档（参考版 `ReadSettings` 口径 "2"=兼容旧版）
 const String kDefaultClickImgWay = '2';
 
@@ -35,14 +37,14 @@ const String kDefaultClickImgWay = '2';
 const bool kClickImgActionSupported = true;
 
 /// 五档下拉选项（值与顺序对齐原版 `click_image_way_value` /
-/// `click_image_way_title`）
-const Map<String, String> kClickImgWayOptions = <String, String>{
-  '0': '默认行为',
-  '1': '预览图片',
-  '2': '兼容旧版',
-  '3': '关闭点击',
-  '4': '双击生效',
-};
+/// `click_image_way_title`）；文案随 locale 运行时取值
+Map<String, String> get kClickImgWayOptions => <String, String>{
+      '0': AppStrings.clickImgDefault,
+      '1': AppStrings.clickImgPreview,
+      '2': AppStrings.clickImgCompat,
+      '3': AppStrings.clickImgDisabled,
+      '4': AppStrings.clickImgDoubleTap,
+    };
 
 /// 档位钳制：合法值 "0".."4" 原样保留，缺省/非法回落参考版默认 "2"
 String clampClickImgWay(String? raw) =>

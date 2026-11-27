@@ -6461,4 +6461,220 @@ class AppStrings {
       '纯 UI 开发可使用：flutter run --dart-define=USE_MOCK=true',
       'Make sure the Rust FFI library is built, then run the app again.\n'
       'For pure UI development use: flutter run --dart-define=USE_MOCK=true');
+
+  // ----- L10N 批3：图片文件存储（nav_icon_store / theme_background_image_store） -----
+  static String get imageContentEmpty =>
+      _get('图片内容为空', 'The image content is empty');
+  static String imageTooLarge(int mb) => _locale == 'zh'
+      ? '图片过大（上限 ${mb}MB）'
+      : 'The image is too large (limit $mb MB)';
+  static String imageUndecodable(String name) => _locale == 'zh'
+      ? '不是可解码的图片：$name'
+      : 'Not a decodable image: $name';
+  static String get navIconPathEmpty =>
+      _get('图片路径为空', 'The image path is empty');
+  static String get navIconWebUnsupported => _get(
+      'Web 端不支持自定义导航图标',
+      'Custom navigation icons are not supported on the web');
+  static String get containerBackgroundWebUnsupported => _get(
+      'Web 端不支持容器背景图',
+      'Container background images are not supported on the web');
+
+  // ----- L10N 批3：漫画翻页模式标签（manga_scroll_mode） -----
+  static String get mangaScrollPagedLtr =>
+      _get('单页式（从左到右）', 'Paged (left to right)');
+  static String get mangaScrollPagedRtl =>
+      _get('单页式（从右到左）', 'Paged (right to left)');
+  static String get mangaScrollPagedTtb =>
+      _get('单页式（从上到下）', 'Paged (top to bottom)');
+  static String get mangaScrollWebtoon => _get('条漫', 'Webtoon');
+  static String get mangaScrollWebtoonGap =>
+      _get('条漫（页面有空隙）', 'Webtoon (with gaps)');
+  static String get mangaScrollLtr => _get('从左到右', 'Left to right');
+  static String get mangaScrollRtl => _get('从右到左', 'Right to left');
+  static String get mangaScrollTtb => _get('从上到下', 'Top to bottom');
+  static String get mangaScrollWebtoonInterval =>
+      _get('条漫（间隔）', 'Webtoon (with gap)');
+
+  // ----- L10N 批3：漫画页面适配标签（manga_page_scale_type） -----
+  static String get mangaScaleStretch => _get('拉伸', 'Stretch');
+  static String get mangaScaleFitWidth => _get('适配宽度', 'Fit width');
+  static String get mangaScaleFitHeight => _get('适配高度', 'Fit height');
+  static String get mangaScaleOriginal => _get('原始大小', 'Original size');
+  static String get mangaScaleSmart => _get('智能适配', 'Smart fit');
+  static String get mangaScaleFitScreen => _get('全屏适配', 'Fit screen');
+
+  // ----- L10N 批3：关联导入标题（association_state） -----
+  static String get associationImportTitle =>
+      _get('关联导入', 'Deep link import');
+  static String get importRssSourceTitle =>
+      _get('导入 RSS 源', 'Import RSS source');
+  static String get importThemeConfigTitle =>
+      _get('导入主题配置', 'Import theme config');
+  static String get importHttpTtsTitle => _get('导入 HTTP TTS', 'Import HTTP TTS');
+  static String get importDictRuleTitle =>
+      _get('导入字典规则', 'Import dictionary rules');
+  static String get importTxtTocRuleTitle =>
+      _get('导入 TXT 目录规则', 'Import TXT TOC rules');
+  static String get importHighlightRuleTitle =>
+      _get('导入高亮规则', 'Import highlight rules');
+  static String get importAutoTaskTitle =>
+      _get('导入自动任务', 'Import scheduled tasks');
+
+  // ----- L10N 批3：隐私解锁频率/宽限标签（privacy_state） -----
+  static String get privacyUnlockScopeEveryTime =>
+      _get('每次进入', 'Every time');
+  static String get privacyUnlockScopeAppSession =>
+      _get('应用会话内', 'Per app session');
+  static String get privacyUnlockScopeUntilBackground =>
+      _get('离开后台后', 'Until leaving background');
+  static String get privacyGraceNoWait => _get('不等待', 'No wait');
+  static String get privacyGraceMinutes2 => _get('2 分钟', '2 minutes');
+  static String get privacyGraceMinutes3 => _get('3 分钟', '3 minutes');
+  static String privacyGraceSeconds(int seconds) =>
+      _locale == 'zh' ? '$seconds 秒' : '$seconds seconds';
+
+  // ----- L10N 批3：相对时间（time_utils） -----
+  static String get timeAgoSuffix => _get('前', ' ago');
+  static String get timeLaterSuffix => _get('后', ' later');
+  static String timeAgoSeconds(int value) =>
+      _locale == 'zh' ? '$value秒' : '$value seconds';
+  static String timeAgoMinutes(int value) =>
+      _locale == 'zh' ? '$value分钟' : '$value minutes';
+  static String timeAgoHours(int value) =>
+      _locale == 'zh' ? '$value小时' : '$value hours';
+  static String timeAgoDays(int value) =>
+      _locale == 'zh' ? '$value天' : '$value days';
+  static String timeAgoWeeks(int value) =>
+      _locale == 'zh' ? '$value周' : '$value weeks';
+  static String timeAgoMonths(int value) =>
+      _locale == 'zh' ? '$value月' : '$value months';
+  static String timeAgoYears(int value) =>
+      _locale == 'zh' ? '$value年' : '$value years';
+
+  // ----- L10N 批3：书架排序标签（bookshelf_sort） -----
+  static String get bookshelfSortByReadTime =>
+      _get('按阅读时间', 'By reading time');
+  static String get bookshelfSortByName => _get('按书名', 'By title');
+  static String get bookshelfSortComprehensive =>
+      _get('综合排序', 'Comprehensive');
+  static String get bookshelfSortByAuthor => _get('按作者', 'By author');
+  static String get bookshelfSortAscending => _get('升序', 'Ascending');
+
+  // ----- L10N 批3：错误文案归一（error_message） -----
+  static String get errorConnectionRefused =>
+      _get('无法连接服务器', 'Unable to connect to the server');
+  static String get errorConnectionReset =>
+      _get('连接被服务器中断', 'The connection was interrupted by the server');
+  static String get errorConnectionTimeout =>
+      _get('网络连接超时', 'Network connection timed out');
+  static String get errorPermissionDenied => _get(
+      '没有写入权限，请换一个保存位置',
+      'No write permission; choose another save location');
+
+  // ----- L10N 批3：正文图片点击方式标签（click_img_way） -----
+  static String get clickImgDefault =>
+      _get('默认行为', 'Default behavior');
+  static String get clickImgPreview => _get('预览图片', 'Preview image');
+  static String get clickImgCompat =>
+      _get('兼容旧版', 'Legacy compatibility');
+  static String get clickImgDisabled => _get('关闭点击', 'Disable tap');
+  static String get clickImgDoubleTap => _get('双击生效', 'Double tap');
+
+  // ----- L10N 批3：标记效果标签（book_marking_style） -----
+  static String get markingEffectSolid =>
+      _get('单实线', 'Solid underline');
+  static String get markingEffectWave => _get('波浪线', 'Wavy underline');
+  static String get markingEffectDashed =>
+      _get('虚线', 'Dashed underline');
+  static String get markingEffectStrike => _get('删除线', 'Strikethrough');
+  static String get markingEffectHighlight => _get('荧光', 'Highlight');
+  static String get markingEffectBackground =>
+      _get('背景色', 'Background color');
+  static String get markingEffectTextColor => _get('字体色', 'Text color');
+
+  // ----- L10N 批3：视频悬浮窗提示（video_float_window） -----
+  static String get videoFloatPlaybackError => _get(
+      '悬浮窗播放出错', 'Floating-window playback error');
+  static String get videoFloatStopped =>
+      _get('悬浮窗已停止', 'The floating window has stopped');
+  static String videoFloatAdvanceFailed(String error) => _locale == 'zh'
+      ? '连播失败：$error'
+      : 'Continuous playback failed: $error';
+
+  // ----- L10N 批3：导出保存提示（export_file_service） -----
+  static String exportSaveDialogTitle(String name) =>
+      _locale == 'zh' ? '保存 $name' : 'Save $name';
+  static String exportSavedName(String name) =>
+      _locale == 'zh' ? '已保存：$name' : 'Saved: $name';
+  static String exportSavedToDirectory(String directory, String name) =>
+      _locale == 'zh'
+      ? '已保存到「$directory」：$name'
+      : 'Saved to "$directory": $name';
+  static String exportSavedToDownloadDirectory(String name) => _locale == 'zh'
+      ? '已保存到下载目录：$name'
+      : 'Saved to the Downloads folder: $name';
+  static String exportSavedToLocation(String location) =>
+      _locale == 'zh' ? '已保存到：$location' : 'Saved to: $location';
+
+  // ----- L10N 批3：远程书库错误（remote_book_notifier） -----
+  static String get remoteBookServerMissing => _get(
+      '服务器不存在或已被删除', 'The server does not exist or has been deleted');
+  static String get remoteBookDefaultServerHint => _get(
+      '请先在备份设置中配置默认 WebDAV，或在「服务器配置」中添加服务器',
+      'Configure the default WebDAV in the backup settings first, or add a server in "Server configuration"');
+  static String get remoteBookDirListFormatError =>
+      _get('目录列表格式错误', 'Invalid directory listing format');
+  static String get remoteBookSelectBooksFirst =>
+      _get('请先选择要导入的书籍', 'Select the books to import first');
+  static String get remoteBookWebdavNotConfigured =>
+      _get('WebDAV 未配置', 'WebDAV is not configured');
+
+  // ----- L10N 批3：RSS 列表解析错误（rss_notifier） -----
+  static String get rssPayloadNotObject => _get(
+      'RSS 列表载荷期望 JSON 对象',
+      'The RSS list payload must be a JSON object');
+  static String get rssArticlesNotArray => _get(
+      'RSS 列表 articles 期望 JSON 数组',
+      'The RSS list "articles" field must be a JSON array');
+  static String get rssListEntryNotObject => _get(
+      'RSS 列表项期望 JSON 对象', 'Each RSS list entry must be a JSON object');
+
+  // ----- L10N 批3：书源校验结果（check_source_notifier） -----
+  static String checkSourceSearchFailed(String suffix) => _locale == 'zh'
+      ? '搜索失败$suffix'
+      : 'Search failed$suffix';
+  static String checkSourceTocFailed(String suffix) =>
+      _locale == 'zh' ? '目录失效$suffix' : 'TOC failed$suffix';
+  static String checkSourceContentFailed(String suffix) =>
+      _locale == 'zh' ? '正文失效$suffix' : 'Content failed$suffix';
+  static String get checkSourceSuccess => _get('校验成功', 'Check passed');
+  static String checkSourceCaptchaSuffix(String text) => _locale == 'zh'
+      ? '$text（疑似验证码拦截）'
+      : '$text (possible CAPTCHA block)';
+
+  // ----- L10N 批3：WebDAV 同步状态（sync_notifier） -----
+  static String get syncBookProgressDisabled => _get(
+      '未开启「同步书籍进度」', 'Book progress sync is not enabled');
+  static String get webdavServerInfoRequired => _get(
+      '请先配置 WebDAV 服务器信息',
+      'Configure the WebDAV server information first');
+  static String webdavBackupFailed(String error) =>
+      _locale == 'zh' ? '备份失败: $error' : 'Backup failed: $error';
+  static String webdavSyncRestoredSources(int count) => _locale == 'zh'
+      ? '同步完成，回写 $count 条书源'
+      : 'Sync complete; $count book sources were written back';
+  static String webdavSyncFailed(String error) =>
+      _locale == 'zh' ? '同步失败: $error' : 'Sync failed: $error';
+
+  // ----- L10N 批3：servers 表解析（webdav_server_service） -----
+  static String serverRowConfigShapeMismatch(Object? value) => _locale == 'zh'
+      ? 'servers 行 config 形态不符: $value'
+      : 'servers row config has an unexpected type: $value';
+  static String serversConfigNotObject(Object? value) => _locale == 'zh'
+      ? 'servers.config 非 JSON 对象: $value'
+      : 'servers.config is not a JSON object: $value';
+  static String serversSaveIdMismatch(int id, int expected) => _locale == 'zh'
+      ? 'servers 保存返回 id=$id，期望 $expected'
+      : 'servers save returned id=$id; expected $expected';
 }

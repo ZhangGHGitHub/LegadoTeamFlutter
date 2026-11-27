@@ -30,6 +30,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../utils/video_play_utils.dart';
 import '../utils/video_progress.dart';
@@ -485,7 +486,7 @@ class VideoFloatWindowCoordinator {
             ? '${(call.arguments as Map)['message'] ?? ''}'
             : '${call.arguments}';
         debugPrint('[VideoFloat] 原生错误：$msg');
-        onNotice?.call('悬浮窗播放出错');
+        onNotice?.call(AppStrings.videoFloatPlaybackError);
         return null;
       default:
         return null;
@@ -530,7 +531,7 @@ class VideoFloatWindowCoordinator {
     }
     if (next < 0 || next >= _chapters.length) {
       // 对齐原版 upDurIndex：越界 toast「已播放完」（上一集越界不提示）
-      if (delta > 0) onNotice?.call('已播放完');
+      if (delta > 0) onNotice?.call(AppStrings.videoPlaybackFinished);
       await _finish(fallback);
       return;
     }
@@ -545,7 +546,7 @@ class VideoFloatWindowCoordinator {
         sourceHeaders: _sourceHeaders,
       );
       if (!target.isMpd && target.url.isEmpty) {
-        onNotice?.call('章节未解析出视频地址');
+        onNotice?.call(AppStrings.videoChapterNoPlayUrl);
         await _finish(fallback);
         return;
       }
@@ -579,14 +580,14 @@ class VideoFloatWindowCoordinator {
         // [W6] show 失败（无权限/服务启动被拒）时原生从未接手该 MPD 文件，
         // 服务 onDestroy 也不会删（deleteMpdOnDestroy 仅在装载后生效）
         await _deleteMpdQuietly(materialized.mpdPath);
-        onNotice?.call('悬浮窗已停止');
+        onNotice?.call(AppStrings.videoFloatStopped);
         await _finish(fallback);
         return;
       }
       _chapterIndex = next;
     } catch (e) {
       debugPrint('[VideoFloat] 连播失败：$e');
-      onNotice?.call('连播失败：${errorMessage(e)}');
+      onNotice?.call(AppStrings.videoFloatAdvanceFailed(errorMessage(e)));
       await _finish(fallback);
     }
   }

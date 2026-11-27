@@ -1,5 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../services/source_import_service.dart';
 
 part 'association_state.freezed.dart';
@@ -96,7 +97,7 @@ extension AssociationStateDisplay on AssociationState {
 
   /// 页面标题：有条目时按类型显示（对应原版各对话框标题），否则为通用标题
   String get title {
-    if (items.isEmpty) return '关联导入';
+    if (items.isEmpty) return AppStrings.associationImportTitle;
     return type.dialogTitle;
   }
 }
@@ -105,15 +106,15 @@ extension AssociationStateDisplay on AssociationState {
 extension ImportTypeDisplay on ImportType {
   /// 对话框标题（对应原版 import_book_source / import_rss_source 等）
   String get dialogTitle => switch (this) {
-        ImportType.bookSource => '导入书源',
-        ImportType.rssSource => '导入 RSS 源',
-        ImportType.replaceRule => '导入替换规则',
-        ImportType.theme => '导入主题配置',
-        ImportType.httpTts => '导入 HTTP TTS',
-        ImportType.dictRule => '导入字典规则',
-        ImportType.txtTocRule => '导入 TXT 目录规则',
-        ImportType.highlightRule => '导入高亮规则',
-        ImportType.autoTask => '导入自动任务',
+        ImportType.bookSource => AppStrings.importSources,
+        ImportType.rssSource => AppStrings.importRssSourceTitle,
+        ImportType.replaceRule => AppStrings.importReplaceRulesTitle,
+        ImportType.theme => AppStrings.importThemeConfigTitle,
+        ImportType.httpTts => AppStrings.importHttpTtsTitle,
+        ImportType.dictRule => AppStrings.importDictRuleTitle,
+        ImportType.txtTocRule => AppStrings.importTxtTocRuleTitle,
+        ImportType.highlightRule => AppStrings.importHighlightRuleTitle,
+        ImportType.autoTask => AppStrings.importAutoTaskTitle,
       };
 
   /// 行名取哪个字段（对应原版各适配器 cbSourceName.text）

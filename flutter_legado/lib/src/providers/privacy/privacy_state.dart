@@ -27,6 +27,7 @@
 // 编写：全栈工程师（设置批9b / 批9c / 批9d） ｜ 2026-11-10
 import 'package:flutter/foundation.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../services/privacy_biometric_service.dart';
 import '../../utils/book_group_match.dart';
@@ -34,21 +35,26 @@ import '../../utils/book_group_match.dart';
 /// 隐私内容解锁频率（对齐参考版 `PrivateUnlockScope`）
 enum PrivacyUnlockScope {
   /// 每次进入私密内容都验证（9c 消费）
-  everyTime('every_time', '每次进入'),
+  everyTime('every_time'),
 
   /// 本次应用会话内验证一次（默认）
-  appSession('app_session', '应用会话内'),
+  appSession('app_session'),
 
   /// 验证后进入后台超过宽限时间则失效
-  untilBackground('until_background', '离开后台后');
+  untilBackground('until_background');
 
-  const PrivacyUnlockScope(this.storageValue, this.label);
+  const PrivacyUnlockScope(this.storageValue);
 
   /// SharedPreferences 存储值（同时容忍枚举名/短横线写法）
   final String storageValue;
 
   /// 设置页展示文案
-  final String label;
+  String get label => switch (this) {
+        PrivacyUnlockScope.everyTime => AppStrings.privacyUnlockScopeEveryTime,
+        PrivacyUnlockScope.appSession => AppStrings.privacyUnlockScopeAppSession,
+        PrivacyUnlockScope.untilBackground =>
+          AppStrings.privacyUnlockScopeUntilBackground,
+      };
 
   /// 宽容解析：未知值回落默认 [appSession]
   static PrivacyUnlockScope fromStorage(Object? value) {
@@ -69,12 +75,12 @@ const List<int> kPrivacyBackgroundGraceOptions = <int>[0, 30, 120, 180, 300];
 
 /// 宽限秒数展示文案
 String privacyBackgroundGraceLabel(int seconds) => switch (seconds) {
-  0 => '不等待',
-  30 => '30 秒',
-  120 => '2 分钟',
-  180 => '3 分钟',
-  300 => '5 分钟',
-  _ => '$seconds 秒',
+  0 => AppStrings.privacyGraceNoWait,
+  30 => AppStrings.seconds30,
+  120 => AppStrings.privacyGraceMinutes2,
+  180 => AppStrings.privacyGraceMinutes3,
+  300 => AppStrings.minutes5,
+  _ => AppStrings.privacyGraceSeconds(seconds),
 };
 
 /// 密码设置/修改结果（UI 据此做内联错误分类）

@@ -12,6 +12,7 @@ import 'dart:math' as math;
 
 import 'package:pinyin/pinyin.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/book.dart';
 
 /// 排序模式（与参考版 PreferKey.bookshelfSort 取值一致）
@@ -23,14 +24,14 @@ class BookshelfSortMode {
   static const comprehensive = 4;
   static const author = 5;
 
-  static const labels = <String>[
-    '按阅读时间',
-    '按更新时间',
-    '按书名',
-    '手动排序',
-    '综合排序',
-    '按作者',
-  ];
+  static List<String> get labels => <String>[
+        AppStrings.bookshelfSortByReadTime,
+        AppStrings.sortByUpdateTime,
+        AppStrings.bookshelfSortByName,
+        AppStrings.sortManual,
+        AppStrings.bookshelfSortComprehensive,
+        AppStrings.bookshelfSortByAuthor,
+      ];
 }
 
 /// 排序方向（0 升序 / 1 降序，默认降序）
@@ -38,7 +39,8 @@ class BookshelfSortOrder {
   static const ascending = 0;
   static const descending = 1;
 
-  static const labels = <String>['升序', '降序'];
+  static List<String> get labels =>
+      <String>[AppStrings.bookshelfSortAscending, AppStrings.sortDescending];
 }
 
 /// 中文/英文混合比较键（中文 → 无音调全拼，其它 → 原字符小写）

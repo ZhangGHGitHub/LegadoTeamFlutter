@@ -1,23 +1,24 @@
 import '../bridge/ffi.dart';
+import '../l10n/app_strings.dart';
 import '../services/file_save_channel.dart';
 import '../services/rust_api.dart' show RustApiException;
 
 /// BridgeError 无 message（或全空白）时的兜底文案。
 ///
 /// 避免 UI 出现「XX 失败: 」这类只有前缀、没有任何信息的空文案。
-const String kUnknownErrorMessage = '未知错误';
+String get kUnknownErrorMessage => AppStrings.unknownError;
 
 /// 连接被拒绝/不可达时对用户展示的文案（详见 [friendlyErrorMessage]）。
-const String kConnectionRefusedMessage = '无法连接服务器';
+String get kConnectionRefusedMessage => AppStrings.errorConnectionRefused;
 
 /// 连接被重置时对用户展示的文案。
-const String kConnectionResetMessage = '连接被服务器中断';
+String get kConnectionResetMessage => AppStrings.errorConnectionReset;
 
 /// 连接超时/网络不可用时对用户展示的文案。
-const String kConnectionTimeoutMessage = '网络连接超时';
+String get kConnectionTimeoutMessage => AppStrings.errorConnectionTimeout;
 
 /// 写入被系统/provider 拒绝时对用户展示的文案（P2-3）。
-const String kPermissionDeniedMessage = '没有写入权限，请换一个保存位置';
+String get kPermissionDeniedMessage => AppStrings.errorPermissionDenied;
 
 /// 提取异常的可读错误信息（原始文本，供详情行/复制使用）。
 ///
@@ -115,7 +116,7 @@ String friendlyErrorMessage(String raw) {
     // 纯 ASCII 的 `timeout` 不得一律映射为「网络连接超时」。
     if (_isExecutionTimeout(text)) return text;
     for (final rule in _lowLevelErrorRules) {
-      if (rule.pattern.hasMatch(text)) return rule.message;
+      if (rule.pattern.hasMatch(text)) return rule.message();
     }
   }
   return text;
@@ -175,28 +176,28 @@ final List<_LowLevelErrorRule> _lowLevelErrorRules = [
       r'requires android\.permission',
       caseSensitive: false,
     ),
-    message: kPermissionDeniedMessage,
+    message: () => AppStrings.errorPermissionDenied,
   ),
   _LowLevelErrorRule(
     pattern: RegExp(
       r'\b(?:os error 111|connection refused|econnrefused)\b',
       caseSensitive: false,
     ),
-    message: kConnectionRefusedMessage,
+    message: () => AppStrings.errorConnectionRefused,
   ),
   _LowLevelErrorRule(
     pattern: RegExp(
       r'\b(?:os error 104|connection reset|econnreset)\b',
       caseSensitive: false,
     ),
-    message: kConnectionResetMessage,
+    message: () => AppStrings.errorConnectionReset,
   ),
   _LowLevelErrorRule(
     pattern: RegExp(
       r'\b(?:os error 110|os error 101|timed out|timeout|network is unreachable)\b',
       caseSensitive: false,
     ),
-    message: kConnectionTimeoutMessage,
+    message: () => AppStrings.errorConnectionTimeout,
   ),
 ];
 
@@ -207,6 +208,6 @@ class _LowLevelErrorRule {
   /// 低层错误标记（调用方已确保文本为纯 ASCII）
   final RegExp pattern;
 
-  /// 面向用户的中文文案
-  final String message;
+  /// 面向用户的中文文案（运行时取值，跟随 locale）
+  final String Function() message;
 }

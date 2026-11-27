@@ -29,6 +29,8 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:path_provider/path_provider.dart';
 
+import '../l10n/app_strings.dart';
+
 /// 容器背景图落盘/解析/清理
 class ThemeBackgroundImageStore {
   ThemeBackgroundImageStore._();
@@ -133,7 +135,9 @@ class ThemeBackgroundImageStore {
   /// - 原子写：先落 `.tmp-<micros>` 再 rename，异常不留下半成品正式文件。
   /// - 失败（源不存在 / 读写异常 / Web）抛出，由调用方提示并保留旧图。
   static Future<String> store(String sourcePath, {required String slot}) async {
-    if (kIsWeb) throw UnsupportedError('Web 端不支持容器背景图');
+    if (kIsWeb) {
+      throw UnsupportedError(AppStrings.containerBackgroundWebUnsupported);
+    }
     if (!_slotPattern.hasMatch(slot)) {
       throw ArgumentError.value(slot, 'slot', '非法槽位名');
     }
@@ -154,9 +158,11 @@ class ThemeBackgroundImageStore {
 
     final sourceFile = File(source);
     final length = await sourceFile.length();
-    if (length <= 0) throw const FormatException('图片内容为空');
+    if (length <= 0) throw FormatException(AppStrings.imageContentEmpty);
     if (length > maxBytes) {
-      throw FormatException('图片过大（上限 ${maxBytes ~/ (1024 * 1024)}MB）');
+      throw FormatException(
+        AppStrings.imageTooLarge(maxBytes ~/ (1024 * 1024)),
+      );
     }
     await _validateDecodable(sourceFile);
     // 流式 md5：不把整文件读入 Dart 堆（32MB 上限已兜底）
@@ -201,13 +207,17 @@ class ThemeBackgroundImageStore {
     required String originalName,
     required String slot,
   }) async {
-    if (kIsWeb) throw UnsupportedError('Web 端不支持容器背景图');
+    if (kIsWeb) {
+      throw UnsupportedError(AppStrings.containerBackgroundWebUnsupported);
+    }
     if (!_slotPattern.hasMatch(slot)) {
       throw ArgumentError.value(slot, 'slot', '非法槽位名');
     }
-    if (bytes.isEmpty) throw const FormatException('图片内容为空');
+    if (bytes.isEmpty) throw FormatException(AppStrings.imageContentEmpty);
     if (bytes.length > maxBytes) {
-      throw FormatException('图片过大（上限 ${maxBytes ~/ (1024 * 1024)}MB）');
+      throw FormatException(
+        AppStrings.imageTooLarge(maxBytes ~/ (1024 * 1024)),
+      );
     }
     await _validateDecodableBytes(bytes, originalName);
 
@@ -385,7 +395,9 @@ class ThemeBackgroundImageStore {
       final frame = await codec.getNextFrame();
       frame.image.dispose();
     } catch (_) {
-      throw FormatException('不是可解码的图片：${_baseName(file.path)}');
+      throw FormatException(
+        AppStrings.imageUndecodable(_baseName(file.path)),
+      );
     } finally {
       codec?.dispose();
       descriptor?.dispose();
@@ -416,7 +428,9 @@ class ThemeBackgroundImageStore {
       final frame = await codec.getNextFrame();
       frame.image.dispose();
     } catch (_) {
-      throw FormatException('不是可解码的图片：${_baseName(originalName)}');
+      throw FormatException(
+        AppStrings.imageUndecodable(_baseName(originalName)),
+      );
     } finally {
       codec?.dispose();
       descriptor?.dispose();

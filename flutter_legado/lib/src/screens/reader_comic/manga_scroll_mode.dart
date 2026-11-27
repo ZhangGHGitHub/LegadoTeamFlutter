@@ -1,5 +1,7 @@
 import 'package:flutter/widgets.dart';
 
+import '../../l10n/app_strings.dart';
+
 /// [P4-3 E1] 漫画翻页模式常量与解析（对齐参考版 MangaScrollMode）
 ///
 /// 取证（参考版 legado-with-MD3）：
@@ -80,16 +82,16 @@ abstract final class MangaScrollModes {
   static String buttonLabelOf(int mode) {
     switch (mode) {
       case pageLeftToRight:
-        return '单页式（从左到右）';
+        return AppStrings.mangaScrollPagedLtr;
       case pageRightToLeft:
-        return '单页式（从右到左）';
+        return AppStrings.mangaScrollPagedRtl;
       case pageTopToBottom:
-        return '单页式（从上到下）';
+        return AppStrings.mangaScrollPagedTtb;
       case webtoon:
-        return '条漫';
+        return AppStrings.mangaScrollWebtoon;
       case webtoonWithGap:
       default:
-        return '条漫（页面有空隙）';
+        return AppStrings.mangaScrollWebtoonGap;
     }
   }
 
@@ -97,16 +99,16 @@ abstract final class MangaScrollModes {
   static String labelOf(int mode) {
     switch (mode) {
       case pageLeftToRight:
-        return '从左到右';
+        return AppStrings.mangaScrollLtr;
       case pageRightToLeft:
-        return '从右到左';
+        return AppStrings.mangaScrollRtl;
       case pageTopToBottom:
-        return '从上到下';
+        return AppStrings.mangaScrollTtb;
       case webtoonWithGap:
-        return '条漫（间隔）';
+        return AppStrings.mangaScrollWebtoonInterval;
       case webtoon:
       default:
-        return '条漫';
+        return AppStrings.mangaScrollWebtoon;
     }
   }
 

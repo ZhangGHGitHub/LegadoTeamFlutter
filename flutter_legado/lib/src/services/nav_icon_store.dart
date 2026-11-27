@@ -27,6 +27,8 @@ import 'package:flutter/foundation.dart'
     show debugPrint, kIsWeb, visibleForTesting;
 import 'package:path_provider/path_provider.dart';
 
+import '../l10n/app_strings.dart';
+
 /// 导航自定义图标文件存储
 class NavIconStore {
   NavIconStore._();
@@ -108,8 +110,8 @@ class NavIconStore {
   /// 返回 `nav_icons/<sha1>.<ext>`；源文件已在目标目录内时直接返回标识。
   /// 空文件/超限/不可解码抛 [FormatException]；读写异常向上抛，由 UI 提示。
   static Future<String> importFromPath(String sourcePath) async {
-    if (kIsWeb) throw UnsupportedError('Web 端不支持自定义导航图标');
-    if (sourcePath.isEmpty) throw const FormatException('图片路径为空');
+    if (kIsWeb) throw UnsupportedError(AppStrings.navIconWebUnsupported);
+    if (sourcePath.isEmpty) throw FormatException(AppStrings.navIconPathEmpty);
     final support = await _ensureSupport();
     final sep = Platform.pathSeparator;
     final dirPath = '$support$sep$subDir';
@@ -124,7 +126,7 @@ class NavIconStore {
 
     final sourceFile = File(source);
     final length = await sourceFile.length();
-    if (length <= 0) throw const FormatException('图片内容为空');
+    if (length <= 0) throw FormatException(AppStrings.imageContentEmpty);
     if (length > maxBytes) {
       throw FormatException(_tooLargeMessage());
     }
@@ -162,8 +164,8 @@ class NavIconStore {
     Uint8List bytes, {
     required String originalName,
   }) async {
-    if (kIsWeb) throw UnsupportedError('Web 端不支持自定义导航图标');
-    if (bytes.isEmpty) throw const FormatException('图片内容为空');
+    if (kIsWeb) throw UnsupportedError(AppStrings.navIconWebUnsupported);
+    if (bytes.isEmpty) throw FormatException(AppStrings.imageContentEmpty);
     if (bytes.length > maxBytes) {
       throw FormatException(_tooLargeMessage());
     }
@@ -345,7 +347,9 @@ class NavIconStore {
       final frame = await codec.getNextFrame();
       frame.image.dispose();
     } catch (_) {
-      throw FormatException('不是可解码的图片：${_baseName(file.path)}');
+      throw FormatException(
+        AppStrings.imageUndecodable(_baseName(file.path)),
+      );
     } finally {
       codec?.dispose();
       descriptor?.dispose();
@@ -373,7 +377,9 @@ class NavIconStore {
       final frame = await codec.getNextFrame();
       frame.image.dispose();
     } catch (_) {
-      throw FormatException('不是可解码的图片：${_baseName(originalName)}');
+      throw FormatException(
+        AppStrings.imageUndecodable(_baseName(originalName)),
+      );
     } finally {
       codec?.dispose();
       descriptor?.dispose();
@@ -390,7 +396,8 @@ class NavIconStore {
     return root;
   }
 
-  static String _tooLargeMessage() => '图片过大（上限 ${maxBytes ~/ (1024 * 1024)}MB）';
+  static String _tooLargeMessage() =>
+      AppStrings.imageTooLarge(maxBytes ~/ (1024 * 1024));
 
   /// 源文件扩展名（小写）；未知/无扩展名回落 jpg
   static String _extensionOf(String path) {

@@ -1,5 +1,7 @@
 import 'package:flutter/painting.dart';
 
+import '../../l10n/app_strings.dart';
+
 /// [P4-3 E2] 漫画分页适配类型（对齐参考版 MangaPageScaleType）
 ///
 /// 取证（参考版 legado-with-MD3）：
@@ -102,18 +104,18 @@ abstract final class MangaPageScaleType {
   static String labelOf(int type) {
     switch (type) {
       case stretch:
-        return '拉伸';
+        return AppStrings.mangaScaleStretch;
       case fitWidth:
-        return '适配宽度';
+        return AppStrings.mangaScaleFitWidth;
       case fitHeight:
-        return '适配高度';
+        return AppStrings.mangaScaleFitHeight;
       case original:
-        return '原始大小';
+        return AppStrings.mangaScaleOriginal;
       case smartFit:
-        return '智能适配';
+        return AppStrings.mangaScaleSmart;
       case fitScreen:
       default:
-        return '全屏适配';
+        return AppStrings.mangaScaleFitScreen;
     }
   }
 }

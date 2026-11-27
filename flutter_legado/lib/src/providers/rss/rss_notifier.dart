@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../bridge/ffi.dart';
+import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
 import '../../services/book_api.dart';
 import '../providers.dart';
@@ -21,7 +22,7 @@ const kRssSourceVersion = 6;
 const kDefaultRssSourcesAsset = 'assets/default_data/rssSources.json';
 
 /// 搜索态分类显示名（对齐原版 `RssSortActivity.upFragments` 的 `"搜索"`）
-const kRssSearchSortName = '搜索';
+String get kRssSearchSortName => AppStrings.search;
 
 /// 对齐 Android `DefaultData.importDefaultRssSources`：
 /// 删除 `sourceGroup == legado` 后灌入 assets 默认源，返回导入条数。
@@ -584,18 +585,18 @@ class RssNotifier extends Notifier<RssState> {
   _RssArticlesPage _parseArticlesPage(String json) {
     final decoded = jsonDecode(json);
     if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('RSS 列表载荷期望 JSON 对象');
+      throw FormatException(AppStrings.rssPayloadNotObject);
     }
     final articles = <RssFeedArticle>[];
     final rawArticles = decoded['articles'];
     if (rawArticles != null && rawArticles is! List) {
       // 形态不符必须显式（防复发规定 §4）：契约恒为数组
-      throw const FormatException('RSS 列表 articles 期望 JSON 数组');
+      throw FormatException(AppStrings.rssArticlesNotArray);
     }
     if (rawArticles is List) {
       for (final item in rawArticles) {
         if (item is! Map) {
-          throw const FormatException('RSS 列表项期望 JSON 对象');
+          throw FormatException(AppStrings.rssListEntryNotObject);
         }
         articles.add(RssFeedArticle.fromJson(Map<String, dynamic>.from(item)));
       }

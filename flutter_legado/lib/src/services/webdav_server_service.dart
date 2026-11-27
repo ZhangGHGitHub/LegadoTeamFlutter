@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../l10n/app_strings.dart';
 import 'book_api.dart';
 import 'settings_service.dart';
 
@@ -151,7 +152,9 @@ class WebDavServerService {
     final id = await _api.webdavServerSave(serverJson);
     if (id != defaultServerId) {
       // 不静默吞掉主键漂移：固定 id 写入却得到其他 id 说明契约实现异常
-      throw StateError('servers 保存返回 id=$id，期望 $defaultServerId');
+      throw StateError(
+        AppStrings.serversSaveIdMismatch(id, defaultServerId),
+      );
     }
     await _markMigrated();
     return WebDavSyncServerConfig(
@@ -245,14 +248,14 @@ class WebDavServerService {
     if (raw.trim().isEmpty) return const [];
     final decoded = jsonDecode(raw);
     if (decoded is! List) {
-      throw FormatException('webdavServersList 返回非 JSON 数组: $raw');
+      throw FormatException(AppStrings.serverListNotJsonArray(raw));
     }
     // 形态不符必须显式（防复发规定 4）：不静默丢弃非对象元素
     final rows = <_ServerRow>[];
     for (var i = 0; i < decoded.length; i++) {
       final item = decoded[i];
       if (item is! Map) {
-        throw FormatException('webdavServersList 第 $i 项不是 JSON 对象: $item');
+        throw FormatException(AppStrings.serverListItemNotObject(i, item));
       }
       rows.add(_ServerRow.fromJson(Map<String, dynamic>.from(item)));
     }
@@ -279,7 +282,7 @@ class WebDavServerService {
         password = _stringValue(decoded['password']);
       } else {
         // 形态不符必须显式（防复发规定 4）：config 非对象不静默当空配置
-        throw FormatException('servers.config 非 JSON 对象: $rawConfig');
+        throw FormatException(AppStrings.serversConfigNotObject(rawConfig));
       }
     }
     return WebDavSyncServerConfig(
@@ -317,21 +320,28 @@ class _ServerRow {
     // 缺失/类型不符说明实现异常，不静默兜底成 0 / ''。
     final id = switch (json['id']) {
       final num value => value.toInt(),
-      final other => throw FormatException('servers 行 id 形态不符: $other'),
+      final other => throw FormatException(
+          AppStrings.serverRowIdShapeMismatch(other),
+        ),
     };
     final name = switch (json['name']) {
       final String value => value,
-      final other => throw FormatException('servers 行 name 形态不符: $other'),
+      final other => throw FormatException(
+          AppStrings.serverRowNameShapeMismatch(other),
+        ),
     };
     final config = switch (json['config']) {
       null => null,
       final String value => value,
-      final other => throw FormatException('servers 行 config 形态不符: $other'),
+      final other => throw FormatException(
+          AppStrings.serverRowConfigShapeMismatch(other),
+        ),
     };
     final sortNumber = switch (json['sortNumber']) {
       final num value => value.toInt(),
-      final other =>
-        throw FormatException('servers 行 sortNumber 形态不符: $other'),
+      final other => throw FormatException(
+          AppStrings.serverRowSortNumberShapeMismatch(other),
+        ),
     };
     return _ServerRow(
       id: id,

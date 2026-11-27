@@ -15,6 +15,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import '../l10n/app_strings.dart';
 import 'highlight_style.dart';
 
 /// 标记锚点（章节内定位 + 归一化文本哈希）
@@ -251,18 +252,24 @@ class BookMarkingStyle {
 
 /// 标记效果（参考版 `MarkingEffect`，顺序即 UI 7 效果格顺序）
 enum MarkingEffect {
-  solid('单实线'),
-  wave('波浪线'),
-  dashed('虚线'),
-  strike('删除线'),
-  highlight('荧光'),
-  bg('背景色'),
-  text('字体色');
-
-  const MarkingEffect(this.label);
+  solid,
+  wave,
+  dashed,
+  strike,
+  highlight,
+  bg,
+  text;
 
   /// UI 文案
-  final String label;
+  String get label => switch (this) {
+        MarkingEffect.solid => AppStrings.markingEffectSolid,
+        MarkingEffect.wave => AppStrings.markingEffectWave,
+        MarkingEffect.dashed => AppStrings.markingEffectDashed,
+        MarkingEffect.strike => AppStrings.markingEffectStrike,
+        MarkingEffect.highlight => AppStrings.markingEffectHighlight,
+        MarkingEffect.bg => AppStrings.markingEffectBackground,
+        MarkingEffect.text => AppStrings.markingEffectTextColor,
+      };
 
   /// 标记默认颜色（参考版 `MarkingEffect.DEFAULT_COLOR`）
   static const int defaultColor = 0xFF63C37D;

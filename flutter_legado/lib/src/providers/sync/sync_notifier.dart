@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../../l10n/app_strings.dart';
 import '../../models/book.dart';
 import '../../models/misc.dart';
 import '../../services/settings_service.dart';
@@ -144,10 +145,10 @@ class SyncNotifier extends Notifier<SyncState> {
   /// 上传当前书籍进度到 WebDAV（对齐 menu_cover_progress）
   Future<void> uploadBookProgress(Book book) async {
     if (!state.isConfigured) {
-      throw StateError('请先配置 WebDAV');
+      throw StateError(AppStrings.webdavConfigureFirst);
     }
     if (!state.syncBookProgress) {
-      throw StateError('未开启「同步书籍进度」');
+      throw StateError(AppStrings.syncBookProgressDisabled);
     }
     final progress = BookProgress(
       name: book.name,
@@ -193,7 +194,7 @@ class SyncNotifier extends Notifier<SyncState> {
   }) async {
     if (!state.syncBookProgress) return 'skipped';
     if (!state.isConfigured) {
-      throw StateError('请先配置 WebDAV');
+      throw StateError(AppStrings.webdavConfigureFirst);
     }
     final cloud = await fetchBookProgress(book);
     if (cloud == null ||
@@ -249,7 +250,7 @@ class SyncNotifier extends Notifier<SyncState> {
   /// 调用真实 webdavFullSync，对齐原版 web_dav_backup。
   Future<void> backupToWebDav() async {
     if (!state.isConfigured) {
-      _setError('请先配置 WebDAV 服务器信息');
+      _setError(AppStrings.webdavServerInfoRequired);
       return;
     }
     _setStatus(SyncStatus.syncing);
@@ -259,7 +260,7 @@ class SyncNotifier extends Notifier<SyncState> {
       await api.webdavFullSync(buildConfigJson(), localBooks, localSources);
       await _markSyncSuccess();
     } catch (e) {
-      _setError('备份失败: ${errorMessage(e)}');
+      _setError(AppStrings.webdavBackupFailed(errorMessage(e)));
     }
   }
 
@@ -271,8 +272,8 @@ class SyncNotifier extends Notifier<SyncState> {
   /// 返回用于展示的结果描述（方向是同步，不是「恢复」）。
   Future<String> restoreFromWebDav() async {
     if (!state.isConfigured) {
-      _setError('请先配置 WebDAV 服务器信息');
-      return '请先配置 WebDAV 服务器信息';
+      _setError(AppStrings.webdavServerInfoRequired);
+      return AppStrings.webdavServerInfoRequired;
     }
     _setStatus(SyncStatus.syncing);
     try {
@@ -289,10 +290,10 @@ class SyncNotifier extends Notifier<SyncState> {
       await _markSyncSuccess();
       // [审查 P2-6] 该链路上传本地书架覆盖远端并回写远端书源，用户可见
       // 结果文案按「同步」表述，避免与「恢复（远端覆盖本地）」方向混淆。
-      return '同步完成，回写 $imported 条书源';
+      return AppStrings.webdavSyncRestoredSources(imported);
     } catch (e) {
-      _setError('同步失败: ${errorMessage(e)}');
-      return '同步失败: ${errorMessage(e)}';
+      _setError(AppStrings.webdavSyncFailed(errorMessage(e)));
+      return AppStrings.webdavSyncFailed(errorMessage(e));
     }
   }
 

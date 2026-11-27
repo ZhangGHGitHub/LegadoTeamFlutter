@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../../l10n/app_strings.dart';
+
 /// [P4-3 E5] 漫画屏九区（3x3）点击动作配置
 ///
 /// 取证（参考版，legado-with-MD3）：
@@ -72,13 +74,13 @@ abstract final class MangaClickActions {
   /// 动作中文名（对齐参考版 ClickActionsSettingsContent labels：
   /// 无操作 / 菜单 / 下一页 / 上一页 / 下一章 / 上一章）
   static String labelOf(int action) => switch (action) {
-        none => '无操作',
-        menu => '菜单',
-        next => '下一页',
-        prev => '上一页',
-        nextChapter => '下一章',
-        prevChapter => '上一章',
-        _ => '无操作',
+        none => AppStrings.tapActionNone,
+        menu => AppStrings.readerTapMenu,
+        next => AppStrings.readerTapNextPage,
+        prev => AppStrings.readerTapPreviousPage,
+        nextChapter => AppStrings.nextChapter,
+        prevChapter => AppStrings.previousChapter,
+        _ => AppStrings.tapActionNone,
       };
 
   /// 归一化动作值：越界/非法回 [none]（编辑器循环与配置解析共用）

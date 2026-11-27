@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../l10n/app_strings.dart';
 import '../providers.dart';
 
 /// 单个书源的校验结果消息（对标原版列表项 checkSourceMessage 展示）
@@ -296,19 +297,25 @@ class CheckSourceNotifier extends Notifier<CheckSourceState> {
           : '$groups：$rootCause';
       ok = false;
     } else if (!searchOk) {
-      text = '搜索失败${_errorSuffix(result['search_error'])}';
+      text = AppStrings.checkSourceSearchFailed(
+        _errorSuffix(result['search_error']),
+      );
       ok = false;
     } else if (!tocOk) {
-      text = '目录失效${_errorSuffix(result['toc_error'])}';
+      text = AppStrings.checkSourceTocFailed(
+        _errorSuffix(result['toc_error']),
+      );
       ok = false;
     } else if (!contentOk) {
-      text = '正文失效${_errorSuffix(result['content_error'])}';
+      text = AppStrings.checkSourceContentFailed(
+        _errorSuffix(result['content_error']),
+      );
       ok = false;
     } else {
-      text = '校验成功';
+      text = AppStrings.checkSourceSuccess;
       ok = true;
     }
-    if (captchaDetected) text = '$text（疑似验证码拦截）';
+    if (captchaDetected) text = AppStrings.checkSourceCaptchaSuffix(text);
     return CheckSourceMessage(text: '$text ${timeMs}ms', ok: ok);
   }
 
