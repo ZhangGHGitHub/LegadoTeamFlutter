@@ -13,6 +13,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart' show SchedulerBinding, SchedulerPhase;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -24,6 +25,7 @@ import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../screens/reader_config_panel.dart';
 import 'marking_sheet.dart';
+import 'reader_text_selection.dart' show kReaderSelectionHandleRadius;
 import 'selection_menu_actions.dart';
 import 'text_select_menu_config_sheet.dart';
 import '../../utils/error_message.dart';
@@ -72,8 +74,9 @@ int chapterOffsetOfSelection({
 /// 构造 highlights 表的 BookHighlight JSON（契约 §2.36 / DB v99）
 ///
 /// [chapterPos] 为选区起点在**章节正文**中的 UTF-16 偏移，调用方须先经
-/// [chapterOffsetOfSelection] 扣除首行缩进全角空格；`chapterPosEnd` 由
-/// 选中文本长度推出。样式对齐参考版
+/// [chapterOffsetOfSelection] 扣除首行缩进全角空格；`chapterPosEnd` 默认由
+/// 选中文本长度推出，字符级选区（R49）可显式传入精确半开终点，避免跨行/
+/// 跨段/含图片占位符时按长度推导出错。样式对齐参考版
 /// `{"type":"background","color":"#AARRGGBB"}`，阅读页渲染侧由
 /// `parseSavedHighlightStyle` 解析（见 saved_highlight_render.dart）。
 Map<String, dynamic> buildBookHighlightJson({
@@ -85,6 +88,7 @@ Map<String, dynamic> buildBookHighlightJson({
   required String selectedText,
   required Color color,
   String note = '',
+  int? chapterPosEnd,
 }) {
   return <String, dynamic>{
     'time': 0, // 0 时由 Rust 侧自动分配主键
@@ -94,7 +98,7 @@ Map<String, dynamic> buildBookHighlightJson({
     'bookAuthor': book.author,
     'chapterIndex': chapterIndex,
     'chapterPos': chapterPos,
-    'chapterPosEnd': chapterPos + selectedText.length,
+    'chapterPosEnd': chapterPosEnd ?? chapterPos + selectedText.length,
     'layoutTitleLength': 0,
     'chapterName': chapterName,
     'bookText': selectedText,
@@ -126,7 +130,10 @@ Map<String, dynamic> buildBookHighlightJson({
 /// 打开「笔记」Sheet（划词菜单 menu_mark，对齐参考版 MarkingSheet）
 ///
 /// [fineSelection] 为 true 时按选区文本在段落中的位置计算章节偏移；
-/// 否则按段落起点。书籍/章节信息取自当前阅读状态。
+/// 否则按段落起点。[absoluteChapterPos]（R49 字符级选区）为章节**绝对**
+/// UTF-16 起点，提供时直接使用，不再经 [chapterOffsetOfSelection] 换算
+/// （字符级偏移本身就是章节绝对偏移，换算会二次扣缩进）。
+/// 书籍/章节信息取自当前阅读状态。
 Future<void> openMarkingForSelection(
   BuildContext context,
   WidgetRef ref, {
@@ -135,6 +142,7 @@ Future<void> openMarkingForSelection(
   required String selectedText,
   required bool fineSelection,
   int? selectionStart,
+  int? absoluteChapterPos,
   int? chapterIndex,
   String? chapterTitle,
   VoidCallback? onBeforeOpen,
@@ -157,13 +165,14 @@ Future<void> openMarkingForSelection(
   // 屏幕仍是旧章而 state 已是新章（章号/标题/正文错配）
   final effectiveChapterIndex = chapterIndex ?? state.currentChapterIndex;
   final effectiveChapterTitle = chapterTitle ?? chapter?.title ?? '';
-  final position = chapterOffsetOfSelection(
-    paragraphText: paragraphText,
-    chapterPos: chapterPos,
-    selection: selectedText,
-    fineSelection: fineSelection,
-    selectionStart: selectionStart,
-  );
+  final position = absoluteChapterPos ??
+      chapterOffsetOfSelection(
+        paragraphText: paragraphText,
+        chapterPos: chapterPos,
+        selection: selectedText,
+        fineSelection: fineSelection,
+        selectionStart: selectionStart,
+      );
   final trimmedSelected = selectedText.trim();
   final contextAround = markingContextAround(
     state.chapterContent,
@@ -223,12 +232,28 @@ class TextSelectionPanel extends ConsumerStatefulWidget {
   /// [P2-2] 分页快照章节标题
   final String? chapterTitle;
 
+  /// [R49] 字符级选区文本（面板打开即作为默认操作对象）
+  final String? initialSelectedText;
+
+  /// [R49] 上述选区在 [text]（段落渲染文本）中的起始下标
+  final int? initialSelectionStart;
+
+  /// [R49] 上述选区的章节绝对起点（笔记/高亮直接用，不再扣缩进）
+  final int? initialSelectionChapterPos;
+
+  /// [R49] 上述选区的章节绝对终点（半开，高亮 chapterPosEnd 用）
+  final int? initialSelectionChapterEnd;
+
   const TextSelectionPanel({
     super.key,
     required this.text,
     this.chapterPos = 0,
     this.chapterIndex,
     this.chapterTitle,
+    this.initialSelectedText,
+    this.initialSelectionStart,
+    this.initialSelectionChapterPos,
+    this.initialSelectionChapterEnd,
   });
 
   /// 弹出面板
@@ -238,6 +263,10 @@ class TextSelectionPanel extends ConsumerStatefulWidget {
     int chapterPos = 0,
     int? chapterIndex,
     String? chapterTitle,
+    String? initialSelectedText,
+    int? initialSelectionStart,
+    int? initialSelectionChapterPos,
+    int? initialSelectionChapterEnd,
   }) {
     if (text.trim().isEmpty) return Future.value();
     return showModalBottomSheet<void>(
@@ -249,6 +278,10 @@ class TextSelectionPanel extends ConsumerStatefulWidget {
         chapterPos: chapterPos,
         chapterIndex: chapterIndex,
         chapterTitle: chapterTitle,
+        initialSelectedText: initialSelectedText,
+        initialSelectionStart: initialSelectionStart,
+        initialSelectionChapterPos: initialSelectionChapterPos,
+        initialSelectionChapterEnd: initialSelectionChapterEnd,
       ),
     );
   }
@@ -272,6 +305,22 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
 
   /// [批4d] 拖选振动节流（避免每个字符都触发马达）
   DateTime _lastSelectHapticAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// [R49] 当前操作文本是否仍是正文选区的初始选区
+  ///
+  /// 为 true 时笔记/高亮直接用章节绝对偏移；用户在面板内重新划选后置
+  /// false，回落到「段落相对 + 扣缩进」的既有换算。
+  bool _useInitialSelection = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialSelectedText;
+    if (initial == null || initial.trim().isEmpty) return;
+    _userSelected = initial;
+    _userSelectionStart = widget.initialSelectionStart;
+    _useInitialSelection = widget.initialSelectionChapterPos != null;
+  }
 
   /// 起选/拖选手柄触发 selectVibrator；参考 LongPress/TextHandleMove
   void _maybeSelectHaptic(SelectionChangedCause? cause) {
@@ -395,6 +444,8 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
                       onSelectionChanged: (selection, cause) {
                         _maybeSelectHaptic(cause);
                         final text = widget.text;
+                        // 用户在面板内重新划选：不再使用正文选区的绝对偏移
+                        _useInitialSelection = false;
                         if (!selection.isValid || selection.isCollapsed) {
                           if (_userSelected.isNotEmpty ||
                               _userSelectionStart != null) {
@@ -614,6 +665,10 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
                 : _selectedText,
             fineSelection: _userSelected.trim().isNotEmpty,
             selectionStart: _userSelectionStart,
+            // [R49] 正文字符级选区：章节绝对偏移直接进笔记锚点
+            absoluteChapterPos: _useInitialSelection
+                ? widget.initialSelectionChapterPos
+                : null,
             chapterIndex: widget.chapterIndex,
             chapterTitle: widget.chapterTitle,
             onBeforeOpen: _close,
@@ -756,19 +811,28 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
     final selected = _selectedText;
     // [批34b P3-2] 段落渲染文本含首行缩进全角空格（不在章节正文中），
     // 章节偏移须扣除缩进列，否则高亮区间整体右移 — full-stack-engineer
-    final chapterPos = chapterOffsetOfSelection(
-      paragraphText: widget.text,
-      chapterPos: widget.chapterPos,
-      selection: _userSelected,
-      fineSelection: _userSelected.trim().isNotEmpty,
-      selectionStart: _userSelectionStart,
-    );
+    // [R49] 正文字符级选区：章节绝对偏移直接用，终点取显式半开值
+    final absoluteStart = _useInitialSelection
+        ? widget.initialSelectionChapterPos
+        : null;
+    final chapterPos =
+        absoluteStart ??
+        chapterOffsetOfSelection(
+          paragraphText: widget.text,
+          chapterPos: widget.chapterPos,
+          selection: _userSelected,
+          fineSelection: _userSelected.trim().isNotEmpty,
+          selectionStart: _userSelectionStart,
+        );
     final highlight = buildBookHighlightJson(
       book: book,
       chapterIndex: effectiveChapterIndex,
       chapterUrl: chapterUrl,
       chapterName: chapterName,
       chapterPos: chapterPos,
+      chapterPosEnd: absoluteStart == null
+          ? null
+          : widget.initialSelectionChapterEnd,
       selectedText: selected,
       color: color,
       note: note,
@@ -800,11 +864,18 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
 /// 「更多」打开保留的段落面板（替换/高亮/词典/搜正文/精细选区等增强
 /// 动作不丢失）。注：SelectionArea 在阅读器 PageView 手势栈下长按
 /// 不触发（探针实证），故用长按点 Overlay 浮条，行为确定 — Qoder
+///
+/// [R49 阶段B] 字符级选区路径：
+/// - 浮条**非模态**（`TapRegion` 外部点击收起，不再插全屏不透明屏障），
+///   页面手柄可在浮条存在时拖动；
+/// - 动作作用于**选区文本**（[selectedText]）与选区起点（
+///   [selectionStartChapterPos]），不再是整段；
+/// - 锚点优先用选区矩形（[selectionBounds]），贴选区下方展开、放不下上翻。
 class ReaderSelectionToolbar extends ConsumerWidget {
   /// 按压点全局坐标（工具条锚点）
   final Offset anchor;
 
-  /// 段落全文（动作作用文本）
+  /// 段落全文（[selectedText] 缺失时的动作回退文本）
   final String text;
 
   /// 选区起始段内位置（书签/朗读定位用，与段落面板同语义）
@@ -813,6 +884,27 @@ class ReaderSelectionToolbar extends ConsumerWidget {
   /// [P2-2] 分页快照章节索引/标题（加载冻结帧时优先于阅读状态）
   final int? chapterIndex;
   final String? chapterTitle;
+
+  /// [R49] 精确选区文本（null/空白 = 旧路径，动作作用于整段 [text]）
+  final String? selectedText;
+
+  /// [R49] 选区起点（章节绝对 UTF-16 偏移，含）
+  final int? selectionStartChapterPos;
+
+  /// [R49] 选区终点（章节绝对 UTF-16 偏移，不含）
+  final int? selectionEndChapterPos;
+
+  /// [R49] 选区所在段落渲染文本（朗读回退定位）
+  final String? paragraphText;
+
+  /// [R49] 选区所在段落的章节起点
+  final int? paragraphChapterPos;
+
+  /// [R49] 选区起点在段落渲染文本中的下标（「更多」面板初值）
+  final int? selectionStartInParagraph;
+
+  /// [R49] 选区矩形（全局坐标，浮条锚定）
+  final Rect? selectionBounds;
 
   final VoidCallback onDismiss;
 
@@ -823,57 +915,96 @@ class ReaderSelectionToolbar extends ConsumerWidget {
     required this.chapterPos,
     this.chapterIndex,
     this.chapterTitle,
+    this.selectedText,
+    this.selectionStartChapterPos,
+    this.selectionEndChapterPos,
+    this.paragraphText,
+    this.paragraphChapterPos,
+    this.selectionStartInParagraph,
+    this.selectionBounds,
     required this.onDismiss,
   });
 
-  /// 浮出：全屏点击屏障 + 锚点工具条（点屏/执行动作即收起）
-  static void show(
+  /// 动作实际作用文本：字符级选区优先，缺省回退整段
+  String get _actionText {
+    final selected = selectedText;
+    if (selected != null && selected.trim().isNotEmpty) return selected;
+    return text;
+  }
+
+  /// 动作定位起点：字符级选区起点（章节绝对）优先
+  int get _actionChapterPos => selectionStartChapterPos ?? chapterPos;
+
+  String get _actionParagraphText => paragraphText ?? text;
+
+  int get _actionParagraphChapterPos => paragraphChapterPos ?? chapterPos;
+
+  /// 浮出：非模态工具条（字符级选区）/ 点击屏障工具条（旧路径）
+  ///
+  /// 返回控制器（`dismiss()` / `update()`）；旧调用可忽略返回值。
+  static ReaderSelectionToolbarHandle show(
     BuildContext context, {
     required Offset anchor,
     required String text,
     required int chapterPos,
     int? chapterIndex,
     String? chapterTitle,
+    String? selectedText,
+    int? selectionStartChapterPos,
+    int? selectionEndChapterPos,
+    String? paragraphText,
+    int? paragraphChapterPos,
+    int? selectionStartInParagraph,
+    Rect? selectionBounds,
+    bool? modalBarrier,
   }) {
     // [批1a | 2026-10-31] selectVibrator 接线（对标参考版
     // ReadBookRouteScreen selectionHapticsEnabled → ReaderCanvasSurface
     // 选词起选时 HapticFeedback）：选词振动开关开启时长按起选即触发 —
     // 全栈工程师
+    // [R49 阶段B] 仍保持「每次起选恰好 1 次」：手柄拖动另有节流振动，
+    // 但不再叠加第二次起选振动（reader_wiring_1a_test 断言）。
     final container = ProviderScope.containerOf(context);
     if (container.read(readerAdvConfigProvider)?.selectVibrator ?? false) {
       HapticFeedback.selectionClick();
     }
     final overlay = Overlay.of(context, rootOverlay: true);
-    late OverlayEntry entry;
-    var dismissed = false;
-    void dismiss() {
-      if (dismissed) return;
-      dismissed = true;
-      entry.remove();
-    }
-
-    entry = OverlayEntry(
+    final params = ValueNotifier<_ReaderToolbarParams>(
+      _ReaderToolbarParams(
+        anchor: anchor,
+        text: text,
+        chapterPos: chapterPos,
+        chapterIndex: chapterIndex,
+        chapterTitle: chapterTitle,
+        selectedText: selectedText,
+        selectionStartChapterPos: selectionStartChapterPos,
+        selectionEndChapterPos: selectionEndChapterPos,
+        paragraphText: paragraphText,
+        paragraphChapterPos: paragraphChapterPos,
+        selectionStartInParagraph: selectionStartInParagraph,
+        selectionBounds: selectionBounds,
+        // 字符级选区块（有精确选区文本）默认非模态，手柄才能继续拖动
+        modalBarrier:
+            modalBarrier ?? (selectedText == null || selectedText.isEmpty),
+      ),
+    );
+    final handle = ReaderSelectionToolbarHandle._(params);
+    final entry = OverlayEntry(
       builder: (overlayContext) {
         final expanded =
             container.read(readerAdvConfigProvider)?.expandTextMenu ?? false;
         final screen = MediaQuery.sizeOf(overlayContext);
-        return Stack(
-          children: [
-            // 点击屏障：任意点按收起浮条
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: dismiss,
-                child: const SizedBox.expand(),
-              ),
-            ),
+        return ValueListenableBuilder<_ReaderToolbarParams>(
+          valueListenable: params,
+          builder: (context, current, _) {
             // [审查 P2-2/P2-3] 统一由布局代理双向 clamp：窄屏下
             // `width-342` 可能小于 12，底部锚点也可能让菜单越界。
-            CustomSingleChildLayout(
+            final toolbar = CustomSingleChildLayout(
               delegate: _ReaderToolbarLayoutDelegate(
-                anchor: anchor,
+                anchor: current.anchor,
                 expanded: expanded,
                 screenSize: screen,
+                selectionBounds: current.selectionBounds,
               ),
               child: Material(
                 elevation: 6,
@@ -882,20 +1013,50 @@ class ReaderSelectionToolbar extends ConsumerWidget {
                   overlayContext,
                 ).colorScheme.surfaceContainerHighest,
                 child: ReaderSelectionToolbar(
-                  anchor: anchor,
-                  text: text,
-                  chapterPos: chapterPos,
-                  chapterIndex: chapterIndex,
-                  chapterTitle: chapterTitle,
-                  onDismiss: dismiss,
+                  anchor: current.anchor,
+                  text: current.text,
+                  chapterPos: current.chapterPos,
+                  chapterIndex: current.chapterIndex,
+                  chapterTitle: current.chapterTitle,
+                  selectedText: current.selectedText,
+                  selectionStartChapterPos: current.selectionStartChapterPos,
+                  selectionEndChapterPos: current.selectionEndChapterPos,
+                  paragraphText: current.paragraphText,
+                  paragraphChapterPos: current.paragraphChapterPos,
+                  selectionStartInParagraph: current.selectionStartInParagraph,
+                  selectionBounds: current.selectionBounds,
+                  onDismiss: handle.dismiss,
                 ),
               ),
-            ),
-          ],
+            );
+            if (current.modalBarrier) {
+              return Stack(
+                children: [
+                  // 旧路径：点击屏障（任意点按收起浮条）
+                  Positioned.fill(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: handle.dismiss,
+                      child: const SizedBox.expand(),
+                    ),
+                  ),
+                  toolbar,
+                ],
+              );
+            }
+            // [R49] 非模态：手柄拖拽不被浮条拦截；外部点击仍收起
+            return TapRegion(
+              groupId: params,
+              onTapOutside: (_) => handle.dismiss(),
+              child: toolbar,
+            );
+          },
         );
       },
     );
+    handle.attach(entry);
     overlay.insert(entry);
+    return handle;
   }
 
   @override
@@ -995,6 +1156,11 @@ class ReaderSelectionToolbar extends ConsumerWidget {
                 chapterPos: chapterPos,
                 chapterIndex: chapterIndex,
                 chapterTitle: chapterTitle,
+                // [R49] 面板打开即按字符级选区执行动作
+                initialSelectedText: selectedText,
+                initialSelectionStart: selectionStartInParagraph,
+                initialSelectionChapterPos: selectionStartChapterPos,
+                initialSelectionChapterEnd: selectionEndChapterPos,
               );
             },
           ),
@@ -1005,21 +1171,25 @@ class ReaderSelectionToolbar extends ConsumerWidget {
   }
 
   VoidCallback _actionFor(BuildContext context, WidgetRef ref, String id) {
+    // [R49] 字符级选区：动作一律作用于选区文本/选区起点；
+    // 旧路径（selectedText 为空）行为完全不变。
+    final actionText = _actionText;
     switch (id) {
       case SelectionMenuIds.copy:
-        return () => unawaited(selectionCopy(context, text, onDismiss));
+        return () => unawaited(selectionCopy(context, actionText, onDismiss));
       case SelectionMenuIds.share:
-        return () => unawaited(selectionShare(context, text, onDismiss));
+        return () => unawaited(selectionShare(context, actionText, onDismiss));
       case SelectionMenuIds.browser:
-        return () => unawaited(selectionOpenBrowser(context, text, onDismiss));
+        return () =>
+            unawaited(selectionOpenBrowser(context, actionText, onDismiss));
       case SelectionMenuIds.aloud:
         return () => unawaited(
           selectionReadAloud(
             ref,
             context,
-            selectedText: text,
-            paragraphText: text,
-            chapterPos: chapterPos,
+            selectedText: actionText,
+            paragraphText: _actionParagraphText,
+            chapterPos: _actionChapterPos,
             chapterIndex: chapterIndex,
             onDone: onDismiss,
           ),
@@ -1029,8 +1199,8 @@ class ReaderSelectionToolbar extends ConsumerWidget {
           selectionAddBookmark(
             ref,
             context,
-            selectedText: text,
-            chapterPos: chapterPos,
+            selectedText: actionText,
+            chapterPos: _actionChapterPos,
             chapterIndex: chapterIndex,
             chapterTitle: chapterTitle,
             onDone: onDismiss,
@@ -1041,23 +1211,26 @@ class ReaderSelectionToolbar extends ConsumerWidget {
           openMarkingForSelection(
             context,
             ref,
-            paragraphText: text,
-            chapterPos: chapterPos,
-            selectedText: text.trim(),
-            fineSelection: false,
+            paragraphText: _actionParagraphText,
+            chapterPos: _actionParagraphChapterPos,
+            selectedText: actionText.trim(),
+            fineSelection: selectionStartChapterPos != null,
+            // [R49] 笔记锚点直接用章节绝对起点，不再按段落文本反查
+            absoluteChapterPos: selectionStartChapterPos,
             chapterIndex: chapterIndex,
             chapterTitle: chapterTitle,
             onBeforeOpen: onDismiss,
           ),
         );
       case SelectionMenuIds.dict:
-        return () => selectionLookupDict(context, text, onDismiss);
+        return () => selectionLookupDict(context, actionText, onDismiss);
       case SelectionMenuIds.replace:
-        return () => selectionReplace(context, text, onDismiss);
+        return () => selectionReplace(context, actionText, onDismiss);
       case SelectionMenuIds.edit:
         return () => selectionEdit(ref, context, onDismiss);
       case SelectionMenuIds.search:
-        return () => selectionSearchContent(ref, context, text, onDismiss);
+        return () =>
+            selectionSearchContent(ref, context, actionText, onDismiss);
       default:
         return () {};
     }
@@ -1094,6 +1267,147 @@ class ReaderSelectionToolbar extends ConsumerWidget {
   }
 }
 
+/// [R49] 非模态浮条的可更新参数快照
+@immutable
+class _ReaderToolbarParams {
+  const _ReaderToolbarParams({
+    required this.anchor,
+    required this.text,
+    required this.chapterPos,
+    required this.modalBarrier,
+    this.chapterIndex,
+    this.chapterTitle,
+    this.selectedText,
+    this.selectionStartChapterPos,
+    this.selectionEndChapterPos,
+    this.paragraphText,
+    this.paragraphChapterPos,
+    this.selectionStartInParagraph,
+    this.selectionBounds,
+  });
+
+  final Offset anchor;
+  final String text;
+  final int chapterPos;
+  final int? chapterIndex;
+  final String? chapterTitle;
+  final String? selectedText;
+  final int? selectionStartChapterPos;
+  final int? selectionEndChapterPos;
+  final String? paragraphText;
+  final int? paragraphChapterPos;
+  final int? selectionStartInParagraph;
+  final Rect? selectionBounds;
+
+  /// 旧路径为 true（全屏点击屏障）；字符级选区路径为 false（TapRegion）
+  final bool modalBarrier;
+
+  _ReaderToolbarParams copyWith({
+    Offset? anchor,
+    String? text,
+    int? chapterPos,
+    int? chapterIndex,
+    String? chapterTitle,
+    String? selectedText,
+    int? selectionStartChapterPos,
+    int? selectionEndChapterPos,
+    String? paragraphText,
+    int? paragraphChapterPos,
+    int? selectionStartInParagraph,
+    Rect? selectionBounds,
+  }) {
+    return _ReaderToolbarParams(
+      anchor: anchor ?? this.anchor,
+      text: text ?? this.text,
+      chapterPos: chapterPos ?? this.chapterPos,
+      chapterIndex: chapterIndex ?? this.chapterIndex,
+      chapterTitle: chapterTitle ?? this.chapterTitle,
+      selectedText: selectedText ?? this.selectedText,
+      selectionStartChapterPos:
+          selectionStartChapterPos ?? this.selectionStartChapterPos,
+      selectionEndChapterPos:
+          selectionEndChapterPos ?? this.selectionEndChapterPos,
+      paragraphText: paragraphText ?? this.paragraphText,
+      paragraphChapterPos: paragraphChapterPos ?? this.paragraphChapterPos,
+      selectionStartInParagraph:
+          selectionStartInParagraph ?? this.selectionStartInParagraph,
+      selectionBounds: selectionBounds ?? this.selectionBounds,
+      modalBarrier: modalBarrier,
+    );
+  }
+}
+
+/// [R49] 浮条控制器：收起 / 就地更新（选区拖动后重弹即 dismiss + show）
+class ReaderSelectionToolbarHandle {
+  ReaderSelectionToolbarHandle._(this._params);
+
+  final ValueNotifier<_ReaderToolbarParams> _params;
+  OverlayEntry? _entry;
+  bool _dismissed = false;
+
+  /// 浮条是否仍显示
+  bool get isVisible => !_dismissed && _entry?.mounted == true;
+
+  void attach(OverlayEntry entry) {
+    _entry = entry;
+  }
+
+  /// 收起浮条（幂等；build 阶段延后一帧执行，避免 OverlayEntry.remove 断言）
+  void dismiss() {
+    if (_dismissed) return;
+    _dismissed = true;
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.persistentCallbacks ||
+        phase == SchedulerPhase.midFrameMicrotasks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) => _teardown());
+    } else {
+      _teardown();
+    }
+  }
+
+  void _teardown() {
+    final entry = _entry;
+    _entry = null;
+    if (entry != null) {
+      // 注意：不能用 `entry.mounted` 判断是否已插入——浮条可能在首次
+      // build 前就被收起（mounted=false 但 _overlay 仍指向 Overlay），
+      // 此时跳过 remove 会让 dispose 断言失败。
+      entry
+        ..remove()
+        ..dispose();
+    }
+    _params.dispose();
+  }
+
+  /// 就地更新浮条内容/锚点（不重建 OverlayEntry）
+  void update({
+    Offset? anchor,
+    String? text,
+    int? chapterPos,
+    String? selectedText,
+    int? selectionStartChapterPos,
+    int? selectionEndChapterPos,
+    String? paragraphText,
+    int? paragraphChapterPos,
+    int? selectionStartInParagraph,
+    Rect? selectionBounds,
+  }) {
+    if (_dismissed) return;
+    _params.value = _params.value.copyWith(
+      anchor: anchor,
+      text: text,
+      chapterPos: chapterPos,
+      selectedText: selectedText,
+      selectionStartChapterPos: selectionStartChapterPos,
+      selectionEndChapterPos: selectionEndChapterPos,
+      paragraphText: paragraphText,
+      paragraphChapterPos: paragraphChapterPos,
+      selectionStartInParagraph: selectionStartInParagraph,
+      selectionBounds: selectionBounds,
+    );
+  }
+}
+
 /// 浮条定位：水平方向贴近锚点并限制在 12dp 安全边距内，
 /// 垂直方向在屏底时整体上移，避免多行菜单或大字号越界。
 class _ReaderToolbarLayoutDelegate extends SingleChildLayoutDelegate {
@@ -1101,10 +1415,14 @@ class _ReaderToolbarLayoutDelegate extends SingleChildLayoutDelegate {
   final bool expanded;
   final Size screenSize;
 
+  /// [R49] 选区矩形（全局坐标）：有值时按参考版规则贴选区落位
+  final Rect? selectionBounds;
+
   const _ReaderToolbarLayoutDelegate({
     required this.anchor,
     required this.expanded,
     required this.screenSize,
+    this.selectionBounds,
   });
 
   @override
@@ -1119,11 +1437,30 @@ class _ReaderToolbarLayoutDelegate extends SingleChildLayoutDelegate {
   @override
   Offset getPositionForChild(Size size, Size childSize) {
     final maxLeft = math.max(12.0, size.width - childSize.width - 12);
+    final maxTop = math.max(12.0, size.height - childSize.height - 12);
+    final bounds = selectionBounds;
+    if (bounds != null) {
+      // 参考版 TextMenuPositionProvider：默认贴选区下沿展开，并让整个
+      // 选区与末端手柄留在浮层外（行底圆直径 14dp + 4dp 间距）；下方
+      // 放不下则上翻到选区上沿。
+      const handleClearance =
+          kReaderSelectionHandleRadius * 2 + 4; // 14 + 4
+      final below = bounds.bottom + handleClearance;
+      final above = bounds.top - childSize.height - 4;
+      final top = (size.height - below >= childSize.height
+              ? below
+              : (above >= 12 ? above : below))
+          .clamp(12.0, maxTop)
+          .toDouble();
+      final left = (bounds.center.dx - childSize.width / 2)
+          .clamp(12.0, maxLeft)
+          .toDouble();
+      return Offset(left, top);
+    }
     final left = expanded
         ? 12.0
         // [审查 P2-3] 320dp 下 width-342 小于下界，先保证上界不小于 12。
         : (anchor.dx - 150).clamp(12.0, maxLeft).toDouble();
-    final maxTop = math.max(12.0, size.height - childSize.height - 12);
     final top = (anchor.dy - 64).clamp(12.0, maxTop).toDouble();
     return Offset(left, top);
   }
@@ -1132,5 +1469,6 @@ class _ReaderToolbarLayoutDelegate extends SingleChildLayoutDelegate {
   bool shouldRelayout(covariant _ReaderToolbarLayoutDelegate oldDelegate) =>
       anchor != oldDelegate.anchor ||
       expanded != oldDelegate.expanded ||
-      screenSize != oldDelegate.screenSize;
+      screenSize != oldDelegate.screenSize ||
+      selectionBounds != oldDelegate.selectionBounds;
 }

@@ -3,9 +3,12 @@ import 'dart:ui' as ui;
 import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderBox, RenderParagraph;
+import 'package:flutter/services.dart' show HapticFeedback;
+import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 
 import '../../l10n/app_strings.dart';
 import '../../models/highlight_style.dart';
+import '../../screens/reader_config_panel.dart' show readerAdvConfigProvider;
 import '../../utils/reader_inline_image.dart';
 import '../../widgets/paragraph_layout_engine.dart';
 import 'highlight_span_builder.dart';
@@ -414,7 +417,11 @@ class ReaderTextContentState extends State<ReaderTextContent> {
   final ValueNotifier<ReaderTextSelection?> _selection =
       ValueNotifier<ReaderTextSelection?>(null);
 
-  /// 灰块绘制层坐标基准（根 Stack）
+  /// 手柄拖拽状态（驱动手柄跟随手指重绘，不重建文字树）
+  final ValueNotifier<_HandleDragState?> _handleDrag =
+      ValueNotifier<_HandleDragState?>(null);
+
+  /// 灰块/手柄绘制层坐标基准（根 Stack）
   final GlobalKey _contentStackKey = GlobalKey(
     debugLabel: 'reader-selection-stack',
   );
@@ -422,11 +429,23 @@ class ReaderTextContentState extends State<ReaderTextContent> {
   /// 行探测句柄（每次 build 重建；只写 context，不触发重建）
   List<_LineHandle> _lineHandles = const [];
 
+  /// 手柄热区几何（根 Stack 局部坐标；选区变化后一帧同步）
+  _SelectionGeometry? _handleGeometry;
+
   /// 长按起点全局坐标（拖动扩展的 kTouchSlop 门控）
   Offset? _longPressOrigin;
 
-  /// 当前选区文本（步骤4 接入浮条动作前先备好；图片占位符已剔除）
-  String? _selectionText;
+  /// 本次长按是否按在手柄上（按在手柄上时失竞/取消不得清选区）
+  bool _longPressOnHandle = false;
+
+  /// 当前浮条控制器（非模态；手柄拖拽期间收起，松手后重弹）
+  ReaderSelectionToolbarHandle? _toolbar;
+
+  /// 手柄拖动振动节流（参考 TextHandleMove，避免每字符触发马达）
+  DateTime _lastHandleHapticAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// 几何同步防抖（同一帧内多次选区变化只同步一次）
+  bool _handleSyncScheduled = false;
 
   // 兼容既有 build 代码的字段读取（与 widget 字段同义）。
   PageInfo get pageInfo => widget.pageInfo;
@@ -452,9 +471,42 @@ class ReaderTextContentState extends State<ReaderTextContent> {
   @visibleForTesting
   ReaderTextSelection? get debugSelection => _selection.value;
 
-  /// 选区文本（测试/后续步骤读取；图片占位符已剔除）
+  /// 选区文本（按需计算；图片占位符已剔除）
   @visibleForTesting
-  String? get debugSelectionText => _selectionText;
+  String? get debugSelectionText {
+    final selection = _selection.value;
+    if (selection == null || selection.isCollapsed) return null;
+    return readerSelectionText(pageInfo, selection);
+  }
+
+  /// 浮条是否可见（测试读取；浮条已非模态）
+  @visibleForTesting
+  bool get debugToolbarVisible => _toolbar?.isVisible ?? false;
+
+  /// 起点/终点手柄热区（测试读取，根 Stack 局部坐标）
+  @visibleForTesting
+  Rect? get debugStartHandleHitRect => _handleGeometry?.start.hitRect;
+
+  @visibleForTesting
+  Rect? get debugEndHandleHitRect => _handleGeometry?.end.hitRect;
+
+  /// 手柄数量（0 = 无选区；2 = 起点 + 终点 pin 手柄）
+  @visibleForTesting
+  int get debugHandleCount => _handleGeometry == null ? 0 : 2;
+
+  /// 两只手柄的空心圆圆心（全局坐标，起点在前）
+  @visibleForTesting
+  List<Offset> debugHandleCentersGlobal() {
+    final selection = _selection.value;
+    final root = _contentStackKey.currentContext?.findRenderObject();
+    if (selection == null || root is! RenderBox) return const <Offset>[];
+    final geometry = _computeSelectionGeometry(selection);
+    if (geometry == null) return const <Offset>[];
+    return [
+      root.localToGlobal(geometry.start.circleCenter),
+      root.localToGlobal(geometry.end.circleCenter),
+    ];
+  }
 
   @override
   void didUpdateWidget(covariant ReaderTextContent oldWidget) {
@@ -477,29 +529,62 @@ class ReaderTextContentState extends State<ReaderTextContent> {
 
   @override
   void dispose() {
+    _toolbar?.dismiss();
+    _toolbar = null;
     _selection.dispose();
+    _handleDrag.dispose();
     super.dispose();
   }
 
   void _setSelection(ReaderTextSelection? next) {
-    if (next == null) {
-      if (_selection.value != null) {
-        _selection.value = null;
-      }
-      _selectionText = null;
-      return;
-    }
+    if (_selection.value == next) return;
     _selection.value = next;
-    _selectionText = readerSelectionText(pageInfo, next);
+    _scheduleHandleSync();
   }
 
   void _clearSelection() {
     _longPressOrigin = null;
+    _longPressOnHandle = false;
+    _handleDrag.value = null;
+    _dismissToolbar();
     _setSelection(null);
+  }
+
+  void _dismissToolbar() {
+    final handle = _toolbar;
+    _toolbar = null;
+    handle?.dismiss();
+  }
+
+  /// 选区变化后一帧同步手柄热区几何
+  ///
+  /// 手柄绘制本身在 paint 时按真实 `RenderParagraph` 现算；只有热区需要
+  /// 参与布局（`Positioned`），因此在选区稳定后同步即可。拖拽期间手势已
+  /// 被捕获，热区无需跟随，跳过 rebuild。
+  void _scheduleHandleSync() {
+    if (_handleSyncScheduled) return;
+    _handleSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _handleSyncScheduled = false;
+      if (!mounted) return;
+      if (_handleDrag.value != null) return;
+      final selection = _selection.value;
+      final next = (selection == null || selection.isCollapsed)
+          ? null
+          : _computeSelectionGeometry(selection);
+      if (next == null && _handleGeometry == null) return;
+      setState(() => _handleGeometry = next);
+    });
   }
 
   /// 长按起选：定位到按压点所在行/字符，按词边界扩成整词
   void _startSelectionAt(Offset globalPosition) {
+    // 按在手柄热区上时交给手柄拖拽，不重新起选
+    _longPressOnHandle = _isInHandleHitRegion(globalPosition);
+    if (_longPressOnHandle) {
+      _longPressOrigin = null;
+      return;
+    }
     _longPressOrigin = globalPosition;
     final hit = _hitTestPage(globalPosition, requireLineHeight: true);
     if (hit == null) {
@@ -509,10 +594,23 @@ class ReaderTextContentState extends State<ReaderTextContent> {
     _setSelection(readerSelectionForWordAt(hit.handle.map, hit.localOffset));
   }
 
+  /// 长按被取消（他人赢得手势竞技场）
+  ///
+  /// 按在手柄上时（手柄拖拽赢得竞技场会把长按判负）不得清选区，否则
+  /// 手柄刚起手选区就消失。
+  void _cancelLongPress() {
+    if (_longPressOnHandle) {
+      _longPressOnHandle = false;
+      return;
+    }
+    _clearSelection();
+  }
+
   /// 长按拖动：超过 kTouchSlop 后按字符级扩展端点
   void _extendSelectionTo(Offset globalPosition) {
     final origin = _longPressOrigin;
-    if (origin != null && (globalPosition - origin).distance < kTouchSlop) {
+    if (origin == null) return;
+    if ((globalPosition - origin).distance < kTouchSlop) {
       return;
     }
     final current = _selection.value;
@@ -522,12 +620,225 @@ class ReaderTextContentState extends State<ReaderTextContent> {
     final map = hit.handle.map;
     if (!map.isSelectable) return;
     var local = hit.localOffset.clamp(0, map.text.length - 1);
+    // 吸附到字形簇边界（代理对/组合附加符号不拆分）
+    local = readerAlignToClusterStart(map.text, local);
     final first = map.firstSelectableLocal;
     if (local < first) local = first;
     if (local >= map.text.length) return;
     final chapter = map.localToChapter(local);
     if (chapter == current.focus) return;
     _setSelection(current.copyWith(focus: chapter));
+  }
+
+  // ===== 手柄拖拽（步骤 3） =====
+
+  void _beginHandleDrag(_HandleSide side, Offset globalPosition) {
+    final selection = _selection.value;
+    final geometry = _handleGeometry;
+    final root = _contentStackKey.currentContext?.findRenderObject();
+    if (selection == null || geometry == null || root is! RenderBox) return;
+    final line = side == _HandleSide.start ? geometry.start : geometry.end;
+    // 起点手柄控制文档顺序靠前的端点（内部仍按 anchor/focus 语义换名）
+    final endpointIsAnchor = side == _HandleSide.start
+        ? selection.isForward
+        : !selection.isForward;
+    _handleDrag.value = _HandleDragState(
+      side: side,
+      endpointIsAnchor: endpointIsAnchor,
+      pointer: root.globalToLocal(globalPosition),
+      grabOffset: root.globalToLocal(globalPosition) - line.circleCenter,
+    );
+    // 抓手柄即收起浮条（参考 dismissSelectionMenu）
+    _dismissToolbar();
+    // DragStartBehavior.start 下 onPanStart 的位置已在阈值处，直接落点
+    // （否则起手这一下不会更新端点，要等下一次 move）
+    _applyHandleDrag(globalPosition, endpointIsAnchor);
+  }
+
+  void _updateHandleDrag(Offset globalPosition) {
+    final drag = _handleDrag.value;
+    if (drag == null) return;
+    final root = _contentStackKey.currentContext?.findRenderObject();
+    if (root is! RenderBox) return;
+    _handleDrag.value = drag.copyWithPointer(root.globalToLocal(globalPosition));
+    _applyHandleDrag(globalPosition, drag.endpointIsAnchor);
+  }
+
+  /// 手柄拖到新位置：反查字符偏移并更新对应端点（吸附字形簇边界）
+  void _applyHandleDrag(Offset globalPosition, bool endpointIsAnchor) {
+    final current = _selection.value;
+    if (current == null) return;
+    final hit = _hitTestPage(globalPosition);
+    if (hit == null) return;
+    final map = hit.handle.map;
+    if (!map.isSelectable) return;
+    var local = hit.localOffset.clamp(0, map.text.length - 1);
+    local = readerAlignToClusterStart(map.text, local);
+    final first = map.firstSelectableLocal;
+    if (local < first) local = first;
+    if (local >= map.text.length) return;
+    final chapter = map.localToChapter(local);
+    final next = endpointIsAnchor
+        ? current.withAnchor(chapter)
+        : current.withFocus(chapter);
+    if (next == current) return;
+    _setSelection(next);
+    _maybeHandleHaptic();
+  }
+
+  void _endHandleDrag() {
+    _handleDrag.value = null;
+    _scheduleHandleSync();
+    // 松手后按新选区重新弹出浮条（参考 ReaderCanvasSurface.kt:1380-1388）
+    _showSelectionToolbar();
+  }
+
+  void _cancelHandleDrag() {
+    _handleDrag.value = null;
+    _scheduleHandleSync();
+  }
+
+  /// 手柄拖动振动（selectVibrator 开启时节流 60ms）
+  void _maybeHandleHaptic() {
+    final now = DateTime.now();
+    if (now.difference(_lastHandleHapticAt).inMilliseconds < 60) return;
+    bool enabled;
+    try {
+      // 叶子组件不强制要求 ProviderScope（部分渲染测试直接挂载）
+      enabled =
+          ProviderScope.containerOf(context, listen: false)
+              .read(readerAdvConfigProvider)
+              ?.selectVibrator ??
+          false;
+    } catch (_) {
+      enabled = false;
+    }
+    if (!enabled) return;
+    _lastHandleHapticAt = now;
+    HapticFeedback.selectionClick();
+  }
+
+  // ===== 浮条（非模态） =====
+
+  /// 按当前选区弹出浮条：动作作用于选区文本，锚定选区矩形
+  void _showSelectionToolbar() {
+    final selection = _selection.value;
+    if (selection == null || selection.isCollapsed) return;
+    final selectedText = readerSelectionText(pageInfo, selection);
+    if (selectedText.trim().isEmpty) return;
+    final overlayContext = _contentStackKey.currentContext;
+    if (overlayContext == null || !overlayContext.mounted) return;
+    final geometry = _computeSelectionGeometry(selection);
+    final root = _contentStackKey.currentContext?.findRenderObject();
+    Rect? bounds;
+    Offset anchor;
+    if (geometry != null && root is RenderBox) {
+      bounds = Rect.fromPoints(
+        root.localToGlobal(geometry.bounds.topLeft),
+        root.localToGlobal(geometry.bounds.bottomRight),
+      );
+      anchor = bounds.center;
+    } else {
+      anchor = _longPressOrigin ?? Offset.zero;
+    }
+    final paragraph = _paragraphAt(selection.start);
+    final paragraphText = paragraph == null
+        ? null
+        : _paragraphPlainText(paragraph);
+    final localStart = (paragraph == null || paragraphText == null)
+        ? null
+        : _localIndexInParagraph(
+            paragraph,
+            paragraphText,
+            selection,
+            selectedText,
+          );
+    _dismissToolbar();
+    _toolbar = ReaderSelectionToolbar.show(
+      overlayContext,
+      anchor: anchor,
+      // 兼容字段：整段文本（"更多"面板的段落上下文/选区文本缺失时回退）
+      text: paragraphText ?? selectedText,
+      chapterPos: paragraph?.startIndex ?? selection.start,
+      chapterIndex: chapterIndex,
+      chapterTitle: chapterTitle,
+      selectedText: selectedText,
+      selectionStartChapterPos: selection.start,
+      selectionEndChapterPos: selection.endExclusive,
+      paragraphText: paragraphText,
+      paragraphChapterPos: paragraph?.startIndex,
+      selectionStartInParagraph: localStart,
+      selectionBounds: bounds,
+    );
+  }
+
+  /// 选区起点所在段落
+  ParagraphInfo? _paragraphAt(int chapterOffset) {
+    for (final para in pageInfo.paragraphs) {
+      if (chapterOffset >= para.startIndex && chapterOffset <= para.endIndex) {
+        return para;
+      }
+    }
+    for (final para in pageInfo.paragraphs) {
+      if (_paragraphPlainText(para).trim().isNotEmpty) return para;
+    }
+    return null;
+  }
+
+  /// 段落渲染文本（与长按面板同口径：行拼接，剔除行内图片占位符）
+  String _paragraphPlainText(ParagraphInfo para) {
+    final buffer = StringBuffer();
+    for (final line in para.lines) {
+      buffer.write(
+        line.words.join('').replaceAll(readerImagePlaceholderChar, ''),
+      );
+    }
+    return buffer.toString();
+  }
+
+  /// 选区起点在段落渲染文本中的下标（"更多"面板初值）
+  ///
+  /// 含行内图片/逐字符映射的段落映射非线性，返回 null 让面板回退整段。
+  int? _localIndexInParagraph(
+    ParagraphInfo para,
+    String paragraphText,
+    ReaderTextSelection selection,
+    String selectedText,
+  ) {
+    for (final line in para.lines) {
+      if (line.inlineImages.isNotEmpty || line.chapterOffsets != null) {
+        return null;
+      }
+    }
+    if (selection.start < para.startIndex) return null;
+    if (selection.endExclusive > para.endIndex) return null;
+    final indent = paragraphText.length - paragraphText.trimLeft().length;
+    final local = indent + (selection.start - para.startIndex);
+    if (local < 0) return null;
+    if (local + selectedText.length > paragraphText.length) return null;
+    if (paragraphText.substring(local, local + selectedText.length) !=
+        selectedText) {
+      return null;
+    }
+    return local;
+  }
+
+  /// 根层指针按下：非手柄位置清选区并收起浮条（参考 tap 空白清选区）
+  void _handleRootPointerDown(PointerDownEvent event) {
+    if (_isInHandleHitRegion(event.position)) return;
+    if (_selection.value == null && _toolbar == null) return;
+    _clearSelection();
+  }
+
+  /// 全局坐标是否落在手柄热区内（与 `_HandleLine.hitRect` 同口径）
+  bool _isInHandleHitRegion(Offset globalPosition) {
+    final geometry = _handleGeometry;
+    if (geometry == null) return false;
+    final root = _contentStackKey.currentContext?.findRenderObject();
+    if (root is! RenderBox || !root.hasSize) return false;
+    final local = root.globalToLocal(globalPosition);
+    return geometry.start.hitRect.contains(local) ||
+        geometry.end.hitRect.contains(local);
   }
 
   /// 按全局坐标找最近行，并换算行内字符下标
@@ -601,6 +912,59 @@ class ReaderTextContentState extends State<ReaderTextContent> {
       }
     }
     return rects;
+  }
+
+  /// 选区两端手柄几何 + 选区整体矩形（根 Stack 局部坐标）
+  ///
+  /// 起点手柄 x = 首个相交行首个 box 的 left，终点手柄 x = 末个相交行末个
+  /// box 的 right；竖线上下端取该行 `RenderParagraph` 的实际行框（与参考
+  /// `ReaderCanvasSurface.kt:1783-1830` 的 pin 手柄同语义）。
+  _SelectionGeometry? _computeSelectionGeometry(
+    ReaderTextSelection selection,
+  ) {
+    final root = _contentStackKey.currentContext?.findRenderObject();
+    if (root is! RenderBox || !root.hasSize) return null;
+    _HandleLine? start;
+    _HandleLine? end;
+    Rect? bounds;
+    for (final handle in _lineHandles) {
+      final map = handle.map;
+      final range = map.localRangeFor(selection.start, selection.endExclusive);
+      if (range == null) continue;
+      final paragraph = handle.paragraph;
+      if (paragraph == null || !paragraph.hasSize) continue;
+      final lineTop = paragraph.localToGlobal(
+        Offset.zero,
+        ancestor: root,
+      ).dy;
+      final lineBottom = lineTop + paragraph.size.height;
+      final boxes = paragraph.getBoxesForSelection(
+        TextSelection(baseOffset: range.$1, extentOffset: range.$2),
+        boxHeightStyle: ui.BoxHeightStyle.includeLineSpacingMiddle,
+      );
+      for (final box in boxes) {
+        final boxRect = box.toRect();
+        if (boxRect.isEmpty) continue;
+        final topLeft = paragraph.localToGlobal(
+          boxRect.topLeft,
+          ancestor: root,
+        );
+        final bottomRight = paragraph.localToGlobal(
+          boxRect.bottomRight,
+          ancestor: root,
+        );
+        final rect = Rect.fromPoints(topLeft, bottomRight);
+        start ??= _HandleLine(
+          x: rect.left,
+          top: lineTop,
+          bottom: lineBottom,
+        );
+        end = _HandleLine(x: rect.right, top: lineTop, bottom: lineBottom);
+        bounds = bounds == null ? rect : bounds.expandToInclude(rect);
+      }
+    }
+    if (start == null || end == null || bounds == null) return null;
+    return _SelectionGeometry(start: start, end: end, bounds: bounds);
   }
 
   @override
@@ -822,23 +1186,15 @@ class ReaderTextContentState extends State<ReaderTextContent> {
               : paragraphBody;
           if (selectText && paraText.trim().isNotEmpty) {
             paragraphContent = GestureDetector(
-              onLongPressStart: (details) {
-                // [R49 阶段A] 先按词边界起选（灰块），再走既有浮条路径：
-                // 浮条本轮保持模态、文本仍传整段，手柄/非模态化留给后续
-                // 步骤，保证本阶段可独立回归 — full-stack-engineer
-                _startSelectionAt(details.globalPosition);
-                ReaderSelectionToolbar.show(
-                  context,
-                  anchor: details.globalPosition,
-                  text: paraText,
-                  chapterPos: para.startIndex,
-                  chapterIndex: chapterIndex,
-                  chapterTitle: chapterTitle,
-                );
-              },
+              // [R49 阶段B] 长按起选（灰块 + 2 只手柄），释放后按选区浮出
+              // 非模态浮条（动作作用于选区文本）；手柄拖拽由叠加层接管 —
+              // full-stack-engineer
+              onLongPressStart: (details) =>
+                  _startSelectionAt(details.globalPosition),
               onLongPressMoveUpdate: (details) =>
                   _extendSelectionTo(details.globalPosition),
-              onLongPressCancel: _clearSelection,
+              onLongPressEnd: (_) => _showSelectionToolbar(),
+              onLongPressCancel: _cancelLongPress,
               child: paragraphContent,
             );
           }
@@ -847,37 +1203,96 @@ class ReaderTextContentState extends State<ReaderTextContent> {
 
         _lineHandles = handles;
         // [R49] 根 Stack 用 passthrough 把父约束原样传给 Column：布局尺寸
-        // 与改造前逐像素一致；灰块是 Positioned.fill + IgnorePointer 的
-        // 纯叠加绘制层（在文字下方），不参与命中与布局。
-        return Stack(
-          key: _contentStackKey,
-          fit: StackFit.passthrough,
-          children: [
-            Positioned.fill(
-              child: IgnorePointer(
-                child: CustomPaint(
-                  key: const ValueKey('reader-selection-highlight'),
-                  painter: ReaderSelectionHighlightPainter(
-                    repaint: _selection,
-                    color: selectionColor,
-                    rectsBuilder: () {
-                      final selection = _selection.value;
-                      if (selection == null || selection.isCollapsed) {
-                        return const <Rect>[];
-                      }
-                      return _computeHighlightRects(selection);
-                    },
+        // 与改造前逐像素一致；灰块与手柄都是 Positioned.fill + IgnorePointer
+        // 的纯叠加绘制层，不参与布局；手柄热区是两个独立的小 Positioned，
+        // 覆盖不到整页，因此不影响正文点击。
+        return Listener(
+          // 空白处按下即清选区（参考 tap 空白）：translucent 让指针继续
+          // 传递，不抢阅读器点击分区/长按。
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: _handleRootPointerDown,
+          child: Stack(
+            key: _contentStackKey,
+            fit: StackFit.passthrough,
+            children: [
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: CustomPaint(
+                    key: const ValueKey('reader-selection-highlight'),
+                    painter: ReaderSelectionHighlightPainter(
+                      repaint: _selection,
+                      color: selectionColor,
+                      rectsBuilder: () {
+                        final selection = _selection.value;
+                        if (selection == null || selection.isCollapsed) {
+                          return const <Rect>[];
+                        }
+                        return _computeHighlightRects(selection);
+                      },
+                    ),
                   ),
                 ),
               ),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: widgets,
-            ),
-          ],
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: widgets,
+              ),
+              if (selectText) ..._buildSelectionHandleLayers(),
+            ],
+          ),
         );
       },
+    );
+  }
+
+  /// [R49] 手柄绘制层 + 两个 28dp 胶囊热区
+  ///
+  /// 绘制层在文字之上（参考版 pin 手柄压在正文上）；热区只在选区激活时
+  /// 挂载，尺寸跟随手柄几何，不改动任何正文尺寸。
+  List<Widget> _buildSelectionHandleLayers() {
+    final geometry = _handleGeometry;
+    return [
+      Positioned.fill(
+        child: IgnorePointer(
+          child: CustomPaint(
+            key: const ValueKey('reader-selection-handles'),
+            painter: _ReaderSelectionHandlesPainter(
+              repaint: Listenable.merge([_selection, _handleDrag]),
+              color: Theme.of(context).colorScheme.primary,
+              geometryBuilder: () {
+                final selection = _selection.value;
+                if (selection == null || selection.isCollapsed) return null;
+                return _computeSelectionGeometry(selection);
+              },
+              dragBuilder: () => _handleDrag.value,
+            ),
+          ),
+        ),
+      ),
+      if (geometry != null) ...[
+        _buildHandleHitBox(_HandleSide.start, geometry.start),
+        _buildHandleHitBox(_HandleSide.end, geometry.end),
+      ],
+    ];
+  }
+
+  Widget _buildHandleHitBox(_HandleSide side, _HandleLine line) {
+    final rect = line.hitRect;
+    return Positioned(
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+      child: GestureDetector(
+        key: ValueKey('reader-selection-handle-${side.name}'),
+        behavior: HitTestBehavior.translucent,
+        onPanStart: (details) =>
+            _beginHandleDrag(side, details.globalPosition),
+        onPanUpdate: (details) => _updateHandleDrag(details.globalPosition),
+        onPanEnd: (_) => _endHandleDrag(),
+        onPanCancel: _cancelHandleDrag,
+        child: const SizedBox.expand(),
+      ),
     );
   }
 
@@ -1069,6 +1484,142 @@ class ReaderSelectionHighlightPainter extends CustomPainter {
   /// 测试用：当前应绘制的灰块矩形
   @visibleForTesting
   List<Rect> debugRects() => rectsBuilder();
+}
+
+/// [R49] 手柄侧别（起点 pin / 终点 pin）
+enum _HandleSide { start, end }
+
+/// [R49] 一只 pin 手柄的竖线几何（根 Stack 局部坐标）
+@immutable
+class _HandleLine {
+  const _HandleLine({
+    required this.x,
+    required this.top,
+    required this.bottom,
+  });
+
+  /// 竖线 x（起点 = 首行首个 box 左端；终点 = 末行末个 box 右端）
+  final double x;
+
+  /// 竖线上端（行框顶）
+  final double top;
+
+  /// 竖线下端（行框底）
+  final double bottom;
+
+  /// 空心圆圆心（挂在行底下方一个半径处，与参考版一致）
+  Offset get circleCenter =>
+      Offset(x, bottom + kReaderSelectionHandleRadius);
+
+  /// 28dp 胶囊热区外接矩形（竖线 + 圆整体可抓）
+  Rect get hitRect => Rect.fromLTRB(
+    x - kReaderSelectionHandleHitRadius,
+    top - kReaderSelectionHandleHitRadius,
+    x + kReaderSelectionHandleHitRadius,
+    bottom + kReaderSelectionHandleRadius + kReaderSelectionHandleHitRadius,
+  );
+}
+
+/// [R49] 选区两端手柄 + 选区整体矩形（浮条锚定用）
+@immutable
+class _SelectionGeometry {
+  const _SelectionGeometry({
+    required this.start,
+    required this.end,
+    required this.bounds,
+  });
+
+  final _HandleLine start;
+  final _HandleLine end;
+
+  /// 所有相交行 box 的并集（根 Stack 局部坐标）
+  final Rect bounds;
+}
+
+/// [R49] 手柄拖拽状态
+@immutable
+class _HandleDragState {
+  const _HandleDragState({
+    required this.side,
+    required this.endpointIsAnchor,
+    required this.pointer,
+    required this.grabOffset,
+  });
+
+  final _HandleSide side;
+
+  /// 被拖端点是否为选区 anchor（起点手柄控制文档顺序靠前的端点）
+  final bool endpointIsAnchor;
+
+  /// 当前指针（根 Stack 局部坐标，用于手柄跟随手指绘制）
+  final Offset pointer;
+
+  /// 按下时「指针 - 逻辑圆心」的偏移（局部坐标）
+  final Offset grabOffset;
+
+  _HandleDragState copyWithPointer(Offset value) => _HandleDragState(
+    side: side,
+    endpointIsAnchor: endpointIsAnchor,
+    pointer: value,
+    grabOffset: grabOffset,
+  );
+}
+
+/// [R49] 选区 pin 手柄绘制（2dp 竖线 + 行底 7dp 空心圆）
+///
+/// 对齐参考版 `ReaderCanvasSurface.kt:1783-1830`：竖线从行框顶画到行框底，
+/// 空心圆圆心挂在 `行底 + 半径`；拖拽中的手柄按手指位移整体平移（竖线与
+/// 圆是同一只手柄）。纯叠加绘制，不参与布局、不改变任何正文尺寸。
+class _ReaderSelectionHandlesPainter extends CustomPainter {
+  _ReaderSelectionHandlesPainter({
+    required Listenable repaint,
+    required this.color,
+    required this.geometryBuilder,
+    required this.dragBuilder,
+  }) : super(repaint: repaint);
+
+  final Color color;
+  final _SelectionGeometry? Function() geometryBuilder;
+  final _HandleDragState? Function() dragBuilder;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final geometry = geometryBuilder();
+    if (geometry == null) return;
+    final drag = dragBuilder();
+    final linePaint = Paint()
+      ..color = color
+      ..strokeWidth = kReaderSelectionHandleStrokeWidth
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    final fillPaint = Paint()..color = Colors.white;
+    final circlePaint = Paint()
+      ..color = color
+      ..strokeWidth = kReaderSelectionHandleStrokeWidth
+      ..style = PaintingStyle.stroke;
+    for (final side in _HandleSide.values) {
+      final line = side == _HandleSide.start ? geometry.start : geometry.end;
+      var delta = Offset.zero;
+      if (drag != null && drag.side == side) {
+        // 与参考一致：按「按下时手指相对圆心的偏移」保持手柄贴在手指上
+        delta = (drag.pointer - drag.grabOffset) - line.circleCenter;
+      }
+      final x = line.x + delta.dx;
+      final top = line.top + delta.dy;
+      final bottom = line.bottom + delta.dy;
+      canvas.drawLine(Offset(x, top), Offset(x, bottom), linePaint);
+      final center = Offset(x, bottom + kReaderSelectionHandleRadius);
+      canvas.drawCircle(center, kReaderSelectionHandleRadius, fillPaint);
+      canvas.drawCircle(center, kReaderSelectionHandleRadius, circlePaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ReaderSelectionHandlesPainter oldDelegate) {
+    return oldDelegate.color != color ||
+        oldDelegate.geometryBuilder != geometryBuilder ||
+        oldDelegate.dragBuilder != dragBuilder;
+  }
 }
 
 /// 滚动模式下的段落渲染（未分页时使用，应用配置的段落间距）

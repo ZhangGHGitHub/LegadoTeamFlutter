@@ -22,6 +22,14 @@ import 'package:flutter/foundation.dart';
 import '../../utils/reader_inline_image.dart';
 import '../paragraph_layout_engine.dart';
 
+/// [R49] 选区手柄几何（对齐参考版 `ReaderCanvasSurface.kt:181-184`）
+///
+/// - 竖线宽 2dp、行底空心圆半径 7dp、圆与竖线视作同一只 pin 手柄；
+/// - 热区半径 28dp（胶囊形：竖线 + 圆整体可抓）。
+const double kReaderSelectionHandleRadius = 7.0;
+const double kReaderSelectionHandleStrokeWidth = 2.0;
+const double kReaderSelectionHandleHitRadius = 28.0;
+
 /// 正文选区（章节 UTF-16 偏移，端点含端）
 @immutable
 class ReaderTextSelection {
@@ -305,6 +313,16 @@ String readerSelectionText(PageInfo page, ReaderTextSelection selection) {
     out.write(paraBuffer.toString());
   }
   return out.toString();
+}
+
+/// 把行内下标对齐到字形簇起点（代理对/组合附加符号不拆分）
+///
+/// 手柄拖拽时 `RenderParagraph.getPositionForOffset` 偶尔会落进代理对中间，
+/// 或落在组合附加符号上；这里统一回退到基字符，保证选区端点始终是合法
+/// 字形簇边界（与参考版按 cluster 取端点同语义）。
+int readerAlignToClusterStart(String text, int offset) {
+  if (text.isEmpty) return 0;
+  return _alignToClusterStart(text, offset.clamp(0, text.length - 1));
 }
 
 // ---------------------------------------------------------------------------
