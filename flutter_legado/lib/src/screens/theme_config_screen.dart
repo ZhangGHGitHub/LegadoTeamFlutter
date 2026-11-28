@@ -732,8 +732,12 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
               child: ListView(
                 padding: const EdgeInsets.only(bottom: 32),
                 children: [
-                  // === [2.0.269 用户裁决] 外观预览卡已移除（C6 批 b03c2ba444 低优
-                  // 增强建议产物，无独立用户授权记录；与配色轮同类，严格红线） ===
+                  // === [R50 | 2026-11-28 用户裁决] 恢复外观预览（参考版 3.26.19
+                  // 标题「外观」正下方的手机示意图：128×256dp、纯展示、无文案）。
+                  // 2.0.269 曾按「外观预览」文案 grep 参考版二进制资源零命中而误删；
+                  // 实机重采证实该控件 text/content-desc 本为空（按文案搜必然零命中），
+                  // 证据见 docs/R50_APPEARANCE_PREVIEW_VERIFY_20261128.md ===
+                  const _ThemePreviewCard(),
                   // === [2.0.268 用户裁决] 配色轮卡已移除（B3-C1 A2 系误判证据
                   // 产物，kazusa 源码无此能力，严格红线）；长按预设主色调选择
                   // 器本体（_showColorPicker，色卡行在用）保留不动 ===
@@ -2851,6 +2855,158 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
               child: Text(AppStrings.confirm),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 外观页顶部主题预览（R50 恢复，对齐参考版 3.26.19 实测形态）。
+///
+/// 参考版标题「外观」正下方是一台居中的手机示意图（dump bounds
+/// 384×768px @480dpi = 128×256dp），该控件 `clickable=false`、
+/// `text=''`、`content-desc=''`：纯展示且**不带任何文案**。2.0.269 曾因
+/// 按「外观预览」文案 grep 参考版二进制资源零命中而误删——控件本来就没有
+/// 文案，零命中不等于功能不存在。证据见
+/// docs/R50_APPEARANCE_PREVIEW_VERIFY_20261128.md。
+///
+/// 几何按参考截图逐像素换算（1dp = 3px @480dpi）：
+/// - 机身 128×256dp、圆角 16dp、1.5dp primary 描边；
+/// - 顶部胶囊开孔 48×16dp，左/上内缩 12dp（实测参考版非水平居中：
+///   开孔左边距 37px≈12dp、右边距 206px≈69dp）；
+/// - 封面块 56×80dp，左 12dp / 上 36dp，primaryContainer 底 + 右上角
+///   16×12dp 的 secondary 角标（内缩 4dp）；
+/// - 底部条 40dp 高，surfaceContainerHigh 底 + 居中 20dp primary 圆点。
+///
+/// 颜色全部取自当前 [ColorScheme]，明暗主题/调色板切换后本页重建即联动。
+class _ThemePreviewCard extends StatelessWidget {
+  /// 预览定位 Key（参考版无文案，测试只能按 Key 定位）
+  static const Key previewKey = Key('theme-preview-card');
+
+  // 机身
+  static const double _width = 128;
+  static const double _height = 256;
+  static const double _cornerRadius = 16;
+  static const double _borderWidth = 1.5;
+
+  // 顶部胶囊开孔
+  static const double _notchLeft = 12;
+  static const double _notchTop = 12;
+  static const double _notchWidth = 48;
+  static const double _notchHeight = 16;
+
+  // 封面块与右上角角标
+  static const double _coverLeft = 12;
+  static const double _coverTop = 36;
+  static const double _coverWidth = 56;
+  static const double _coverHeight = 80;
+  static const double _coverRadius = 8;
+  static const double _badgeWidth = 16;
+  static const double _badgeHeight = 12;
+  static const double _badgeInset = 4;
+
+  // 底部条与圆点
+  static const double _bottomBarHeight = 40;
+  static const double _dotDiameter = 20;
+
+  const _ThemePreviewCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    // Container 的 border 会把 child 内缩 borderWidth；下列坐标均为机身
+    // 外框坐标，统一减去描边宽度换算到内容区坐标。
+    const double inset = _borderWidth;
+    return Padding(
+      // 参考版：标题底 → 预览顶 70px≈23dp；下方「主题模式」标题自带
+      // 24dp 上间距（IosSectionHeader 默认 padding），合成约 24dp。
+      padding: const EdgeInsets.only(top: 24),
+      child: Center(
+        child: SizedBox(
+          key: previewKey,
+          width: _width,
+          height: _height,
+          child: Container(
+            decoration: BoxDecoration(
+              color: colorScheme.surface,
+              borderRadius: BorderRadius.circular(_cornerRadius),
+              border: Border.all(
+                color: colorScheme.primary,
+                width: _borderWidth,
+              ),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(_cornerRadius - _borderWidth),
+              child: Stack(
+                children: [
+                  // 顶部胶囊开孔（深灰，取 onSurfaceVariant）
+                  Positioned(
+                    left: _notchLeft - inset,
+                    top: _notchTop - inset,
+                    width: _notchWidth,
+                    height: _notchHeight,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: colorScheme.onSurfaceVariant,
+                        borderRadius: BorderRadius.circular(_notchHeight / 2),
+                      ),
+                    ),
+                  ),
+                  // 封面块（primaryContainer）+ 右上角深色角标
+                  Positioned(
+                    left: _coverLeft - inset,
+                    top: _coverTop - inset,
+                    width: _coverWidth,
+                    height: _coverHeight,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(_coverRadius),
+                      ),
+                      child: Stack(
+                        children: [
+                          Positioned(
+                            right: _badgeInset,
+                            top: _badgeInset,
+                            width: _badgeWidth,
+                            height: _badgeHeight,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: colorScheme.secondary,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  // 底部浅色条（surfaceContainerHigh）+ 居中 primary 圆点
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: _bottomBarHeight,
+                    child: ColoredBox(
+                      color: colorScheme.surfaceContainerHigh,
+                      child: Center(
+                        child: SizedBox(
+                          width: _dotDiameter,
+                          height: _dotDiameter,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: colorScheme.primary,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

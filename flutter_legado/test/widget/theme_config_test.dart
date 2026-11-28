@@ -92,8 +92,11 @@ void main() {
     expect(find.text('主题模式'), findsOneWidget);
     expect(find.text('浅色'), findsOneWidget);
     expect(find.text('深色'), findsOneWidget);
-    // [2.0.268/2.0.269 用户裁决] 配色轮卡/外观预览卡已移除
+    // [2.0.268 用户裁决] 配色轮卡已移除
     expect(find.text('配色轮'), findsNothing);
+    // [R50 | 2026-11-28 用户裁决] 外观预览已恢复，但参考版该控件本来就不带
+    // 文案（dump 的 text/content-desc 均为空），故「外观预览」文字仍不存在；
+    // 预览本体按 Key 断言，见下方「外观预览（R50 恢复）」用例。
     expect(find.text('外观预览'), findsNothing);
 
     // 13 色卡（默认 def「默认」选中；[队列⑦a A2] 显示名对齐参考 zh 名）
@@ -189,6 +192,116 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('自定义主题 · 夜间'), findsOneWidget);
+  });
+
+  group('外观预览（R50 恢复，对齐参考版 3.26.19）', () {
+    const previewKey = Key('theme-preview-card');
+
+    // 收集预览内部所有带底色的 BoxDecoration / ColoredBox 颜色
+    Set<Color> previewColors(WidgetTester tester) {
+      final used = <Color>{};
+      for (final element
+          in find
+              .descendant(
+                of: find.byKey(previewKey),
+                matching: find.byType(DecoratedBox),
+              )
+              .evaluate()) {
+        final decoration = (element.widget as DecoratedBox).decoration;
+        if (decoration is BoxDecoration && decoration.color != null) {
+          used.add(decoration.color!);
+        }
+      }
+      for (final element
+          in find
+              .descendant(
+                of: find.byKey(previewKey),
+                matching: find.byType(ColoredBox),
+              )
+              .evaluate()) {
+        used.add((element.widget as ColoredBox).color);
+      }
+      return used;
+    }
+
+    testWidgets('页首渲染 128x256 手机示意图：无文字、不可点、颜色取自主题', (tester) async {
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      final preview = find.byKey(previewKey);
+      expect(preview, findsOneWidget);
+      expect(tester.getSize(preview), const Size(128, 256));
+
+      // 参考版该控件 text/content-desc 均为空且 clickable=false：
+      // 纯展示、无文字、无点击手势
+      expect(
+        find.descendant(of: preview, matching: find.byType(Text)),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: preview, matching: find.byType(InkWell)),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: preview, matching: find.byType(GestureDetector)),
+        findsNothing,
+      );
+
+      // 挂点在列表首项：位于「主题模式」分区标题之上
+      expect(
+        tester.getTopLeft(preview).dy,
+        lessThan(tester.getTopLeft(find.text('主题模式')).dy),
+      );
+
+      // 颜色全部来自当前 ColorScheme，且覆盖六个角色
+      final cs = Theme.of(tester.element(preview)).colorScheme;
+      final used = previewColors(tester);
+      expect(
+        used,
+        containsAll(<Color>[
+          cs.surface,
+          cs.primary,
+          cs.primaryContainer,
+          cs.onSurfaceVariant,
+          cs.secondary,
+          cs.surfaceContainerHigh,
+        ]),
+      );
+    });
+
+    testWidgets('深色主题下尺寸不变且取色仍全部来自主题', (tester) async {
+      final darkScheme = ColorScheme.fromSeed(
+        seedColor: const Color(0xFF415F91),
+        brightness: Brightness.dark,
+      );
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: ThemeData(colorScheme: darkScheme, useMaterial3: true),
+            home: const ThemeConfigScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final preview = find.byKey(previewKey);
+      expect(preview, findsOneWidget);
+      expect(tester.getSize(preview), const Size(128, 256));
+
+      final allowed = <Color>{
+        darkScheme.surface,
+        darkScheme.primary,
+        darkScheme.primaryContainer,
+        darkScheme.onSurfaceVariant,
+        darkScheme.secondary,
+        darkScheme.surfaceContainerHigh,
+      };
+      final used = previewColors(tester);
+      expect(used.difference(allowed), isEmpty);
+      expect(used, contains(darkScheme.primary));
+      expect(tester.takeException(), isNull);
+    });
   });
 
   testWidgets('内置主题网格点按切换调色板并更新 ThemeState', (tester) async {
