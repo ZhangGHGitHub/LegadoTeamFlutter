@@ -19,7 +19,23 @@ class AutoTask {
   final String cron; // cron 表达式
   final bool isEnabled;
   final String? lastRunAt;
+
+  /// 脚本返回文本（对齐上游 `lastResult`：成功时存 FFI `message`，失败为 null）
   final String? lastResult;
+
+  /// 错误文本（对齐上游 `lastError`：失败时存 FFI `message`，成功为 null）
+  final String? lastError;
+
+  /// 执行日志（对齐上游 `lastLog`：存 FFI `details`，形如
+  /// `[OK] Elapsed: 12ms\n- xxx`）
+  final String? lastLog;
+
+  /// 最近一次运行成功标记（UI 运行时字段，不持久化、不参与 [toJson]）
+  ///
+  /// 按上游语义 [lastResult] 只存脚本文本，成功且脚本无返回时为空；
+  /// 该标记用于 UI 在三字段皆空时仍能回退显示成功/失败文案。
+  /// 从 DB/JSON 载入的历史记录无法可靠推断，保持 null（显示 unknownLabel）。
+  final bool? lastSuccess;
 
   /// 可执行脚本 / 原始 action 载荷（与 [taskType] 展示字段分离）
   ///
@@ -35,6 +51,9 @@ class AutoTask {
     this.isEnabled = true,
     this.lastRunAt,
     this.lastResult,
+    this.lastError,
+    this.lastLog,
+    this.lastSuccess,
     this.script,
   });
 
@@ -50,6 +69,8 @@ class AutoTask {
           json['isEnabled'] as bool? ?? json['enable'] as bool? ?? true,
       lastRunAt: _parseLastRunAt(json['lastRunAt']),
       lastResult: json['lastResult'] as String?,
+      lastError: json['lastError'] as String?,
+      lastLog: json['lastLog'] as String?,
       script: _parseScript(json['script']),
     );
   }
@@ -121,6 +142,9 @@ class AutoTask {
     bool? isEnabled,
     String? lastRunAt,
     String? lastResult,
+    String? lastError,
+    String? lastLog,
+    bool? lastSuccess,
     String? script,
   }) {
     return AutoTask(
@@ -131,8 +155,63 @@ class AutoTask {
       isEnabled: isEnabled ?? this.isEnabled,
       lastRunAt: lastRunAt ?? this.lastRunAt,
       lastResult: lastResult ?? this.lastResult,
+      lastError: lastError ?? this.lastError,
+      lastLog: lastLog ?? this.lastLog,
+      lastSuccess: lastSuccess ?? this.lastSuccess,
       script: script ?? this.script,
     );
+  }
+
+  /// 写入一次运行结果（对齐上游 `AutoTask.updateRunState`）
+  ///
+  /// 与 [copyWith] 不同：这里 [result]/[error]/[log] 传 null 表示**清除**该
+  /// 字段（上游成功时 lastError 必须置 null、失败时 lastResult 置 null），
+  /// 因此不能复用 copyWith 的“null 即保持不变”语义。
+  AutoTask withRunResult({
+    required String runAt,
+    required bool success,
+    String? result,
+    String? error,
+    String? log,
+  }) {
+    return AutoTask(
+      id: id,
+      name: name,
+      taskType: taskType,
+      cron: cron,
+      isEnabled: isEnabled,
+      lastRunAt: runAt,
+      lastResult: result,
+      lastError: error,
+      lastLog: log,
+      lastSuccess: success,
+      script: script,
+    );
+  }
+
+  /// 上次运行结果展示文本（对齐上游 `AutoTaskActivity`：`lastLog ?: lastError
+  /// ?: lastResult`；三者皆空时按 [lastSuccess] 回退成功/失败文案）
+  String get runResultText {
+    String? nonEmpty(String? value) {
+      if (value == null) return null;
+      final trimmed = value.trim();
+      return trimmed.isEmpty ? null : trimmed;
+    }
+
+    final log = nonEmpty(lastLog);
+    if (log != null) return log;
+    final error = nonEmpty(lastError);
+    if (error != null) return error;
+    final result = nonEmpty(lastResult);
+    if (result != null) return result;
+    switch (lastSuccess) {
+      case true:
+        return AppStrings.autoTaskRunSuccess;
+      case false:
+        return AppStrings.autoTaskRunFailure;
+      case null:
+        return AppStrings.unknownLabel;
+    }
   }
 
   /// 任务类型显示名称

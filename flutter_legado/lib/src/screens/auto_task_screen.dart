@@ -351,9 +351,14 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
           ),
           if (task.lastRunAt != null) ...[
             const SizedBox(height: 2),
+            // [fix R48] 对齐上游 AutoTaskActivity：lastLog ?: lastError
+            // ?: lastResult（+ 成功/失败/未知兜底），不再只读本地化结果文案
             Text(
                 AppStrings.autoTaskLastRun(
-                    '${task.lastRunAt}', task.lastResult ?? AppStrings.unknownLabel),
+                    '${task.lastRunAt}', task.runResultText),
+                // 日志可能含换行（details），限两行避免列表行被撑高
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 // [LAYOUT_PLAN P3] 列表行字级走 M3 Type Scale
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant)),

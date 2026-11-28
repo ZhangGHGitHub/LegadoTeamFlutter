@@ -296,7 +296,7 @@ void main() {
   });
 
   group('AutoTaskNotifier runNow', () {
-    test('FFI 执行成功更新本地状态', () async {
+    test('FFI 执行成功：lastResult 存脚本返回文本，lastLog 存 details', () async {
       final mockApi = MockRustApi();
       when(() => mockApi.autoTaskListRules()).thenAnswer((_) async => [
             {'id': 't1', 'name': 'Task', 'taskType': 'backup', 'cron': ''},
@@ -304,14 +304,95 @@ void main() {
       when(() => mockApi.autoTaskExecuteWithId(
             protocolJson: any(named: 'protocolJson'),
             taskId: any(named: 'taskId'),
-          )).thenAnswer((_) async => {'success': true});
+          )).thenAnswer((_) async => {
+            'task_id': 't1',
+            'success': true,
+            'message': 'Backup completed: 0 sources',
+            'duration_ms': 12,
+            'details': '[OK] Elapsed: 12ms\n- Backup completed: 0 sources',
+          });
       final c = ffiContainer(mockApi);
       await readNotifier(c).loadTasks();
 
       await readNotifier(c).runNow('t1');
 
-      expect(readState(c).tasks.length, equals(1));
-      expect(readState(c).tasks.first.lastResult, equals('成功'));
+      final task = readState(c).tasks.first;
+      expect(task.lastResult, equals('Backup completed: 0 sources'));
+      expect(task.lastError, isNull);
+      expect(task.lastLog,
+          equals('[OK] Elapsed: 12ms\n- Backup completed: 0 sources'));
+      expect(task.lastSuccess, isTrue);
+      expect(task.lastRunAt, isNotNull);
+    });
+
+    test('FFI 返回失败（success=false）：lastError 存错误文本，lastResult 置空',
+        () async {
+      final mockApi = MockRustApi();
+      when(() => mockApi.autoTaskListRules()).thenAnswer((_) async => [
+            {'id': 't1', 'name': 'Task', 'taskType': 'refreshToc', 'cron': ''},
+          ]);
+      when(() => mockApi.autoTaskExecuteWithId(
+            protocolJson: any(named: 'protocolJson'),
+            taskId: any(named: 'taskId'),
+          )).thenAnswer((_) async => {
+            'task_id': 't1',
+            'success': false,
+            'message': 'refreshToc requires bookUrl parameter',
+            'duration_ms': 1,
+            'details':
+                '[FAIL] Elapsed: 1ms\n- refreshToc requires bookUrl parameter',
+          });
+      final c = ffiContainer(mockApi);
+      await readNotifier(c).loadTasks();
+
+      await readNotifier(c).runNow('t1');
+
+      final task = readState(c).tasks.first;
+      expect(task.lastResult, isNull);
+      expect(task.lastError, equals('refreshToc requires bookUrl parameter'));
+      expect(task.lastLog,
+          equals('[FAIL] Elapsed: 1ms\n- refreshToc requires bookUrl parameter'));
+      expect(task.lastSuccess, isFalse);
+      // 失败信息落到任务本体，不写全局 error
+      expect(readState(c).error, isNull);
+    });
+
+    test('成功后清除上次失败状态；空返回文本回退成功文案', () async {
+      final mockApi = MockRustApi();
+      when(() => mockApi.autoTaskListRules()).thenAnswer((_) async => [
+            {
+              'id': 't1',
+              'name': 'Task',
+              'taskType': 'backup',
+              'cron': '',
+              'lastResult': null,
+              'lastError': '上次错误',
+              'lastLog': '[FAIL] Elapsed: 1ms\n- 上次错误',
+            },
+          ]);
+      when(() => mockApi.autoTaskExecuteWithId(
+            protocolJson: any(named: 'protocolJson'),
+            taskId: any(named: 'taskId'),
+          )).thenAnswer((_) async => {
+            'task_id': 't1',
+            'success': true,
+            'message': '',
+            'duration_ms': 2,
+            'details': '',
+          });
+      final c = ffiContainer(mockApi);
+      await readNotifier(c).loadTasks();
+      expect(readState(c).tasks.first.lastError, equals('上次错误'));
+
+      await readNotifier(c).runNow('t1');
+
+      final task = readState(c).tasks.first;
+      expect(task.lastResult, isNull);
+      expect(task.lastError, isNull);
+      expect(task.lastLog, isNull);
+      expect(task.lastSuccess, isTrue);
+      // 三字段皆空时按 lastSuccess 回退（不把本地化文案存进 lastResult）
+      expect(task.runResultText, equals('成功'));
     });
 
     test('FFI 执行失败时错误可见', () async {

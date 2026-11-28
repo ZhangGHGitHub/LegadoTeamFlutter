@@ -292,5 +292,122 @@ void main() {
       );
       expect(task.taskTypeLabel, equals('刷新目录'));
     });
+
+    // ═══════════════════════════════════════════════════════════
+    // R48：运行结果字段（对齐上游 lastResult/lastError/lastLog）
+    // ═══════════════════════════════════════════════════════════
+
+    group('运行结果字段与展示回退链', () {
+      test('fromJson 解析 lastError / lastLog', () {
+        final task = AutoTask.fromJson({
+          'id': 'r48-1',
+          'name': '任务',
+          'comment': 'backup',
+          'cron': '',
+          'lastResult': '脚本返回文本',
+          'lastError': null,
+          'lastLog': '[OK] Elapsed: 5ms\n- 脚本返回文本',
+        });
+        expect(task.lastResult, equals('脚本返回文本'));
+        expect(task.lastError, isNull);
+        expect(task.lastLog, equals('[OK] Elapsed: 5ms\n- 脚本返回文本'));
+      });
+
+      test('runResultText 回退链：lastLog > lastError > lastResult', () {
+        const withLog = AutoTask(
+          id: '1',
+          name: 'x',
+          taskType: 'backup',
+          cron: '',
+          lastLog: '[FAIL] Elapsed: 1ms\n- 错误',
+          lastError: '错误',
+          lastResult: '返回值',
+        );
+        expect(withLog.runResultText,
+            equals('[FAIL] Elapsed: 1ms\n- 错误'));
+
+        const errorOnly = AutoTask(
+          id: '2',
+          name: 'x',
+          taskType: 'backup',
+          cron: '',
+          lastError: '错误',
+          lastResult: '返回值',
+        );
+        expect(errorOnly.runResultText, equals('错误'));
+
+        const resultOnly = AutoTask(
+          id: '3',
+          name: 'x',
+          taskType: 'backup',
+          cron: '',
+          lastResult: '返回值',
+        );
+        expect(resultOnly.runResultText, equals('返回值'));
+      });
+
+      test('runResultText 空串视为缺失', () {
+        const task = AutoTask(
+          id: '4',
+          name: 'x',
+          taskType: 'backup',
+          cron: '',
+          lastLog: '   ',
+          lastError: '',
+          lastResult: '返回值',
+        );
+        expect(task.runResultText, equals('返回值'));
+      });
+
+      test('runResultText 三字段皆空时按 lastSuccess 回退', () {
+        const success = AutoTask(
+          id: '5',
+          name: 'x',
+          taskType: 'backup',
+          cron: '',
+          lastSuccess: true,
+        );
+        expect(success.runResultText, equals('成功'));
+
+        const failed = AutoTask(
+          id: '6',
+          name: 'x',
+          taskType: 'backup',
+          cron: '',
+          lastSuccess: false,
+        );
+        expect(failed.runResultText, equals('失败'));
+
+        const unknown = AutoTask(
+          id: '7',
+          name: 'x',
+          taskType: 'backup',
+          cron: '',
+        );
+        expect(unknown.runResultText, equals('未知'));
+      });
+
+      test('withRunResult 支持清空上次结果（copyWith 的 null 表示保留）', () {
+        final failed = AutoTask.fromJson({
+          'id': 'r48-2',
+          'name': '任务',
+          'comment': 'backup',
+          'cron': '',
+          'lastError': '上次错误',
+          'lastLog': '[FAIL] 上次错误',
+          'lastSuccess': false,
+        });
+        final succeeded = failed.withRunResult(
+          runAt: '2026-01-01 00:00:00',
+          success: true,
+          result: '脚本返回文本',
+        );
+        expect(succeeded.lastRunAt, equals('2026-01-01 00:00:00'));
+        expect(succeeded.lastResult, equals('脚本返回文本'));
+        expect(succeeded.lastError, isNull);
+        expect(succeeded.lastLog, isNull);
+        expect(succeeded.lastSuccess, isTrue);
+      });
+    });
   });
 }

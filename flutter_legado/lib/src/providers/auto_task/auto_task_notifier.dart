@@ -204,6 +204,12 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
   }
 
   /// 立即运行任务（FFI autoTaskExecuteWithId）
+  ///
+  /// [fix R48] 结果记录对齐上游 `AutoTask.updateRunState`：
+  /// - 成功：`lastResult` = FFI `message`（脚本返回文本），`lastError` = null
+  /// - 失败：`lastResult` = null，`lastError` = FFI `message`（错误文本）
+  /// - 两者都写 `lastLog` = FFI `details`（执行日志）
+  /// 不再把本地化“成功/失败”文案写进 [AutoTask.lastResult]。
   Future<void> runNow(String id) async {
     final rustApi = _rustApi;
     if (rustApi == null) {
@@ -220,16 +226,19 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
         protocolJson: protocolJson,
         taskId: id,
       );
-      // FFI 执行成功，更新本地状态
+      // FFI 执行完成（success 可能为 false），按上游语义记录运行结果
       final success = result['success'] as bool? ?? false;
+      final message = (result['message']?.toString() ?? '').trim();
+      final details = (result['details']?.toString() ?? '').trim();
       state = state.copyWith(
         tasks: state.tasks.map((t) {
           if (t.id == id) {
-            return t.copyWith(
-              lastRunAt: _formatNow(),
-              lastResult: success
-                  ? AppStrings.autoTaskRunSuccess
-                  : AppStrings.autoTaskRunFailure,
+            return t.withRunResult(
+              runAt: _formatNow(),
+              success: success,
+              result: success && message.isNotEmpty ? message : null,
+              error: success || message.isEmpty ? null : message,
+              log: details.isEmpty ? null : details,
             );
           }
           return t;
