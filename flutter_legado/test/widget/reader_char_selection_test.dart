@@ -33,6 +33,7 @@ import 'package:flutter_legado/src/services/book_api.dart';
 import 'package:flutter_legado/src/services/mock_book_api.dart';
 import 'package:flutter_legado/src/widgets/paragraph_layout_engine.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_text_content.dart';
+import 'package:flutter_legado/src/widgets/reader/reader_text_selection.dart';
 import 'package:flutter_legado/src/widgets/reader/text_selection_panel.dart';
 
 const _chapterTitle = '第一章 选区测试';
@@ -85,6 +86,7 @@ Widget _host(
   bool selectText = true,
   double width = 320,
   double height = 240,
+  double fontSize = 16,
 }) {
   return ProviderScope(
     child: MaterialApp(
@@ -97,7 +99,7 @@ Widget _host(
             height: height,
             child: ReaderTextContent(
               pageInfo: pageInfo,
-              fontSize: 16,
+              fontSize: fontSize,
               lineHeight: 1.5,
               paragraphSpacing: 8,
               textColor: Colors.black,
@@ -710,5 +712,305 @@ void main() {
     expect(find.byType(ReaderSelectionToolbar), findsNothing);
     expect(state.debugToolbarVisible, isFalse);
     expect(_highlightPainter(tester).debugRects(), isEmpty);
+  });
+
+  // ===== [R49 回修 P0-1] 手柄拖拽必须按「逻辑圆心」映射，不得用原始手指坐标 =====
+
+  testWidgets('多行页从可见圆心起手：起手不跳端点，水平拖 1 字宽只走 1 字符', (tester) async {
+    // 字号 40 → 测试字体每字符 40dp（Ahem 1em），保证「1 字宽」大于
+    // kPanSlop(36dp)，一次 pan 位移恰好等于一个字符宽。
+    const line0 = 'ab cdefg';
+    const line1 = 'xy z';
+    final page = _page([
+      _paragraph(
+        [
+          _line(text: line0, chapterStart: 0, height: 60),
+          _line(text: line1, chapterStart: 8, height: 60),
+        ],
+        start: 0,
+        end: 12,
+      ),
+    ]);
+    await tester.pumpWidget(_host(page, fontSize: 40));
+    await tester.pumpAndSettle();
+
+    // 长按 'ab' → 选区 [0, 1]
+    await tester.longPressAt(
+      _globalPointAtChar(tester, line0, 0, centerOfChar: true),
+    );
+    await tester.pumpAndSettle();
+
+    final state = _state(tester);
+    expect(state.debugSelectionText, 'ab');
+    final before = state.debugSelection!;
+    expect(before.start, 0);
+    expect(before.endInclusive, 1);
+
+    final centers = state.debugHandleCentersGlobal();
+    expect(centers, hasLength(2));
+    final endCenter = centers[1];
+    final lineBottom = tester.getRect(find.text(line0)).bottom;
+    expect(
+      endCenter.dy,
+      moreOrLessEquals(lineBottom + kReaderSelectionHandleRadius, epsilon: 0.6),
+      reason: '圆心 = 行底 + 7dp（多行页中必然落在下一行矩形内部）',
+    );
+    expect(
+      endCenter.dy,
+      greaterThan(lineBottom),
+      reason: '前置条件：可见圆心在下一行矩形内，原始手指坐标会命中下一行',
+    );
+
+    final gesture = await tester.startGesture(endCenter);
+    await tester.pump();
+    expect(state.debugSelection, before, reason: '按下手柄不得改变端点（起手不落点）');
+
+    // 水平右移恰好 1 个字宽（40dp > kPanSlop 36dp）
+    await gesture.moveBy(const Offset(40, 0));
+    await tester.pump();
+
+    final after = state.debugSelection!;
+    expect(
+      after.endInclusive,
+      before.endExclusive + 1,
+      reason: '终点 pin 在末字右边界（caret = endExclusive），拖 1 字宽只前进 1 字符',
+    );
+    expect(
+      after.endInclusive,
+      lessThan(8),
+      reason: '不得跨到下一行（下一行章节偏移从 8 起）',
+    );
+    expect(after.start, before.start, reason: '起点不受终点拖动影响');
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('多行页从起点可见圆心起手：端点只在本行走，不跳到下一行', (tester) async {
+    const line0 = 'ab cdefg';
+    const line1 = 'xy z';
+    final page = _page([
+      _paragraph(
+        [
+          _line(text: line0, chapterStart: 0, height: 60),
+          _line(text: line1, chapterStart: 8, height: 60),
+        ],
+        start: 0,
+        end: 12,
+      ),
+    ]);
+    await tester.pumpWidget(_host(page, fontSize: 40));
+    await tester.pumpAndSettle();
+
+    // 长按 line1 的 'xy' 后向上拖到 line0 第 1 字符 → 跨行选区 [1, 8]
+    final gesture = await tester.startGesture(
+      _globalPointAtChar(tester, line1, 0, centerOfChar: true),
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump();
+    await gesture.moveTo(_globalPointAtChar(tester, line0, 1, centerOfChar: true));
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    final state = _state(tester);
+    final before = state.debugSelection!;
+    expect(before.start, 1);
+    expect(before.endInclusive, 8, reason: '前置条件：跨行选区');
+
+    // 起点 pin 的圆心 = line0 行底 + 7dp，落在 line1 矩形内
+    final startCenter = state.debugHandleCentersGlobal()[0];
+    expect(
+      startCenter.dy,
+      moreOrLessEquals(tester.getRect(find.text(line0)).bottom + 7, epsilon: 0.6),
+    );
+
+    final drag = await tester.startGesture(startCenter);
+    await tester.pump();
+    await drag.moveBy(const Offset(40, 0));
+    await tester.pump();
+
+    final after = state.debugSelection!;
+    expect(after.start, 2, reason: '起点在本行内前进 1 字符（不是跳到下一行）');
+    expect(after.endInclusive, 8, reason: '终点不受影响');
+
+    await drag.up();
+    await tester.pumpAndSettle();
+  });
+
+  // ===== [R49 回修 P1-1] 执行动作 / 进面板后必须清选区 =====
+
+  testWidgets('执行浮条动作后清选区：灰块/手柄/浮条一起复位', (tester) async {
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          final args = call.arguments as Map;
+          copied.add(args['text']! as String);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    const line = 'Hello world again';
+    final page = _page([_paragraph([_line(text: line, chapterStart: 0)])]);
+    await tester.pumpWidget(_host(page));
+    await tester.pumpAndSettle();
+
+    await tester.longPressAt(_globalPointAtChar(tester, line, 6));
+    await tester.pumpAndSettle();
+    final state = _state(tester);
+    expect(state.debugSelectionText, 'world');
+    expect(state.debugHandleCount, 2);
+
+    await tester.tap(
+      find.byKey(const ValueKey('selection-action-menu_copy')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(copied, ['world']);
+    expect(state.debugSelection, isNull, reason: '执行动作后选区必须清空');
+    expect(state.debugHandleCount, 0, reason: '手柄必须一起消失');
+    expect(startHandle, findsNothing);
+    expect(endHandle, findsNothing);
+    expect(
+      _highlightPainter(tester).debugRects(),
+      isEmpty,
+      reason: '灰块不得驻留（否则吞掉下一次点击）',
+    );
+    expect(find.byType(ReaderSelectionToolbar), findsNothing);
+  });
+
+  testWidgets('打开「更多」面板即清选区：关闭面板后不驻留灰块/手柄', (tester) async {
+    const line = 'Hello world again';
+    final page = _page([_paragraph([_line(text: line, chapterStart: 0)])]);
+    await tester.pumpWidget(_host(page));
+    await tester.pumpAndSettle();
+
+    await tester.longPressAt(_globalPointAtChar(tester, line, 6));
+    await tester.pumpAndSettle();
+    final state = _state(tester);
+    expect(state.debugSelectionText, 'world');
+
+    await tester.tap(find.byKey(const ValueKey('selection-action-menu_more')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(TextSelectionPanel), findsOneWidget);
+    expect(state.debugSelection, isNull, reason: '进面板即清选区（设计 §5.5）');
+    expect(state.debugHandleCount, 0);
+    expect(_highlightPainter(tester).debugRects(), isEmpty);
+
+    // 关闭面板：不得重新出现灰块/手柄/浮条
+    Navigator.of(tester.element(find.byType(TextSelectionPanel))).pop();
+    await tester.pumpAndSettle();
+
+    expect(find.byType(TextSelectionPanel), findsNothing);
+    expect(state.debugSelection, isNull);
+    expect(state.debugHandleCount, 0);
+    expect(startHandle, findsNothing);
+    expect(endHandle, findsNothing);
+    expect(find.byType(ReaderSelectionToolbar), findsNothing);
+    expect(_highlightPainter(tester).debugRects(), isEmpty);
+  });
+
+  // ===== [R49 回修 P2-1] 单字选区两只 pin 热区不得互相覆盖 =====
+
+  testWidgets('单汉字选区：两只 pin 热区不重叠，抓起点就是起点', (tester) async {
+    const line = '中文测试';
+    final page = _page([_paragraph([_line(text: line, chapterStart: 10)])]);
+    await tester.pumpWidget(_host(page));
+    await tester.pumpAndSettle();
+
+    await tester.longPressAt(
+      _globalPointAtChar(tester, line, 1, centerOfChar: true),
+    );
+    await tester.pumpAndSettle();
+
+    final state = _state(tester);
+    expect(state.debugSelectionText, '文');
+
+    final centers = state.debugHandleCentersGlobal();
+    final startRect = state.debugStartHandleHitRect!;
+    final endRect = state.debugEndHandleHitRect!;
+    expect(
+      startRect.right,
+      lessThanOrEqualTo(endRect.left + 0.01),
+      reason: '同一行内两 pin 过近时热区按最近圆心平分，不得重叠',
+    );
+    expect(startRect.contains(centers[0]), isTrue, reason: '起点圆在起点热区内');
+    expect(endRect.contains(centers[1]), isTrue, reason: '终点圆在终点热区内');
+
+    // 从起点圆心起手：拖的必须是起点，而不是被覆盖的末端
+    // （拖动侧别在越过 pan 阈值后才可判定：起手瞬间若两个热区都命中，
+    //  竞技场里有两支 pan 识别器，必须先有位移才分胜负）
+    final gesture = await tester.startGesture(centers[0]);
+    await tester.pump();
+    await gesture.moveBy(const Offset(-40, 0));
+    await tester.pump();
+    expect(state.debugDraggingSide, 'start', reason: '抓哪只 pin 就是哪只');
+
+    final after = state.debugSelection!;
+    expect(after.start, 10, reason: '起点扩到行首（中）');
+    expect(after.endInclusive, 11, reason: '终点不跟着动');
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+  });
+
+  // ===== [R49 回修 P2-2] 页底末行的手柄不得被裁（圆心/热区留在正文框内） =====
+
+  testWidgets('页底末行：终点手柄圆心内缩到正文框内且可拖', (tester) async {
+    // 10 行 × 24dp = 240dp，恰好等于宿主高度：末行行底 = 正文框底
+    final lines = <LineInfo>[
+      for (var i = 0; i < 10; i++)
+        _line(text: 'line$i', chapterStart: i * 8, height: 24),
+    ];
+    final page = _page([_paragraph(lines, start: 0, end: 80)]);
+    await tester.pumpWidget(_host(page));
+    await tester.pumpAndSettle();
+
+    await tester.longPressAt(
+      _globalPointAtChar(tester, 'line9', 2, centerOfChar: true),
+    );
+    await tester.pumpAndSettle();
+
+    final state = _state(tester);
+    expect(state.debugSelectionText, 'line9');
+    final before = state.debugSelection!;
+    expect(before.endInclusive, 76);
+
+    final contentRect = tester.getRect(find.byType(ReaderTextContent));
+    final centers = state.debugHandleCentersGlobal();
+    expect(centers, hasLength(2));
+    expect(
+      centers[1].dy + kReaderSelectionHandleRadius,
+      lessThanOrEqualTo(contentRect.bottom + 0.01),
+      reason: '页底末行 pin 的圆必须整体留在正文框内（否则被 ClipRect 裁掉）',
+    );
+    expect(
+      state.debugEndHandleHitRect!.contains(centers[1]),
+      isTrue,
+      reason: '圆心必须落在自己的热区内（可抓）',
+    );
+
+    // 从内缩后的圆心起手向左拖：端点仍在本行内移动（可抓、可拖）
+    final gesture = await tester.startGesture(centers[1]);
+    await tester.pump();
+    await gesture.moveBy(const Offset(-40, 0));
+    await tester.pump();
+
+    final after = state.debugSelection!;
+    expect(after.endInclusive, lessThan(before.endInclusive));
+    expect(after.endInclusive, greaterThanOrEqualTo(72), reason: '仍在本行（末行）内');
+
+    await gesture.up();
+    await tester.pumpAndSettle();
   });
 }

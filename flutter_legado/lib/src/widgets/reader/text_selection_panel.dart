@@ -908,6 +908,13 @@ class ReaderSelectionToolbar extends ConsumerWidget {
 
   final VoidCallback onDismiss;
 
+  /// [R49 回修 P1-1] 动作已执行 / 已进入面板：与 [onDismiss] 分离
+  ///
+  /// [onDismiss] 只收起 Overlay（外部点击、抓手柄等路径复用，选区清理由
+  /// 各自逻辑负责）；[onExecuted] 额外通知正文清选区（设计 §5.5
+  /// 「进面板/执行动作：清」），避免灰块与手柄驻留、吞掉下一次点击。
+  final VoidCallback? onExecuted;
+
   const ReaderSelectionToolbar({
     super.key,
     required this.anchor,
@@ -923,7 +930,14 @@ class ReaderSelectionToolbar extends ConsumerWidget {
     this.selectionStartInParagraph,
     this.selectionBounds,
     required this.onDismiss,
+    this.onExecuted,
   });
+
+  /// 动作收尾：收起浮条 + 通知正文清选区
+  VoidCallback get _executed => () {
+    onDismiss();
+    onExecuted?.call();
+  };
 
   /// 动作实际作用文本：字符级选区优先，缺省回退整段
   String get _actionText {
@@ -957,6 +971,7 @@ class ReaderSelectionToolbar extends ConsumerWidget {
     int? selectionStartInParagraph,
     Rect? selectionBounds,
     bool? modalBarrier,
+    VoidCallback? onExecuted,
   }) {
     // [批1a | 2026-10-31] selectVibrator 接线（对标参考版
     // ReadBookRouteScreen selectionHapticsEnabled → ReaderCanvasSurface
@@ -1026,6 +1041,7 @@ class ReaderSelectionToolbar extends ConsumerWidget {
                   selectionStartInParagraph: current.selectionStartInParagraph,
                   selectionBounds: current.selectionBounds,
                   onDismiss: handle.dismiss,
+                  onExecuted: onExecuted,
                 ),
               ),
             );
@@ -1083,7 +1099,7 @@ class ReaderSelectionToolbar extends ConsumerWidget {
         // 先取稳定 Navigator 与 ProviderContainer，再关闭浮条并打开 Sheet。
         final navigator = Navigator.of(context, rootNavigator: true);
         final container = ProviderScope.containerOf(context, listen: false);
-        onDismiss();
+        _executed();
         unawaited(
           TextSelectMenuConfigSheet.showForReader(navigator.context, container),
         );
@@ -1162,6 +1178,10 @@ class ReaderSelectionToolbar extends ConsumerWidget {
                 initialSelectionChapterPos: selectionStartChapterPos,
                 initialSelectionChapterEnd: selectionEndChapterPos,
               );
+              // [R49 回修 P1-1] 进面板即清页面选区（设计 §5.5）：面板首屏
+              // 已持有 initialSelectedText，不依赖页面选区；否则灰块/手柄
+              // 驻留会吞掉下一次点击。
+              onExecuted?.call();
             },
           ),
           manage,
@@ -1173,15 +1193,18 @@ class ReaderSelectionToolbar extends ConsumerWidget {
   VoidCallback _actionFor(BuildContext context, WidgetRef ref, String id) {
     // [R49] 字符级选区：动作一律作用于选区文本/选区起点；
     // 旧路径（selectedText 为空）行为完全不变。
+    // [R49 回修 P1-1] 所有动作统一走 `_executed`：收起浮条 + 清页面选区
+    // （设计 §5.5「执行动作：清」；旧行为只收浮条，灰块与手柄驻留）。
     final actionText = _actionText;
+    final executed = _executed;
     switch (id) {
       case SelectionMenuIds.copy:
-        return () => unawaited(selectionCopy(context, actionText, onDismiss));
+        return () => unawaited(selectionCopy(context, actionText, executed));
       case SelectionMenuIds.share:
-        return () => unawaited(selectionShare(context, actionText, onDismiss));
+        return () => unawaited(selectionShare(context, actionText, executed));
       case SelectionMenuIds.browser:
         return () =>
-            unawaited(selectionOpenBrowser(context, actionText, onDismiss));
+            unawaited(selectionOpenBrowser(context, actionText, executed));
       case SelectionMenuIds.aloud:
         return () => unawaited(
           selectionReadAloud(
@@ -1191,7 +1214,7 @@ class ReaderSelectionToolbar extends ConsumerWidget {
             paragraphText: _actionParagraphText,
             chapterPos: _actionChapterPos,
             chapterIndex: chapterIndex,
-            onDone: onDismiss,
+            onDone: executed,
           ),
         );
       case SelectionMenuIds.bookmark:
@@ -1203,7 +1226,7 @@ class ReaderSelectionToolbar extends ConsumerWidget {
             chapterPos: _actionChapterPos,
             chapterIndex: chapterIndex,
             chapterTitle: chapterTitle,
-            onDone: onDismiss,
+            onDone: executed,
           ),
         );
       case SelectionMenuIds.mark:
@@ -1219,18 +1242,17 @@ class ReaderSelectionToolbar extends ConsumerWidget {
             absoluteChapterPos: selectionStartChapterPos,
             chapterIndex: chapterIndex,
             chapterTitle: chapterTitle,
-            onBeforeOpen: onDismiss,
+            onBeforeOpen: executed,
           ),
         );
       case SelectionMenuIds.dict:
-        return () => selectionLookupDict(context, actionText, onDismiss);
+        return () => selectionLookupDict(context, actionText, executed);
       case SelectionMenuIds.replace:
-        return () => selectionReplace(context, actionText, onDismiss);
+        return () => selectionReplace(context, actionText, executed);
       case SelectionMenuIds.edit:
-        return () => selectionEdit(ref, context, onDismiss);
+        return () => selectionEdit(ref, context, executed);
       case SelectionMenuIds.search:
-        return () =>
-            selectionSearchContent(ref, context, actionText, onDismiss);
+        return () => selectionSearchContent(ref, context, actionText, executed);
       default:
         return () {};
     }

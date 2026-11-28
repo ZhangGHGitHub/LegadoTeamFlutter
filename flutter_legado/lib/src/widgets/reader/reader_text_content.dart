@@ -1,7 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show ValueChanged, ValueListenable;
-import 'package:flutter/gestures.dart' show kTouchSlop;
+import 'package:flutter/gestures.dart' show DragStartBehavior, kTouchSlop;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderBox, RenderParagraph;
 import 'package:flutter/services.dart' show HapticFeedback;
@@ -528,16 +528,26 @@ class ReaderTextContentState extends State<ReaderTextContent> {
   @visibleForTesting
   bool get debugToolbarVisible => _toolbar?.isVisible ?? false;
 
-  /// 起点/终点手柄热区（测试读取，根 Stack 局部坐标）
+  /// 起点/终点手柄热区（测试读取，根 Stack 局部坐标；已按 P2-1 互斥）
   @visibleForTesting
-  Rect? get debugStartHandleHitRect => _handleGeometry?.start.hitRect;
+  Rect? get debugStartHandleHitRect {
+    final geometry = _handleGeometry;
+    return geometry == null ? null : _resolveHandleHitRects(geometry).$1;
+  }
 
   @visibleForTesting
-  Rect? get debugEndHandleHitRect => _handleGeometry?.end.hitRect;
+  Rect? get debugEndHandleHitRect {
+    final geometry = _handleGeometry;
+    return geometry == null ? null : _resolveHandleHitRects(geometry).$2;
+  }
 
   /// 手柄数量（0 = 无选区；2 = 起点 + 终点 pin 手柄）
   @visibleForTesting
   int get debugHandleCount => _handleGeometry == null ? 0 : 2;
+
+  /// 当前正在拖动的手柄（'start' / 'end'；未拖动为 null）
+  @visibleForTesting
+  String? get debugDraggingSide => _handleDrag.value?.side.name;
 
   /// 两只手柄的空心圆圆心（全局坐标，起点在前）
   @visibleForTesting
@@ -715,6 +725,17 @@ class ReaderTextContentState extends State<ReaderTextContent> {
 
   // ===== 手柄拖拽（步骤 3） =====
 
+  /// 抓手柄起手
+  ///
+  /// [R49 回修 P0-1] 三点约束（否则多行页上抓可见圆柄会落到下一行）：
+  /// 1. `GestureDetector` 必须用 [DragStartBehavior.down]：`start` 下
+  ///    `onPanStart` 给的是过完 slop 的位置（SDK `monodrag.dart` 里
+  ///    `_initialPosition += delta`），`grabOffset` 会偏一个 slop；
+  /// 2. `grabOffset` = 按下点 − 手柄逻辑圆心，后续落点一律先换算回
+  ///    「逻辑中心」（`pointer − grabOffset`），手柄才贴手；
+  /// 3. **起手不落点**：圆心 = 行底 + 7dp，行与行零间隙首尾相接，按下点
+  ///    必然落在下一行矩形内；此处若按原始坐标落点会立刻跳一行（设计
+  ///    §5.5 / 参考版 `handleHasMoved` 守卫）。
   void _beginHandleDrag(_HandleSide side, Offset globalPosition) {
     final selection = _selection.value;
     final geometry = _handleGeometry;
@@ -725,17 +746,15 @@ class ReaderTextContentState extends State<ReaderTextContent> {
     final endpointIsAnchor = side == _HandleSide.start
         ? selection.isForward
         : !selection.isForward;
+    final local = root.globalToLocal(globalPosition);
     _handleDrag.value = _HandleDragState(
       side: side,
       endpointIsAnchor: endpointIsAnchor,
-      pointer: root.globalToLocal(globalPosition),
-      grabOffset: root.globalToLocal(globalPosition) - line.circleCenter,
+      pointer: local,
+      grabOffset: local - line.circleCenter,
     );
     // 抓手柄即收起浮条（参考 dismissSelectionMenu）
     _dismissToolbar();
-    // DragStartBehavior.start 下 onPanStart 的位置已在阈值处，直接落点
-    // （否则起手这一下不会更新端点，要等下一次 move）
-    _applyHandleDrag(globalPosition, endpointIsAnchor);
   }
 
   void _updateHandleDrag(Offset globalPosition) {
@@ -743,15 +762,32 @@ class ReaderTextContentState extends State<ReaderTextContent> {
     if (drag == null) return;
     final root = _contentStackKey.currentContext?.findRenderObject();
     if (root is! RenderBox) return;
-    _handleDrag.value = drag.copyWithPointer(root.globalToLocal(globalPosition));
-    _applyHandleDrag(globalPosition, drag.endpointIsAnchor);
+    final local = root.globalToLocal(globalPosition);
+    _handleDrag.value = drag.copyWithPointer(local);
+    _applyHandleDrag(local, drag.grabOffset, drag.endpointIsAnchor);
   }
 
-  /// 手柄拖到新位置：反查字符偏移并更新对应端点（吸附字形簇边界）
-  void _applyHandleDrag(Offset globalPosition, bool endpointIsAnchor) {
+  /// 手柄拖到新位置：换算回「逻辑中心」后反查字符偏移
+  ///
+  /// [pointer] / [grabOffset] 均为根 Stack 局部坐标。落点 = 指针 − 抓取
+  /// 偏移（回到手柄圆心），再下移一个圆半径（圆心在行底 + 半径，减掉后
+  /// 回到所属行内部），与设计 §5.5 `cursorY = global.dy - radius` 及参考
+  /// 版 `ReaderCanvasSurface.kt` 一致。吸附字形簇边界。
+  void _applyHandleDrag(
+    Offset pointer,
+    Offset grabOffset,
+    bool endpointIsAnchor,
+  ) {
     final current = _selection.value;
     if (current == null) return;
-    final hit = _hitTestPage(globalPosition);
+    final root = _contentStackKey.currentContext?.findRenderObject();
+    if (root is! RenderBox) return;
+    final logical = pointer - grabOffset;
+    final hit = _hitTestPage(
+      root.localToGlobal(
+        Offset(logical.dx, logical.dy - kReaderSelectionHandleRadius),
+      ),
+    );
     if (hit == null) return;
     final map = hit.handle.map;
     if (!map.isSelectable) return;
@@ -852,6 +888,11 @@ class ReaderTextContentState extends State<ReaderTextContent> {
       paragraphChapterPos: paragraph?.startIndex,
       selectionStartInParagraph: localStart,
       selectionBounds: bounds,
+      // [R49 回修 P1-1] 执行动作 / 进「更多」面板后由浮条回调清页面选区
+      // （设计 §5.5）；`onDismiss` 只收 Overlay，外部点击/抓手柄仍保留选区。
+      onExecuted: () {
+        if (mounted) _clearSelection();
+      },
     );
   }
 
@@ -924,15 +965,15 @@ class ReaderTextContentState extends State<ReaderTextContent> {
     widget.onSelectionPointerDown?.call(false);
   }
 
-  /// 全局坐标是否落在手柄热区内（与 `_HandleLine.hitRect` 同口径）
+  /// 全局坐标是否落在手柄热区内（与 `_buildHandleHitBox` 同口径）
   bool _isInHandleHitRegion(Offset globalPosition) {
     final geometry = _handleGeometry;
     if (geometry == null) return false;
     final root = _contentStackKey.currentContext?.findRenderObject();
     if (root is! RenderBox || !root.hasSize) return false;
     final local = root.globalToLocal(globalPosition);
-    return geometry.start.hitRect.contains(local) ||
-        geometry.end.hitRect.contains(local);
+    final (startRect, endRect) = _resolveHandleHitRects(geometry);
+    return startRect.contains(local) || endRect.contains(local);
   }
 
   /// 按全局坐标找最近行，并换算行内字符下标
@@ -1018,6 +1059,7 @@ class ReaderTextContentState extends State<ReaderTextContent> {
   ) {
     final root = _contentStackKey.currentContext?.findRenderObject();
     if (root is! RenderBox || !root.hasSize) return null;
+    final stackHeight = root.size.height;
     _HandleLine? start;
     _HandleLine? end;
     Rect? bounds;
@@ -1032,6 +1074,7 @@ class ReaderTextContentState extends State<ReaderTextContent> {
         ancestor: root,
       ).dy;
       final lineBottom = lineTop + paragraph.size.height;
+      final circleCenterY = _handleCircleCenterY(lineBottom, stackHeight);
       final boxes = paragraph.getBoxesForSelection(
         TextSelection(baseOffset: range.$1, extentOffset: range.$2),
         boxHeightStyle: ui.BoxHeightStyle.includeLineSpacingMiddle,
@@ -1052,13 +1095,35 @@ class ReaderTextContentState extends State<ReaderTextContent> {
           x: rect.left,
           top: lineTop,
           bottom: lineBottom,
+          circleCenterY: circleCenterY,
         );
-        end = _HandleLine(x: rect.right, top: lineTop, bottom: lineBottom);
+        end = _HandleLine(
+          x: rect.right,
+          top: lineTop,
+          bottom: lineBottom,
+          circleCenterY: circleCenterY,
+        );
         bounds = bounds == null ? rect : bounds.expandToInclude(rect);
       }
     }
     if (start == null || end == null || bounds == null) return null;
     return _SelectionGeometry(start: start, end: end, bounds: bounds);
+  }
+
+  /// pin 空心圆的圆心 y
+  ///
+  /// [R49 回修 P2-2] 默认挂在行底下方一个半径（与参考版一致）。但分页正文
+  /// 被 `ClipRect` 裁剪，`RenderBox.hitTest` 又要求落点在 Stack 自身尺寸
+  /// 内：选区末行恰是本页最后一行时，`行底 + 7dp` 会跑出正文框，圆与热区
+  /// 既看不到也点不到。这里把圆心钳到 `正文框底 - 半径`（圆整体留在框内，
+  /// 竖线仍画在原行框）；正文只有一行高时不再内缩。
+  double _handleCircleCenterY(double lineBottom, double stackHeight) {
+    final preferred = lineBottom + kReaderSelectionHandleRadius;
+    final limit = stackHeight - kReaderSelectionHandleRadius;
+    if (preferred <= limit || limit < kReaderSelectionHandleRadius) {
+      return preferred;
+    }
+    return limit;
   }
 
   @override
@@ -1345,6 +1410,7 @@ class ReaderTextContentState extends State<ReaderTextContent> {
   /// 挂载，尺寸跟随手柄几何，不改动任何正文尺寸。
   List<Widget> _buildSelectionHandleLayers() {
     final geometry = _handleGeometry;
+    final hits = geometry == null ? null : _resolveHandleHitRects(geometry);
     return [
       Positioned.fill(
         child: IgnorePointer(
@@ -1363,15 +1429,53 @@ class ReaderTextContentState extends State<ReaderTextContent> {
           ),
         ),
       ),
-      if (geometry != null) ...[
-        _buildHandleHitBox(_HandleSide.start, geometry.start),
-        _buildHandleHitBox(_HandleSide.end, geometry.end),
+      if (hits != null) ...[
+        _buildHandleHitBox(_HandleSide.start, hits.$1),
+        _buildHandleHitBox(_HandleSide.end, hits.$2),
       ],
     ];
   }
 
-  Widget _buildHandleHitBox(_HandleSide side, _HandleLine line) {
-    final rect = line.hitRect;
+  /// 两只手柄的可用热区（根 Stack 局部坐标）
+  ///
+  /// [R49 回修 P2-1] 默认各自 56dp 胶囊（竖线 + 圆整体可抓）。但两只手柄
+  /// 靠得很近时热区会重叠，`RenderStack` 命中的是后绘制的末端热区 → 起点
+  /// pin 实际不可抓（单汉字选区、或相邻两行且 x 相近时都会发生）。这里按
+  /// 「离哪只圆心更近就归哪只」切分重叠区：
+  /// - 圆心横向分离更大（同一行的短选区）→ 在中点纵向切一刀；
+  /// - 否则两 pin 分处相邻行 → 在两圆心中点横向切一刀；
+  /// - 两圆心距离 < 2×半径时两只可见圆本身已重叠，无法可靠判定，保持原样。
+  ///
+  /// 判定规则等价于「按下点取最近 pin」，且每只可见圆仍完整落在自己的
+  /// 热区内（可见即可抓）。
+  (Rect, Rect) _resolveHandleHitRects(_SelectionGeometry geometry) {
+    final start = geometry.start;
+    final end = geometry.end;
+    final startRect = start.hitRect;
+    final endRect = end.hitRect;
+    if (!startRect.overlaps(endRect)) return (startRect, endRect);
+    final dx = (end.x - start.x).abs();
+    final dy = (end.circleCenterY - start.circleCenterY).abs();
+    const minSeparation = kReaderSelectionHandleRadius * 2;
+    if (dx >= minSeparation && dx >= dy) {
+      final midX = (start.x + end.x) / 2;
+      Rect cut(Rect rect, double centerX) => centerX <= midX
+          ? Rect.fromLTRB(rect.left, rect.top, midX, rect.bottom)
+          : Rect.fromLTRB(midX, rect.top, rect.right, rect.bottom);
+      return (cut(startRect, start.x), cut(endRect, end.x));
+    }
+    if (dy >= minSeparation) {
+      final midY = (start.circleCenterY + end.circleCenterY) / 2;
+      Rect cut(Rect rect, double centerY) => centerY <= midY
+          ? Rect.fromLTRB(rect.left, rect.top, rect.right, midY)
+          : Rect.fromLTRB(rect.left, midY, rect.right, rect.bottom);
+      return (cut(startRect, start.circleCenterY),
+          cut(endRect, end.circleCenterY));
+    }
+    return (startRect, endRect);
+  }
+
+  Widget _buildHandleHitBox(_HandleSide side, Rect rect) {
     return Positioned(
       left: rect.left,
       top: rect.top,
@@ -1380,6 +1484,9 @@ class ReaderTextContentState extends State<ReaderTextContent> {
       child: GestureDetector(
         key: ValueKey('reader-selection-handle-${side.name}'),
         behavior: HitTestBehavior.translucent,
+        // [R49 回修 P0-1] 取真实按下点：默认 `start` 给的是过完 pan slop
+        // 的位置，抓柄瞬间 grabOffset 会偏一个 slop（手柄跳一下）。
+        dragStartBehavior: DragStartBehavior.down,
         onPanStart: (details) =>
             _beginHandleDrag(side, details.globalPosition),
         onPanUpdate: (details) => _updateHandleDrag(details.globalPosition),
@@ -1590,6 +1697,7 @@ class _HandleLine {
     required this.x,
     required this.top,
     required this.bottom,
+    required this.circleCenterY,
   });
 
   /// 竖线 x（起点 = 首行首个 box 左端；终点 = 末行末个 box 右端）
@@ -1601,16 +1709,18 @@ class _HandleLine {
   /// 竖线下端（行框底）
   final double bottom;
 
+  /// 空心圆圆心 y（默认行底 + 半径；页底末行内缩，见 `_handleCircleCenterY`）
+  final double circleCenterY;
+
   /// 空心圆圆心（挂在行底下方一个半径处，与参考版一致）
-  Offset get circleCenter =>
-      Offset(x, bottom + kReaderSelectionHandleRadius);
+  Offset get circleCenter => Offset(x, circleCenterY);
 
   /// 28dp 胶囊热区外接矩形（竖线 + 圆整体可抓）
   Rect get hitRect => Rect.fromLTRB(
     x - kReaderSelectionHandleHitRadius,
     top - kReaderSelectionHandleHitRadius,
     x + kReaderSelectionHandleHitRadius,
-    bottom + kReaderSelectionHandleRadius + kReaderSelectionHandleHitRadius,
+    circleCenterY + kReaderSelectionHandleHitRadius,
   );
 }
 
@@ -1702,7 +1812,8 @@ class _ReaderSelectionHandlesPainter extends CustomPainter {
       final top = line.top + delta.dy;
       final bottom = line.bottom + delta.dy;
       canvas.drawLine(Offset(x, top), Offset(x, bottom), linePaint);
-      final center = Offset(x, bottom + kReaderSelectionHandleRadius);
+      // 圆心取几何里的实际值（页底末行已内缩到正文框内，见 P2-2）
+      final center = Offset(x, line.circleCenterY + delta.dy);
       canvas.drawCircle(center, kReaderSelectionHandleRadius, fillPaint);
       canvas.drawCircle(center, kReaderSelectionHandleRadius, circlePaint);
     }
