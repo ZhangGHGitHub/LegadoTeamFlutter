@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
@@ -37,6 +38,7 @@ class ReaderTurnView extends StatefulWidget {
     this.hasBookmarkOnPage = false,
     this.onToggleBookmark,
     this.bookmarkHintTop = 0,
+    this.selectionActive,
   });
 
   final PageTurnMode mode;
@@ -72,6 +74,12 @@ class ReaderTurnView extends StatefulWidget {
 
   /// [批4d] 提示条距屏幕顶部距离（正文 contentTop；内部再 +8dp）
   final double bookmarkHintTop;
+
+  /// [R49 阶段C] 正文选区是否活跃（null = 恒不活跃，旧路径行为不变）
+  ///
+  /// 裸 Listener 不属于手势竞技场：选区手柄拖拽产生的原始指针移动会
+  /// 同时到达本层。选区活跃时必须显式短路翻页/下滑书签判定。
+  final ValueListenable<bool>? selectionActive;
 
   @override
   State<ReaderTurnView> createState() => ReaderTurnViewState();
@@ -391,10 +399,15 @@ class ReaderTurnViewState extends State<ReaderTurnView>
       pageHeight: size.height,
       enabled: widget.pullBookmarkEnabled,
       pagedMode: widget.mode != PageTurnMode.scroll,
-      // 选区浮层/底部面板为模态路由，手势事件不会到达本层
-      selectionActive: false,
+      // [R49 阶段C] 字符级选区不再走模态路由：手柄拖拽的原始指针事件会
+      // 到达本层，必须按真实选区状态禁用下拉书签判定（此前硬编码 false
+      // 的假设已被阶段 A/B 的非模态交互打破）。
+      selectionActive: _selectionActive,
     );
   }
+
+  /// [R49 阶段C] 正文选区是否活跃（事件发生时读取，避免陈旧快照）
+  bool get _selectionActive => widget.selectionActive?.value ?? false;
 
   void _resetPullState() {
     if (_pullReturnController.isAnimating) _pullReturnController.stop();
@@ -442,11 +455,32 @@ class ReaderTurnViewState extends State<ReaderTurnView>
       viewWidth: size?.width,
       viewHeight: size?.height,
     );
+    if (_selectionActive) {
+      // [R49 阶段C] 选区活跃：翻页层让位（拖手柄/长按扩展不得翻页）。
+      // 仍记录本次手势起点，若选区在手势中途被清除，位移从正确起点判定，
+      // 也不会留下上一次手势的陈旧坐标。
+      _controller.resetGesture();
+    }
   }
 
   void _onPointerMove(PointerMoveEvent e) {
     final size = context.size;
     if (size == null) return;
+    if (_selectionActive) {
+      // [R49 阶段C] 选区活跃：原始指针移动全部让给选区层，翻页与下滑
+      // 书签都不得消费；本手势若已进入判定则显式复位（防门控释放后
+      // 用陈旧状态继续判定）。
+      if (_pullDragging ||
+          _pullOffset != 0 ||
+          _pullArmed ||
+          _pullReleased ||
+          _controller.direction != PageTurnDirection.none ||
+          _controller.isDragging) {
+        _resetPullState();
+        _controller.resetGesture();
+      }
+      return;
+    }
     final slop =
         MediaQuery.maybeGestureSettingsOf(context)?.touchSlop ?? kTouchSlop;
     final delta = e.localPosition - _pullDown;
@@ -538,6 +572,12 @@ class ReaderTurnViewState extends State<ReaderTurnView>
   }
 
   Future<void> _onPointerUp(PointerUpEvent e) async {
+    if (_selectionActive) {
+      // [R49 阶段C] 选区活跃：抬手不得提交翻页/书签，显式复位门控状态
+      _resetPullState();
+      _controller.resetGesture();
+      return;
+    }
     if (_pullDragging) {
       final size = context.size;
       if (size != null) {
@@ -569,6 +609,12 @@ class ReaderTurnViewState extends State<ReaderTurnView>
   }
 
   Future<void> _onPointerCancel(PointerCancelEvent e) async {
+    if (_selectionActive) {
+      // [R49 阶段C] 选区活跃：取消同样只复位，不提交任何翻页/书签
+      _resetPullState();
+      _controller.resetGesture();
+      return;
+    }
     if (_pullDragging) {
       // 取消同样走 180ms 回弹（参考仅取消切换动作，位移平滑归零）
       setState(() {

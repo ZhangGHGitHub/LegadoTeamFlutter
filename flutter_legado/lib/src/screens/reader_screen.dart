@@ -141,6 +141,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   Timer? _tapHoldTimer;
   bool _tapWasLong = false;
 
+  /// [R49 阶段C] 本次点击由正文选区消费：只清选区（或保留手柄拖拽），
+  /// 不触发九宫格点击分区/菜单/翻页。
+  bool _tapSuppressedBySelection = false;
+
   /// [批1b-2a] 音量键翻页节流闸门（keyPageOnLongPress=false 时长按 repeat
   /// 忽略 + 同方向 600ms leading 节流；对齐原版 ReadBookActivity
   /// handleKeyPage/keyPageDebounce）
@@ -1347,6 +1351,27 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               onTapDown: imageDominant
                   ? null
                   : (details) {
+                      // [R49 阶段C] 选区活跃时本次点击只归选区：正文按下
+                      // 已在 Listener 阶段清选区/拿起手柄并留下「已消费」
+                      // 标记；无标记但选区仍活跃（点击页面边距等正文块外
+                      // 空白）同样只清选区，不进入九宫格。
+                      _tapSuppressedBySelection = false;
+                      final pageView = _pageViewKey.currentState;
+                      final selectionTap = pageView?.consumeSelectionTap();
+                      final selectionActive =
+                          pageView?.hasActiveSelection ?? false;
+                      if ((selectionTap?.suppressed ?? false) ||
+                          selectionActive) {
+                        _tapSuppressedBySelection = true;
+                        _tapDownPosition = null;
+                        _tapWasLong = false;
+                        _tapHoldTimer?.cancel();
+                        if (selectionTap?.onHandle != true) {
+                          // 手柄上的按下保留选区（拖拽由正文接手）
+                          pageView?.clearSelection();
+                        }
+                        return;
+                      }
                       _tapDownPosition = details.globalPosition;
                       _tapWasLong = false;
                       _tapHoldTimer?.cancel();
@@ -1360,6 +1385,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                   : () {
                       _tapHoldTimer?.cancel();
                       _tapDownPosition = null;
+                      _tapSuppressedBySelection = false;
                     },
               onTapUp: imageDominant
                   ? null
@@ -1723,8 +1749,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   void _handleTap(BuildContext context, TapUpDetails details) {
     final down = _tapDownPosition;
     final wasLong = _tapWasLong;
+    final suppressedBySelection = _tapSuppressedBySelection;
     _tapDownPosition = null;
     _tapWasLong = false;
+    _tapSuppressedBySelection = false;
     if (wasLong) return;
     final position = down ?? details.globalPosition;
     final size = MediaQuery.of(context).size;
@@ -1740,6 +1768,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       notifier.hideControls();
       return;
     }
+
+    // [R49 阶段C] 选区态点击（正文已清选区/手柄按下）：本次不改阅读器
+    // 点击分区，也不翻页/弹菜单；下一次点击恢复正常分发。
+    if (suppressedBySelection) return;
 
     // [fix Task#41 / Task#45] pageTouchClick 边缘死区（左右边缘 px 内不
     // 落入任何分区）；钳制到半屏以内，中央至少保留 2px 可点击区。

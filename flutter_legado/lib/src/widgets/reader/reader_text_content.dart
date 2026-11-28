@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show ValueChanged, ValueListenable;
 import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderBox, RenderParagraph;
@@ -87,6 +88,12 @@ class ReaderTypographicPage extends StatelessWidget {
   /// [批4d] 角标大小 dp（<=0 隐藏）
   final int bookmarkBadgeSize;
 
+  // [R49 阶段C] 选区活跃状态/外部清选区信号/按下通报（透传 ReaderTextContent）
+  final ValueChanged<bool>? onSelectionActiveChanged;
+  final ValueListenable<int>? selectionClearSignal;
+  final ValueChanged<bool>? onSelectionPointerDown;
+  final VoidCallback? onSelectionStartRequested;
+
   // [批16] 正文图片渲染配置（字节加载/点击档位/预览回调）与章节标题图
   // 布局（首屏标题下方，高度已计入首页分页容量）。
   final ReaderImageRenderConfig imageConfig;
@@ -126,6 +133,10 @@ class ReaderTypographicPage extends StatelessWidget {
     this.bookmarkBadgeSize = 10,
     this.imageConfig = const ReaderImageRenderConfig(),
     this.titleImageLayout,
+    this.onSelectionActiveChanged,
+    this.selectionClearSignal,
+    this.onSelectionPointerDown,
+    this.onSelectionStartRequested,
   });
 
   @override
@@ -248,6 +259,10 @@ class ReaderTypographicPage extends StatelessWidget {
                         chapterIndex: chapterIndex,
                         chapterTitle: chapterTitle,
                         imageConfig: imageConfig,
+                        onSelectionActiveChanged: onSelectionActiveChanged,
+                        selectionClearSignal: selectionClearSignal,
+                        onSelectionPointerDown: onSelectionPointerDown,
+                        onSelectionStartRequested: onSelectionStartRequested,
                       ),
                     ),
                   ),
@@ -378,6 +393,29 @@ class ReaderTextContent extends StatefulWidget {
   /// [批16] 正文图片渲染配置
   final ReaderImageRenderConfig imageConfig;
 
+  /// [R49 阶段C] 选区活跃状态变化回调
+  ///
+  /// 父级（ReaderPageView）据此维护 `selectionActive` 单一状态源，
+  /// 用于翻页层门控与阅读器点击分区抑制。true=存在非折叠选区。
+  final ValueChanged<bool>? onSelectionActiveChanged;
+
+  /// [R49 阶段C] 外部清选区信号（自增触发；翻页/换章/空白点击）
+  ///
+  /// 不在 build 期同步清（Overlay 收起需在帧外），由父级在安全时机自增。
+  final ValueListenable<int>? selectionClearSignal;
+
+  /// [R49 阶段C] 选区/手柄区域的指针按下通报
+  ///
+  /// [onHandle] 为 true：按在手柄热区上（选区保留，仅抑制点击分区）；
+  /// 为 false：按下了正文非手柄位置（选区已由本组件清除）。
+  final ValueChanged<bool>? onSelectionPointerDown;
+
+  /// [R49 阶段C] 新起选前请求父级清除其它正文实例的旧选区
+  ///
+  /// 滚动模式整章 = N 个 [ReaderTextContent]，选区是实例级瞬时状态；
+  /// 起选前广播清理保证同一时刻只有一处选区（与参考版单选区语义一致）。
+  final VoidCallback? onSelectionStartRequested;
+
   const ReaderTextContent({
     super.key,
     required this.pageInfo,
@@ -398,6 +436,10 @@ class ReaderTextContent extends StatefulWidget {
     this.chapterIndex,
     this.chapterTitle,
     this.imageConfig = const ReaderImageRenderConfig(),
+    this.onSelectionActiveChanged,
+    this.selectionClearSignal,
+    this.onSelectionPointerDown,
+    this.onSelectionStartRequested,
   });
 
   @override
@@ -446,6 +488,9 @@ class ReaderTextContentState extends State<ReaderTextContent> {
 
   /// 几何同步防抖（同一帧内多次选区变化只同步一次）
   bool _handleSyncScheduled = false;
+
+  /// [R49 阶段C] 最近一次上报给父级的选区活跃状态（避免重复回调）
+  bool _lastReportedSelectionActive = false;
 
   // 兼容既有 build 代码的字段读取（与 widget 字段同义）。
   PageInfo get pageInfo => widget.pageInfo;
@@ -509,8 +554,21 @@ class ReaderTextContentState extends State<ReaderTextContent> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    widget.selectionClearSignal?.addListener(_handleSelectionClearSignal);
+  }
+
+  @override
   void didUpdateWidget(covariant ReaderTextContent oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // [R49 阶段C] 外部清选区信号换绑（父级重建时才可能变化）
+    if (oldWidget.selectionClearSignal != widget.selectionClearSignal) {
+      oldWidget.selectionClearSignal?.removeListener(
+        _handleSelectionClearSignal,
+      );
+      widget.selectionClearSignal?.addListener(_handleSelectionClearSignal);
+    }
     // 页码/内容/排版参数任一变化都会让章节偏移失效：清选区防串页。
     final geometryChanged =
         !identical(oldWidget.pageInfo, widget.pageInfo) ||
@@ -529,16 +587,37 @@ class ReaderTextContentState extends State<ReaderTextContent> {
 
   @override
   void dispose() {
+    widget.selectionClearSignal?.removeListener(_handleSelectionClearSignal);
     _toolbar?.dismiss();
     _toolbar = null;
+    // [R49 阶段C] 失活必须显式复位门控，避免翻页层被永久短路
+    _reportSelectionActive(false);
     _selection.dispose();
     _handleDrag.dispose();
     super.dispose();
   }
 
+  void _handleSelectionClearSignal() {
+    if (!mounted) return;
+    _clearSelection();
+  }
+
+  /// [R49 阶段C] 上报选区活跃状态（仅在状态翻转时回调）
+  void _reportSelectionActive(bool active) {
+    if (active == _lastReportedSelectionActive) return;
+    _lastReportedSelectionActive = active;
+    widget.onSelectionActiveChanged?.call(active);
+  }
+
+  void _syncSelectionActive() {
+    final selection = _selection.value;
+    _reportSelectionActive(selection != null && !selection.isCollapsed);
+  }
+
   void _setSelection(ReaderTextSelection? next) {
     if (_selection.value == next) return;
     _selection.value = next;
+    _syncSelectionActive();
     _scheduleHandleSync();
   }
 
@@ -585,6 +664,10 @@ class ReaderTextContentState extends State<ReaderTextContent> {
       _longPressOrigin = null;
       return;
     }
+    // [R49 阶段C] 先广播清理其它正文实例的旧选区（滚动模式整章 N 个
+    // chunk）：本实例也在广播中被清，随后重新建立本次选区与长按起点，
+    // 保证同一时刻只有一处选区。
+    widget.onSelectionStartRequested?.call();
     _longPressOrigin = globalPosition;
     final hit = _hitTestPage(globalPosition, requireLineHeight: true);
     if (hit == null) {
@@ -824,10 +907,21 @@ class ReaderTextContentState extends State<ReaderTextContent> {
   }
 
   /// 根层指针按下：非手柄位置清选区并收起浮条（参考 tap 空白清选区）
+  ///
+  /// [R49 阶段C] 同时向父级通报本次按下已被选区消费：
+  /// - 手柄热区：保留选区，仅抑制阅读器点击分区（手柄拖拽由手势竞技场处理）；
+  /// - 其他位置：先清选区，再通报抑制（否则同一次点击会接着触发菜单/翻页）。
   void _handleRootPointerDown(PointerDownEvent event) {
-    if (_isInHandleHitRegion(event.position)) return;
+    final onHandle = _isInHandleHitRegion(event.position);
+    if (onHandle) {
+      if (_selection.value != null) {
+        widget.onSelectionPointerDown?.call(true);
+      }
+      return;
+    }
     if (_selection.value == null && _toolbar == null) return;
     _clearSelection();
+    widget.onSelectionPointerDown?.call(false);
   }
 
   /// 全局坐标是否落在手柄热区内（与 `_HandleLine.hitRect` 同口径）

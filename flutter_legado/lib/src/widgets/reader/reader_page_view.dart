@@ -353,6 +353,29 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// 当前页索引（屏级分页）
   int _currentPageIndex = 0;
 
+  // ===== [R49 阶段C] 正文字符级选区门控状态 =====
+
+  /// 正文选区是否活跃（翻页层门控 + 阅读器点击抑制的单一状态源）
+  ///
+  /// 由各 [ReaderTextContent] 实例通过 `onSelectionActiveChanged` 写入；
+  /// [ReaderTurnView] 在每次指针事件发生时读取实时值（不做事件快照）。
+  final ValueNotifier<bool> _selectionActive = ValueNotifier<bool>(false);
+
+  /// 外部清选区信号（自增触发；翻页/换章/点击空白）
+  ///
+  /// 正文组件监听本信号后自行清选区（含收起浮条），避免跨 State 直接
+  /// 调用；build 阶段的清理由父级延迟到帧末自增。
+  final ValueNotifier<int> _selectionClearSignal = ValueNotifier<int>(0);
+
+  /// 本次指针按下已被正文选区/手柄消费（供 ReaderScreen 抑制点击分区）
+  bool _selectionTapSuppressed = false;
+
+  /// 被消费的按下是否落在手柄热区（true=保留选区，仅抑制点击）
+  bool _selectionTapOnHandle = false;
+
+  /// dispose 后忽略延迟回调（帧末清选区信号）
+  bool _disposed = false;
+
   /// 当前分页数据对应的章节标题（与 _paginatedChapterIndex 同帧写入，
   /// 章节切换加载中冻结渲染时标题与正文保持同章，避免新标题配旧正文）
   String? _paginatedChapterTitle;
@@ -413,6 +436,66 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   void _notifyPageTurn() {
     ReaderPageView.onPageTurnInteraction();
     ReaderPageViewState.debugOnPageTurn?.call();
+  }
+
+  // ===== [R49 阶段C] 选区门控对外接口 =====
+
+  /// 正文选区是否活跃（ReaderScreen 点击分区抑制读取）
+  bool get hasActiveSelection => _selectionActive.value;
+
+  /// 读取并清除「本次指针按下由选区/手柄消费」标记
+  ///
+  /// 手势结束时由根 Listener 兜底复位；ReaderScreen 只在本手势的 tapDown
+  /// 读取一次，避免把上一次手柄拖拽的标记误用到后续点击。
+  ({bool suppressed, bool onHandle}) consumeSelectionTap() {
+    final result = (
+      suppressed: _selectionTapSuppressed,
+      onHandle: _selectionTapOnHandle,
+    );
+    _selectionTapSuppressed = false;
+    _selectionTapOnHandle = false;
+    return result;
+  }
+
+  /// 清除正文选区（点击空白/翻页前调用；幂等）
+  ///
+  /// 通过自增信号让正文组件自行清选区（含收起浮条），不跨 State 直接调用。
+  /// 只允许在帧外调用（build 阶段请用 [_scheduleSelectionClear]）。
+  void clearSelection() {
+    if (_disposed) return;
+    if (_selectionActive.value) _selectionActive.value = false;
+    _selectionClearSignal.value++;
+  }
+
+  /// 帧末清选区（build 阶段换章/模式切换等场景使用）
+  void _scheduleSelectionClear() {
+    if (_disposed) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _disposed) return;
+      clearSelection();
+    });
+  }
+
+  /// 翻页前清选区：翻页层已短路，但程序化翻页（音量键/自动阅读/进度条）
+  /// 仍会在选区活跃时发生，必须先清选区再翻页（防灰块/手柄被带入动画）。
+  void _clearSelectionForTurn() {
+    if (_disposed) return;
+    if (_selectionActive.value) _selectionActive.value = false;
+    _selectionClearSignal.value++;
+  }
+
+  void _handleSelectionActiveChanged(bool active) {
+    _selectionActive.value = active;
+  }
+
+  void _handleSelectionPointerDown(bool onHandle) {
+    _selectionTapSuppressed = true;
+    _selectionTapOnHandle = onHandle;
+  }
+
+  void _resetSelectionTapSuppression() {
+    _selectionTapSuppressed = false;
+    _selectionTapOnHandle = false;
   }
 
   /// 当前章分页总数（进度条「调章内页」行为消费）
@@ -575,6 +658,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// 程序化跳页（进度条拖动/目录跳转等；直设索引=瞬时切换，
   /// 相邻步进翻页走 _turnViewKey.turnByAnim 保持动画）
   void _navigateToPage(int index) {
+    // [R49 阶段C] 翻页即清选区（程序化/进度条跳页路径）
+    _clearSelectionForTurn();
     setState(() => _currentPageIndex = index);
     ref.read(readerNotifierProvider.notifier).updatePosition(index);
     // [批4d] 翻页成功只重挂 keepLight，不再振动（sliderVibrator 改进度条）
@@ -586,6 +671,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// 滚动模式：按一屏高度滚动（前进/后退，动画随 noAnimScrollPage）
   void _scrollByViewport(bool forward) {
     if (!_scrollController.hasClients) return;
+    // [R49 阶段C] 滚动翻屏即清选区（程序化滚动/自动阅读路径）
+    _clearSelectionForTurn();
     final pos = _scrollController.position;
     if (!pos.hasViewportDimension) return;
     final delta = forward ? pos.viewportDimension : -pos.viewportDimension;
@@ -620,6 +707,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   ///
   /// 跨章节无缝翻页：到达本章最后一页时自动进入下一章第一页。
   void nextPageOrChapter() {
+    // [R49 阶段C] 程序化翻页（音量键/自动阅读/点击分区）先清选区
+    _clearSelectionForTurn();
     final notifier = ref.read(readerNotifierProvider.notifier);
     // [UI-fix v2.0.3 | 2026-08-08] 滚动模式下程序化翻页按屏滚动 — Qoder
     if (ref.read(readerNotifierProvider).pageTurnMode == PageTurnMode.scroll) {
@@ -659,6 +748,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   ///
   /// 跨章节无缝翻页：到达本章第一页时自动进入上一章最后一页。
   void prevPageOrChapter() {
+    // [R49 阶段C] 程序化翻页（音量键/自动阅读/点击分区）先清选区
+    _clearSelectionForTurn();
     final notifier = ref.read(readerNotifierProvider.notifier);
     // [UI-fix v2.0.3 | 2026-08-08] 滚动模式下程序化翻页按屏滚动 — Qoder
     if (ref.read(readerNotifierProvider).pageTurnMode == PageTurnMode.scroll) {
@@ -776,10 +867,14 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
 
   @override
   void dispose() {
+    _disposed = true;
     _imageMeasureSession++;
     _cancelImageMeasurements();
     _imageReflowTimer?.cancel();
     _scrollController.dispose();
+    // [R49 阶段C] 选区门控状态随视图销毁（子组件先失活并已复位）
+    _selectionActive.dispose();
+    _selectionClearSignal.dispose();
     super.dispose();
   }
 
@@ -1033,6 +1128,11 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     _pagedWidth = availableWidth;
     _pagedHeight = availableHeight;
     if (chapterChanged) {
+      // [R49 阶段C] 换章/换源正文变化即清选区：正文组件会因 pageInfo
+      // 变化自清，这里显式复位门控并在帧末补发清选区信号（build 阶段
+      // 不得同步移除 Overlay 浮条）。
+      _selectionActive.value = false;
+      _scheduleSelectionClear();
       _nextChapterPreview = null;
       _prevChapterPreview = null;
       _preloadingNext = false;
@@ -1256,7 +1356,15 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     final slop = state.pageTurnMode == PageTurnMode.scroll
         ? 0
         : (advCfg?.pageTouchSlop ?? 0);
-    return _applyPageTouchSlop(context, result, slop);
+    // [R49 阶段C] 手势结束复位「选区消费按下」标记：ReaderScreen 只在本
+    // 手势 tapDown 读取一次；手柄拖拽/取消等没有 tapUp 的路径必须在此兜底，
+    // 否则标记会粘滞到下一次普通点击而误吞九宫格。
+    final Widget guarded = Listener(
+      onPointerUp: (_) => _resetSelectionTapSuppression(),
+      onPointerCancel: (_) => _resetSelectionTapSuppression(),
+      child: result,
+    );
+    return _applyPageTouchSlop(context, guarded, slop);
   }
 
   // ===== [批34] 正文高亮匹配 =====
@@ -2254,9 +2362,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     final screenCount = _isDoublePage
         ? (_paginatedPages.length + 1) ~/ 2
         : (_paginatedPages.isNotEmpty ? _paginatedPages.length : 1);
-    // [批4d] 下滑书签：仅菜单收起时可触发；选区浮层/底部面板是模态路由，
-    // 手势不会到达正文。提示条相对翻页视图顶部（viewport 已 Padding 状态栏
-    // inset，故此处只加正文上边距，避免重复叠加）。
+    // [批4d] 下滑书签：仅菜单收起时可触发；[R49 阶段C] 字符级选区活跃时
+    // 由 ReaderTurnView 内部按 selectionActive 短路（下拉不添加书签）。
+    // 提示条相对翻页视图顶部（viewport 已 Padding 状态栏 inset，故此处
+    // 只加正文上边距，避免重复叠加）。
     final advCfg = ref.read(readerAdvConfigProvider);
     final bookmarks = ref.read(bookmarkNotifierProvider).bookmarks;
     final currentBookmark = _bookmarkOnCurrentScreen(state, bookmarks);
@@ -2269,6 +2378,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
         pageIndex: screenIndex,
         pageCount: screenCount,
         backPageColor: state.backgroundColor,
+        // [R49 阶段C] 选区活跃 → 裸 Listener 短路翻页/书签
+        selectionActive: _selectionActive,
         pullBookmarkEnabled:
             (advCfg?.swipeToAddBookmark ?? false) && !state.showControls,
         hasBookmarkOnPage: currentBookmark != null,
@@ -2278,6 +2389,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
             ? _buildSpread(state, i)
             : _buildTypographicPage(state, i),
         onPageChanged: (i) {
+          // [R49 阶段C] 页面切换清选区（显式复位门控，旧页正文组件随后失活）
+          _clearSelectionForTurn();
           final page = _isDoublePage ? i * 2 : i;
           setState(() => _currentPageIndex = page);
           notifier.updatePosition(page);
@@ -2289,11 +2402,15 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
         chapterPrevPage: _prevChapterPreview,
         chapterNextPage: _nextChapterPreview,
         onTurnChapterPrev: () {
+          // [R49 阶段C] 章边界翻页前清选区
+          _clearSelectionForTurn();
           // [批4d] 跨章翻页重挂 keepLight
           _notifyPageTurn();
           notifier.prevChapter();
         },
         onTurnChapterNext: () {
+          // [R49 阶段C] 章边界翻页前清选区
+          _clearSelectionForTurn();
           // [批4d] 跨章翻页重挂 keepLight
           _notifyPageTurn();
           notifier.nextChapter();
@@ -2406,6 +2523,13 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                   highlightMatches: scrollHighlightMatches,
                   matchesStartSorted: true,
                   imageConfig: imageConfig,
+                  // [R49 阶段C] 滚动模式同一套选区状态通路：父级门控/点击
+                  // 抑制同样生效（无 ReaderTurnView，但点击分区仍需抑制）；
+                  // 每个 chunk 实例独立选区，跨 chunk/跨章不扩展（设计边界）。
+                  onSelectionActiveChanged: _handleSelectionActiveChanged,
+                  selectionClearSignal: _selectionClearSignal,
+                  onSelectionPointerDown: _handleSelectionPointerDown,
+                  onSelectionStartRequested: clearSelection,
                 )
             else if (state.chapterContent.isNotEmpty)
               ReaderParagraphs(
@@ -2505,6 +2629,11 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       fontStyle: _fontStyleFor(widget.italic),
       // [UI-fix v2.0.3 | 2026-08-08] selectText 开关接入分页页正文渲染 — Qoder
       selectText: widget.selectText,
+      // [R49 阶段C] 选区状态通路：活跃状态上报 / 外部清选区 / 按下抑制 / 起选清理
+      onSelectionActiveChanged: _handleSelectionActiveChanged,
+      selectionClearSignal: _selectionClearSignal,
+      onSelectionPointerDown: _handleSelectionPointerDown,
+      onSelectionStartRequested: clearSelection,
       // [UI-fix v2.0.3 | 2026-08-06] 分页页内容边距接配置 — Qoder
       contentPadding: doublePageSide == null
           ? EdgeInsets.only(
