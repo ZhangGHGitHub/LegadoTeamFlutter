@@ -245,3 +245,72 @@ R49 的三段式落地在结构上是成立的：真正改变风险面的是「�
 ---
 
 编写：代码审核员（独立子代理）｜ 2026-11-28
+
+---
+
+## 十、回修记录（2026-11-28，提交 `68e8669a5b`）
+
+### P0-1 已修（主代理独立复验红→绿）
+
+**修复三点**（对应本报告的三条建议，全部落地）：
+
+| # | 建议 | 落地位置 |
+|---|---|---|
+| 1 | `dragStartBehavior: down` | `reader_text_content.dart:1489` |
+| 2 | 命中点 `pointer - grabOffset - radius` | `:788`（`Offset(logical.dx, logical.dy - kReaderSelectionHandleRadius)`） |
+| 3 | 起手不落点 | `:739` 只记 `grabOffset`，`:760` move 时才落点 |
+
+**主代理独立复验方法**：临时把 `:788` 的 `- kReaderSelectionHandleRadius` 去掉（行为回退到修复前），跑 `reader_char_selection_test`：
+
+```
+Expected: <3>
+  Actual: <11>          ← 11 = 下一行章节起点 8 + 行内 3
+Expected: <2>
+  Actual: <8>           ← 同样跳到下一行
+```
+
+恢复修正后 21 例全绿。**本报告的 P0 判定成立，修复有效。**
+
+### P1-1 已修
+
+`text_selection_panel.dart:916` 新增 `VoidCallback? onExecuted`（与 `onDismiss` 分离）；
+10 项动作 + 「更多」入口 + 管理按钮全部走 `onExecuted`；
+`reader_text_content.dart:893` 传 `onExecuted: () { if (mounted) _clearSelection(); }`。
+`TapRegion.onTapOutside` 与抓手柄仍只 `dismiss`（选区清理由各自路径负责）。
+
+红→绿：修复前 `Expected: null Actual: ReaderTextSelection(anchor: 6, focus: 10)`（两条用例），修复后全绿。
+
+### P2-1 已修（并发现同类变体）
+
+`_resolveHandleHitRects`（`:1451`）按「按下点归最近圆心」切分重叠热区：
+同行短选区按 x 切、相邻两行 x 相近按 y 切。
+**修这条时额外发现**：相邻两行且两 pin x 相近时（跨行选区起点行底圆心 vs 下一行）热区纵向也重叠——
+由同一规则（按 y 切分）覆盖。
+
+### P2-2 已修
+
+实测 `圆心 y + 半径 = 254 > 正文框底 240`（圆整体在框外 14dp 被 `ClipRect` 裁掉且 hitTest 不达）。
+`_handleCircleCenterY`（`:1120`）把圆心钳到 `正文框底 − 半径`，竖线仍画在原行框，正文仅一行高时不内缩。
+**取舍登记**：内缩 14dp 会在末行下缘压住部分字形，属视觉取舍，待实机确认观感。
+
+### 未修项（保留登记）
+
+P2-3（滚动模式跨 chunk 按下/滚动不清选区）、P2-4（`_handleGeometry` 晚一帧）、
+P2-5（「更多」面板一次折叠点击静默退回整段）、P3-1 ~ P3-12 全部保留。
+其中 P3-5（拖到页面外仍吸附最远行）本次未加边界判定。
+
+### 回修后门禁（主代理独立复跑）
+
+| 命令 | 结果 |
+|---|---|
+| `flutter analyze` | No issues found |
+| `reader_char_selection_test` | **21 passed**（原 15 + 新 6） |
+| `flutter test test/widget/` | **2402 passed**（基线 2396 + 6） |
+| `flutter test test/unit/` | 3802 passed + 1 skipped |
+
+### 仍需实机复验（本报告 §九 三场景的精化）
+
+1. 多行页按住可见末端圆柄：起手不跳、拖 1 字宽只走 1 字符（**已有自动化用例覆盖，实机看观感**）
+2. 选中→复制→立刻点九宫格：灰块/手柄消失、第一次点击生效（**已有自动化用例**）
+3. 单汉字选区从左右两只 pin 分别拖：抓哪只就是哪只（**已有自动化用例**）
+4. **纯视觉项（无 golden，必须实机看）**：拖动中手柄跟手观感、P2-2 内缩后 pin 与末行文字的叠压观感
