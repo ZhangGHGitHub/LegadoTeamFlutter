@@ -1,4 +1,8 @@
+import 'dart:ui' as ui;
+
+import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderBox, RenderParagraph;
 
 import '../../l10n/app_strings.dart';
 import '../../models/highlight_style.dart';
@@ -7,6 +11,7 @@ import '../../widgets/paragraph_layout_engine.dart';
 import 'highlight_span_builder.dart';
 import 'reader_bookmark_badge.dart';
 import 'reader_inline_image_widget.dart';
+import 'reader_text_selection.dart';
 import 'review_column.dart';
 import 'reader_page_chrome.dart';
 import 'text_selection_panel.dart';
@@ -319,7 +324,11 @@ class ReaderTypographicPage extends StatelessWidget {
 /// 单页排版内容（逐行渲染，支持两端对齐）
 ///
 /// 移植自 TextChapterLayout.kt 的 addCharsToLineFirst/Middle/Natural
-class ReaderTextContent extends StatelessWidget {
+///
+/// [R49 阶段A] 由 StatelessWidget 改为 StatefulWidget：字符级选区状态是
+/// 瞬时 UI 状态，放在本组件自己的 State（每个页面/滚动分片实例独立），
+/// 不进 Riverpod、不落库、不进快照。构造参数保持完全兼容。
+class ReaderTextContent extends StatefulWidget {
   final PageInfo pageInfo;
   final double fontSize;
   final double lineHeight;
@@ -389,13 +398,224 @@ class ReaderTextContent extends StatelessWidget {
   });
 
   @override
+  State<ReaderTextContent> createState() => ReaderTextContentState();
+}
+
+/// [R49 阶段A] 正文渲染 + 字符级选区
+///
+/// 承重约束：分页/行高由 `ParagraphLayoutEngine` 单源决定，渲染只是逐行
+/// `Text`。本 State **不改变任何布局尺寸**：
+/// - 不替换 `Text`/`Text.rich`，不改 `SizedBox(height: line.height)`；
+/// - 只通过只读探测（[_LineProbe] 记录行 context）向真实
+///   `RenderParagraph` 要命中/选区几何；
+/// - 灰块用根 Stack 的 `CustomPaint` + `IgnorePointer` 叠加绘制。
+class ReaderTextContentState extends State<ReaderTextContent> {
+  /// 当前选区（章节 UTF-16 偏移，端点含端）
+  final ValueNotifier<ReaderTextSelection?> _selection =
+      ValueNotifier<ReaderTextSelection?>(null);
+
+  /// 灰块绘制层坐标基准（根 Stack）
+  final GlobalKey _contentStackKey = GlobalKey(
+    debugLabel: 'reader-selection-stack',
+  );
+
+  /// 行探测句柄（每次 build 重建；只写 context，不触发重建）
+  List<_LineHandle> _lineHandles = const [];
+
+  /// 长按起点全局坐标（拖动扩展的 kTouchSlop 门控）
+  Offset? _longPressOrigin;
+
+  /// 当前选区文本（步骤4 接入浮条动作前先备好；图片占位符已剔除）
+  String? _selectionText;
+
+  // 兼容既有 build 代码的字段读取（与 widget 字段同义）。
+  PageInfo get pageInfo => widget.pageInfo;
+  double get fontSize => widget.fontSize;
+  double get lineHeight => widget.lineHeight;
+  double get paragraphSpacing => widget.paragraphSpacing;
+  Color get textColor => widget.textColor;
+  double get letterSpacing => widget.letterSpacing;
+  String? get fontFamily => widget.fontFamily;
+  bool get justify => widget.justify;
+  bool get selectText => widget.selectText;
+  FontWeight? get fontWeight => widget.fontWeight;
+  FontStyle? get fontStyle => widget.fontStyle;
+  Map<int, int>? get reviewCounts => widget.reviewCounts;
+  ReviewTapCallback? get onReviewTap => widget.onReviewTap;
+  List<HighlightMatch> get highlightMatches => widget.highlightMatches;
+  bool? get matchesStartSorted => widget.matchesStartSorted;
+  int? get chapterIndex => widget.chapterIndex;
+  String? get chapterTitle => widget.chapterTitle;
+  ReaderImageRenderConfig get imageConfig => widget.imageConfig;
+
+  /// 选区（测试/后续步骤读取）
+  @visibleForTesting
+  ReaderTextSelection? get debugSelection => _selection.value;
+
+  /// 选区文本（测试/后续步骤读取；图片占位符已剔除）
+  @visibleForTesting
+  String? get debugSelectionText => _selectionText;
+
+  @override
+  void didUpdateWidget(covariant ReaderTextContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 页码/内容/排版参数任一变化都会让章节偏移失效：清选区防串页。
+    final geometryChanged =
+        !identical(oldWidget.pageInfo, widget.pageInfo) ||
+        oldWidget.fontSize != widget.fontSize ||
+        oldWidget.lineHeight != widget.lineHeight ||
+        oldWidget.paragraphSpacing != widget.paragraphSpacing ||
+        oldWidget.letterSpacing != widget.letterSpacing ||
+        oldWidget.fontFamily != widget.fontFamily ||
+        oldWidget.justify != widget.justify ||
+        oldWidget.fontWeight != widget.fontWeight ||
+        oldWidget.fontStyle != widget.fontStyle;
+    if (geometryChanged || (oldWidget.selectText && !widget.selectText)) {
+      _clearSelection();
+    }
+  }
+
+  @override
+  void dispose() {
+    _selection.dispose();
+    super.dispose();
+  }
+
+  void _setSelection(ReaderTextSelection? next) {
+    if (next == null) {
+      if (_selection.value != null) {
+        _selection.value = null;
+      }
+      _selectionText = null;
+      return;
+    }
+    _selection.value = next;
+    _selectionText = readerSelectionText(pageInfo, next);
+  }
+
+  void _clearSelection() {
+    _longPressOrigin = null;
+    _setSelection(null);
+  }
+
+  /// 长按起选：定位到按压点所在行/字符，按词边界扩成整词
+  void _startSelectionAt(Offset globalPosition) {
+    _longPressOrigin = globalPosition;
+    final hit = _hitTestPage(globalPosition, requireLineHeight: true);
+    if (hit == null) {
+      _setSelection(null);
+      return;
+    }
+    _setSelection(readerSelectionForWordAt(hit.handle.map, hit.localOffset));
+  }
+
+  /// 长按拖动：超过 kTouchSlop 后按字符级扩展端点
+  void _extendSelectionTo(Offset globalPosition) {
+    final origin = _longPressOrigin;
+    if (origin != null && (globalPosition - origin).distance < kTouchSlop) {
+      return;
+    }
+    final current = _selection.value;
+    if (current == null) return;
+    final hit = _hitTestPage(globalPosition);
+    if (hit == null) return;
+    final map = hit.handle.map;
+    if (!map.isSelectable) return;
+    var local = hit.localOffset.clamp(0, map.text.length - 1);
+    final first = map.firstSelectableLocal;
+    if (local < first) local = first;
+    if (local >= map.text.length) return;
+    final chapter = map.localToChapter(local);
+    if (chapter == current.focus) return;
+    _setSelection(current.copyWith(focus: chapter));
+  }
+
+  /// 按全局坐标找最近行，并换算行内字符下标
+  ///
+  /// [requireLineHeight] 为 true 时长按点必须在行高范围内（参考版
+  /// `snapToText` 语义：行间空隙可吸附，超出 1 行高则不算命中）。
+  _LineHit? _hitTestPage(
+    Offset globalPosition, {
+    bool requireLineHeight = false,
+  }) {
+    _LineHandle? best;
+    var bestDistance = double.infinity;
+    for (final handle in _lineHandles) {
+      if (!handle.map.isSelectable) continue;
+      final paragraph = handle.paragraph;
+      if (paragraph == null || !paragraph.hasSize) continue;
+      final origin = paragraph.localToGlobal(Offset.zero);
+      final rect = origin & paragraph.size;
+      final dy = globalPosition.dy < rect.top
+          ? rect.top - globalPosition.dy
+          : (globalPosition.dy > rect.bottom
+                ? globalPosition.dy - rect.bottom
+                : 0.0);
+      if (dy < bestDistance) {
+        bestDistance = dy;
+        best = handle;
+      }
+    }
+    if (best == null) return null;
+    final paragraph = best.paragraph;
+    if (paragraph == null || !paragraph.hasSize) return null;
+    if (requireLineHeight && bestDistance > paragraph.size.height) {
+      return null;
+    }
+    final position = paragraph.getPositionForOffset(
+      paragraph.globalToLocal(globalPosition),
+    );
+    return _LineHit(handle: best, localOffset: position.offset);
+  }
+
+  /// 选区 → 各相交行的灰块矩形（根 Stack 局部坐标）
+  ///
+  /// 几何直接问已渲染的 `RenderParagraph`，保证两端对齐额外字距、悬挂
+  /// `Transform`、行内图片实际宽度与"看到什么选什么"一致。
+  List<Rect> _computeHighlightRects(ReaderTextSelection selection) {
+    final root = _contentStackKey.currentContext?.findRenderObject();
+    if (root is! RenderBox || !root.hasSize) return const <Rect>[];
+    final rects = <Rect>[];
+    for (final handle in _lineHandles) {
+      final map = handle.map;
+      final range = map.localRangeFor(selection.start, selection.endExclusive);
+      if (range == null) continue;
+      final paragraph = handle.paragraph;
+      if (paragraph == null || !paragraph.hasSize) continue;
+      final boxes = paragraph.getBoxesForSelection(
+        TextSelection(baseOffset: range.$1, extentOffset: range.$2),
+        boxHeightStyle: ui.BoxHeightStyle.includeLineSpacingMiddle,
+      );
+      for (final box in boxes) {
+        final boxRect = box.toRect();
+        if (boxRect.isEmpty) continue;
+        final topLeft = paragraph.localToGlobal(
+          boxRect.topLeft,
+          ancestor: root,
+        );
+        final bottomRight = paragraph.localToGlobal(
+          boxRect.bottomRight,
+          ancestor: root,
+        );
+        rects.add(Rect.fromPoints(topLeft, bottomRight));
+      }
+    }
+    return rects;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final selectionColor = Theme.of(
+      context,
+    ).colorScheme.primary.withValues(alpha: 0.28);
     // [UI_SYNC_REFACTOR S4 修 | 2026-09-06] 两端对齐的可用宽改用实际布局
     // 约束——此前硬编码屏宽-40，自定义页面边距（contentPadding ≠ 20×2）
     // 时对齐目标宽与渲染约束错位，拉伸后行宽超约束被裁（行尾吞字）— Qoder
     return LayoutBuilder(
       builder: (context, constraints) {
         final widgets = <Widget>[];
+        // [R49] 本次 build 的行探测句柄（图片行不参与文字选区）
+        final handles = <_LineHandle>[];
         final availableWidth = constraints.maxWidth;
         // [批32 P3-1/P3-2] 整页只排序/校验一次并复用：排序后游标恢复可用
         // （乱序输入不再逐行排序兜底）；父级已确认有序时跳过本页 O(m) 校验。
@@ -530,16 +750,29 @@ class ReaderTextContent extends StatelessWidget {
                 // availableWidth + hangingWidth 避免裁剪，行起点左移 hangingWidth
                 // 使起始引号悬挂进缩进区（对齐原版 TextLine.hangingPunctuation
                 // 语义）— Reasonix
+                // [R49] 行文本外层仅加一层不产生 RenderObject 的探测
+                // （_LineProbe），不改任何尺寸/约束。
                 child: line.hangingWidth > 0
                     ? OverflowBox(
                         alignment: Alignment.centerLeft,
                         maxWidth: availableWidth + line.hangingWidth,
                         child: Transform.translate(
                           offset: Offset(-line.hangingWidth, 0),
-                          child: lineText,
+                          child: _LineProbe(
+                            handle: _registerLine(
+                              handles,
+                              line,
+                              paraIdx,
+                              lineIdx,
+                            ),
+                            child: lineText,
+                          ),
                         ),
                       )
-                    : lineText,
+                    : _LineProbe(
+                        handle: _registerLine(handles, line, paraIdx, lineIdx),
+                        child: lineText,
+                      ),
               ),
             );
           }
@@ -590,6 +823,10 @@ class ReaderTextContent extends StatelessWidget {
           if (selectText && paraText.trim().isNotEmpty) {
             paragraphContent = GestureDetector(
               onLongPressStart: (details) {
+                // [R49 阶段A] 先按词边界起选（灰块），再走既有浮条路径：
+                // 浮条本轮保持模态、文本仍传整段，手柄/非模态化留给后续
+                // 步骤，保证本阶段可独立回归 — full-stack-engineer
+                _startSelectionAt(details.globalPosition);
                 ReaderSelectionToolbar.show(
                   context,
                   anchor: details.globalPosition,
@@ -599,18 +836,65 @@ class ReaderTextContent extends StatelessWidget {
                   chapterTitle: chapterTitle,
                 );
               },
+              onLongPressMoveUpdate: (details) =>
+                  _extendSelectionTo(details.globalPosition),
+              onLongPressCancel: _clearSelection,
               child: paragraphContent,
             );
           }
           widgets.add(paragraphContent);
         }
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: widgets,
+        _lineHandles = handles;
+        // [R49] 根 Stack 用 passthrough 把父约束原样传给 Column：布局尺寸
+        // 与改造前逐像素一致；灰块是 Positioned.fill + IgnorePointer 的
+        // 纯叠加绘制层（在文字下方），不参与命中与布局。
+        return Stack(
+          key: _contentStackKey,
+          fit: StackFit.passthrough,
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(
+                  key: const ValueKey('reader-selection-highlight'),
+                  painter: ReaderSelectionHighlightPainter(
+                    repaint: _selection,
+                    color: selectionColor,
+                    rectsBuilder: () {
+                      final selection = _selection.value;
+                      if (selection == null || selection.isCollapsed) {
+                        return const <Rect>[];
+                      }
+                      return _computeHighlightRects(selection);
+                    },
+                  ),
+                ),
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: widgets,
+            ),
+          ],
         );
       },
     );
+  }
+
+  /// 登记一行探测句柄（build 期间只写 State 字段，不触发重建）
+  _LineHandle _registerLine(
+    List<_LineHandle> handles,
+    LineInfo line,
+    int paragraphIndex,
+    int lineIndex,
+  ) {
+    final handle = _LineHandle(
+      map: ReaderLineSelectionMap(line),
+      paragraphIndex: paragraphIndex,
+      lineIndex: lineIndex,
+    );
+    handles.add(handle);
+    return handle;
   }
 
   /// 构建含行内图片的文本行（占位符 → WidgetSpan）
@@ -703,6 +987,90 @@ class ReaderTextContent extends StatelessWidget {
   }
 }
 
+/// [R49] 行探测句柄：只记录行 context 与映射，不持有 RenderObject
+///
+/// 不使用 GlobalKey：`buildPage(i)` 会同时构建隐藏边界页与 live 页，
+/// 状态内自建的句柄天然按实例隔离，不会重复注册。
+class _LineHandle {
+  _LineHandle({
+    required this.map,
+    required this.paragraphIndex,
+    required this.lineIndex,
+  });
+
+  final ReaderLineSelectionMap map;
+  final int paragraphIndex;
+  final int lineIndex;
+  BuildContext? context;
+
+  /// 该行真实渲染的 `RenderParagraph`（未挂载/已失活返回 null）
+  RenderParagraph? get paragraph {
+    final ctx = context;
+    if (ctx == null || !ctx.mounted) return null;
+    final object = ctx.findRenderObject();
+    return object is RenderParagraph ? object : null;
+  }
+}
+
+/// 命中结果：目标行 + 行内 UTF-16 下标
+class _LineHit {
+  const _LineHit({required this.handle, required this.localOffset});
+
+  final _LineHandle handle;
+  final int localOffset;
+}
+
+/// 行文本外层探测：不产生 RenderObject、不改变约束
+class _LineProbe extends StatelessWidget {
+  const _LineProbe({required this.handle, required this.child});
+
+  final _LineHandle handle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    // 只写探测字段（不 setState），供手势阶段查询真实几何。
+    handle.context = context;
+    return child;
+  }
+}
+
+/// [R49] 选区灰块绘制（只叠加绘制，不参与布局/不改变任何尺寸）
+///
+/// 回调由 `ValueNotifier<ReaderTextSelection?>` 驱动 `repaint`，选区变化
+/// 时不重建文字树。
+class ReaderSelectionHighlightPainter extends CustomPainter {
+  ReaderSelectionHighlightPainter({
+    required Listenable repaint,
+    required this.color,
+    required this.rectsBuilder,
+  }) : super(repaint: repaint);
+
+  final Color color;
+  final List<Rect> Function() rectsBuilder;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rects = rectsBuilder();
+    if (rects.isEmpty) return;
+    final paint = Paint()..color = color;
+    for (final rect in rects) {
+      if (rect.isEmpty) continue;
+      canvas.drawRect(rect, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant ReaderSelectionHighlightPainter oldDelegate) {
+    return oldDelegate.color != color ||
+        oldDelegate.rectsBuilder != rectsBuilder;
+  }
+
+  /// 测试用：当前应绘制的灰块矩形
+  @visibleForTesting
+  List<Rect> debugRects() => rectsBuilder();
+}
+
 /// 滚动模式下的段落渲染（未分页时使用，应用配置的段落间距）
 class ReaderParagraphs extends StatelessWidget {
   final String content;
@@ -784,7 +1152,8 @@ class ReaderParagraphs extends StatelessWidget {
           matchCursor++;
         }
       }
-      final hasHighlight = orderedMatches.isNotEmpty &&
+      final hasHighlight =
+          orderedMatches.isNotEmpty &&
           p.isNotEmpty &&
           matchCursor < orderedMatches.length &&
           orderedMatches[matchCursor].start < paragraphEnd;
